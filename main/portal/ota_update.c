@@ -37,66 +37,53 @@ static const char *TAG = "ota";
  * Wi-Fi, no la flash. */
 #define OTA_CHUNK 4096
 
-/* Ademas del watchdog SW propio del proyecto, desuscribe la tarea de camara
- * del Task Watchdog de ESP-IDF mientras dura la OTA (borrado en esp_ota_begin
- * + bucle de escritura): son operaciones de flash largas que pueden monopolizar
- * el nucleo lo suficiente para que cam_stream no llegue a latir en el timeout
- * del TWDT. Reproducido en la placa 2026-08-13: "Reset reason: Watchdog (TASK)",
- * "task_wdt ... cam_stream". watchdog_suspend() NO cubre esto: es un mecanismo
- * de ESP-IDF totalmente aparte del watchdog.c del proyecto. Sin camara
- * arrancada, camera_stream_task_handle() da NULL y esto no hace nada. */
+/* EL TASK WATCHDOG DE ESP-IDF DURANTE LA OTA: SE LE DA MAS MARGEN, NO SE
+ * BORRA NADIE (29-oct-2026; medido en la placa).
+ *
+ * Antes se DESUSCRIBIAN del TWDT las dos tareas IDLE y la de la camara, y se
+ * volvian a suscribir al acabar. El borrado de la flash y su escritura son
+ * operaciones largas -- y la tarea IDLE, al no estar suscrita, hace que su
+ * propio esp_task_wdt_reset() interno devuelva ESP_ERR_NOT_FOUND, que el IDF
+ * imprime como ERROR EN CADA PASADA. Resultado medido en una OTA real de
+ * 3,3 MB: 56 segundos de "task_wdt: esp_task_wdt_reset(707): task not found" a
+ * ~150 por segundo, o sea el puerto de serie saturado mientras se graba (y el
+ * mismo ruido por parte de la camara, que tambien late a mano).
+ *
+ * Ahora no se borra a nadie: se ESTIRA el plazo del TWDT mientras dura la OTA
+ * (de 10 s a 2 min) y se devuelve al acabar, tanto en el exito como en todos
+ * los fallos. Se mantiene entero el watchdog de verdad -- si la placa se cuelga
+ * durante la OTA, sigue reiniciando, solo que con mas margen -- y desaparece el
+ * torrente de errores que ademas ralentizaba la grabacion.
+ *
+ * watchdog_suspend_ex() se queda: es el watchdog DEL PROYECTO (el de la UI
+ * congelada), que es otro mecanismo. */
+#define OTA_TWDT_TIMEOUT_MS   (120 * 1000)
+#define OTA_TWDT_NORMAL_MS    (10 * 1000)
+
+static void ota_twdt_plazo(uint32_t ms)
+{
+    esp_task_wdt_config_t cfg = {
+        .timeout_ms     = ms,
+        /* LAS DOS IDLE SIGUEN SUSCRITAS, solo se les da mas plazo. Si se
+         * desuscriben, su propio reset interno falla y el IDF lo grita en cada
+         * pasada de la IDLE -- que es justo el torrente que se quiere quitar. */
+        .idle_core_mask = (1 << CONFIG_FREERTOS_NUMBER_OF_CORES) - 1,
+        .trigger_panic  = true,
+    };
+    esp_err_t err = esp_task_wdt_reconfigure(&cfg);
+    if (err != ESP_OK)
+        ESP_LOGW(TAG, "TWDT: no pude poner el plazo en %u ms (%s)", (unsigned)ms,
+                 esp_err_to_name(err));
+}
+
 static void ota_wdt_suspend(bool suspend)
 {
     /* dueno = true: la OTA es uno de los DOS usuarios de watchdog_suspend (el
-     * otro es el carrusel de capturas). Desde el 16-oct-2026 hay que decir quien
-     * es: solo el mismo dueño puede reanudar (asi el carrusel no reanuda por
-     * debajo de una OTA en curso) y una suspension que se quede colgada caduca
-     * sola a los 10 minutos. */
+     * otro es el carrusel de capturas). Hay que decir quien es: solo el mismo
+     * dueno puede reanudar (asi el carrusel no reanuda por debajo de una OTA) y
+     * una suspension colgada caduca sola a los 10 minutos. */
     watchdog_suspend_ex(suspend, true);
-
-    /* El borrado de esp_ota_begin (varios segundos) tambien puede impedir
-     * que la tarea IDLE del nucleo que ejecuta este worker httpd llegue a
-     * latir -- CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU0/1=y vigila las dos
-     * IDLE con 10s de margen. No es el propio worker el que hay que
-     * desuscribir (los workers httpd no se registran en el TWDT por
-     * defecto, a diferencia de cam_stream de aqui abajo): es su IDLE. Se
-     * desuscriben las DOS a proposito y no solo la del nucleo actual -- el
-     * worker puede migrar de nucleo entre el suspend y el resume (no va
-     * fijado con core_id), y rastrear cual tocaba en cada momento anadia
-     * riesgo de descuadre para una operacion puntual de pocos segundos.
-     * Nunca reproducido (a diferencia de cam_stream, que si), pero el
-     * margen es real. Detectado el 09-sep-2026. */
-    for (int core = 0; core < 2; core++) {
-        TaskHandle_t idle = xTaskGetIdleTaskHandleForCore(core);
-        if (!idle) continue;
-        esp_err_t err_idle = suspend ? esp_task_wdt_delete(idle) : esp_task_wdt_add(idle);
-        if (err_idle != ESP_OK) {
-            ESP_LOGW(TAG, "TWDT idle nucleo %d: no se pudo %s (%s)",
-                     core, suspend ? "desuscribir" : "resuscribir", esp_err_to_name(err_idle));
-        }
-    }
-
-    /* Y la tarea de LVGL: durante la OTA la pantalla se congela (se coge su lock
-     * y no se suelta hasta el final), asi que no puede latir. Sin desuscribirla,
-     * el watchdog de tareas reinicia la placa a mitad de la actualizacion: visto
-     * en la placa el 6-oct-2026, con el log guardado como log_taskwdt_*. */
-    TaskHandle_t lvgl = xTaskGetHandle("taskLVGL");
-    if (lvgl) {
-        esp_err_t err_lvgl = suspend ? esp_task_wdt_delete(lvgl) : esp_task_wdt_add(lvgl);
-        if (err_lvgl != ESP_OK) {
-            /* Normal: la tarea de LVGL del port no esta suscrita al TWDT */
-            ESP_LOGI(TAG, "TWDT LVGL: no se pudo %s (%s)",
-                     suspend ? "desuscribir" : "resuscribir", esp_err_to_name(err_lvgl));
-        }
-    }
-
-    TaskHandle_t cam = camera_stream_task_handle();
-    if (!cam) return;
-    esp_err_t err = suspend ? esp_task_wdt_delete(cam) : esp_task_wdt_add(cam);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "TWDT camara: no se pudo %s (%s)",
-                 suspend ? "desuscribir" : "resuscribir", esp_err_to_name(err));
-    }
+    ota_twdt_plazo(suspend ? OTA_TWDT_TIMEOUT_MS : OTA_TWDT_NORMAL_MS);
 }
 
 /* Reinicio diferido: hay que contestar al navegador ANTES de reiniciar, si no el
@@ -311,10 +298,6 @@ esp_err_t ota_update_receive(httpd_req_t *req)
         httpd_resp_sendstr(req, "El fichero no cabe: no parece un firmware valido.");
         return ESP_OK;
     }
-    /* La subida empieza DE VERDAD: que el temporizador de seguridad del aviso
-     * no lo quite a mitad. */
-    ui_ota_overlay_confirm();
-
     ESP_LOGI(TAG, "recibiendo %d bytes -> particion '%s'",
              req->content_len, destino->label);
 
@@ -334,6 +317,13 @@ esp_err_t ota_update_receive(httpd_req_t *req)
      *    con la pantalla a oscuras, que es donde salia el parpadeo. */
     ota_pantalla_aviso();
     ui_ota_overlay_show("Actualizando firmware\n\nNo apagues la pantalla");
+    /* Y AHORA SE CANCELA EL TEMPORIZADOR DE SEGURIDAD (29-oct-2026, medido en la
+     * placa): ui_ota_overlay_show() lo REARMA cada vez que se llama, asi que
+     * cancelarlo antes de volver a pintar el aviso no servia de nada -- a los
+     * 30 s de subida el mensaje "Actualizando firmware" DESAPARECIA de la
+     * pantalla con la grabacion en marcha (visto en una OTA de 56 s). Tiene que
+     * ir despues del show. */
+    ui_ota_overlay_confirm();
     ota_ui_congelar(true);      /* pinta el aviso y congela */
     ota_pantalla_oscura();
 
