@@ -12,6 +12,5 @@
 - [Portatil: rutas IDF y puerto](project_laptop_idf_paths.md) — IDF en ~/.espressif, puerto ttyACM0, fix cmake/ninja/venv
 - [Verificar script antes de batch](feedback_verify_scripts_before_batch.md) — testar con 1 input real primero
 - [Politica commits/push](feedback_commit_policy.md) — commit automatico tras grupo logico, push al final
-- [KiCad: limitaciones sin GUI](feedback_kicad_limitations.md) — PCB requiere GUI
 - [Documentar fallos al instante](feedback_document_failures_immediately.md) — escribir memoria ANTES de proponer fix
 - [Verificar requisitos antes de ofrecer opciones](feedback_verify_requirements_before_offering_options.md) — verificar antes de proponer
