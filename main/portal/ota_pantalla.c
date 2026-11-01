@@ -754,6 +754,16 @@ esp_err_t ota_pantalla_bin(httpd_req_t *req)
     bool ok = (hlen > 0 && hlen < (int)sizeof(cabecera)) &&
               pantalla_enviar(req, cabecera, (size_t)hlen);
 
+    /* DE QUE SE VA EL TIEMPO AL SERVIR UN .bin (01-nov-2026). La cabina tardo
+     * 292 s en bajar 2,24 MB (7 KB/s) y 78 s otro dia con el mismo fichero
+     * (~29 KB/s). Con estos dos numeros se sabe si el que frena es la TARJETA
+     * (fread + cerrojo del bus, que comparte con camara y datalogger) o la RED
+     * (httpd_send bloquea hasta que el socket admite los 64 KB del trozo, o
+     * sea que va al ritmo de la ventana TCP y de la ida y vuelta). Se apunta
+     * solo cuando acaba, una linea por descarga: no ensucia el log. */
+    const int64_t t_envio_us = esp_timer_get_time();
+    int64_t us_tarjeta = 0;
+
     uint64_t enviado = 0;
     size_t desde_yield = 0;
     while (ok && enviado < (uint64_t)st.st_size) {
@@ -764,9 +774,11 @@ esp_err_t ota_pantalla_bin(httpd_req_t *req)
             ok = false;
             break;
         }
+        const int64_t t_chunk_us = esp_timer_get_time();
         n = fread(buf, 1, PANTALLA_CHUNK, f);
         error = (ferror(f) != 0);
         camera_sd_bus_unlock();
+        us_tarjeta += esp_timer_get_time() - t_chunk_us;
         if (error) { ok = false; break; }
         if (n == 0) break;   /* se acabo antes de lo que decia st_size */
         if (!pantalla_enviar(req, (const char *)buf, n)) { ok = false; break; }
@@ -781,6 +793,15 @@ esp_err_t ota_pantalla_bin(httpd_req_t *req)
         ESP_LOGW(TAG, "bin %s: he leido %llu de %lld bytes",
                  m->nombre, (unsigned long long)enviado, (long long)st.st_size);
         ok = false;
+    }
+
+    {
+        const int64_t ms_total = (esp_timer_get_time() - t_envio_us) / 1000;
+        const int64_t ms_sd = us_tarjeta / 1000;
+        ESP_LOGI(TAG, "bin %s: %llu B en %d ms (%d ms de tarjeta, %d de red) = %u KB/s",
+                 m->nombre, (unsigned long long)enviado, (int)ms_total, (int)ms_sd,
+                 (int)(ms_total - ms_sd),
+                 (unsigned)(ms_total > 0 ? (((enviado * 1000) / 1024) / (uint64_t)ms_total) : 0));
     }
 
     const bool got_lock = camera_sd_bus_lock_wait(5000);

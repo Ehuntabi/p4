@@ -162,6 +162,17 @@ CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=8192
 CONFIG_LWIP_MAX_SOCKETS=32
 CONFIG_LWIP_MAX_ACTIVE_TCP=32
 
+# ── VENTANA TCP: lo que hacia lenta la OTA de las pantallas (01-nov-2026) ─────
+# Servir un .bin de 2,2 MB es mandar datos y esperar confirmacion: con la ventana
+# de fabrica (5760 B) solo caben ~4 segmentos sin confirmar, asi que el ritmo es
+# ventana/ida_y_vuelta. Medido: 29 KB/s con ida y vuelta de ~200 ms y 7 KB/s
+# cuando sube a ~800 ms (la P4 ocupada con la camara o el portal). Con 32 KB en
+# la P4 y 16 KB de ventana en las cabinas, el mismo enlace da 3 veces mas.
+# El limite real es el MENOR de los dos (el que anuncia la cabina), por eso se
+# tocan los tres repos. OJO: esto NO cambia el contrato de /api/pantalla/bin.
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=32768
+CONFIG_LWIP_TCP_WND_DEFAULT=32768
+
 # ── Servidor HTTP (config web + API de la app Android) ────────────────────────
 # Buffer de cabeceras de peticion. El default 512 se queda corto en el login
 # Basic-Auth desde navegador movil (User-Agent + Accept + cookies + Authorization
