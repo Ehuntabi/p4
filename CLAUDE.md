@@ -155,7 +155,7 @@ con la RUTA ABSOLUTA de la máquina** para el componente local
 `components/espressif__esp_hosted`:
 
 ```
-path: /home/<usuario>/joint/victron/components/espressif__esp_hosted
+path: /home/<usuario>/joint/p4/components/espressif__esp_hosted
 ```
 
 En GitHub Actions esa ruta no existe y **el CI falla** con

@@ -129,7 +129,7 @@ fi
 # NO son el repo: el 22-sep-2026 un build de banco copio su .bin (v2.43) a
 # ~/joint-releases y borro de ahi los de la v3.6 ya publicada. La carpeta de
 # releases es solo para lo que sale del repo real (JOINT_REPO_DIR lo cambia).
-REPO_REAL="${JOINT_REPO_DIR:-$HOME/joint/victron}"
+REPO_REAL="${JOINT_REPO_DIR:-$HOME/joint/p4}"
 if [ "$(cd "$SRC_DIR" && pwd -P)" != "$(cd "$REPO_REAL" 2>/dev/null && pwd -P)" ]; then
     echo "AVISO: '$SRC_DIR' no es el repo de publicacion ($REPO_REAL)." >&2
     echo "       No toco la carpeta de releases; la copia del build esta en $OUT" >&2

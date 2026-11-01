@@ -34,7 +34,7 @@
 #
 set -euo pipefail
 
-REPO="${REPO:-$HOME/joint/victron}"
+REPO="${REPO:-$HOME/joint/p4}"
 TAG="${TAG:-v3.14}"                 # ultimo firmware con el host viejo (0.0.27)
 ARBOL="${ARBOL:-$HOME/joint/.scratch/c6_carrier}"
 PUERTO="${PUERTO:-}"
