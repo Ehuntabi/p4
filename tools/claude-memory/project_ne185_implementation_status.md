@@ -87,7 +87,7 @@ Soluciones a probar (NO aplicadas todavia, requieren commit):
 
 **HW descartado**: el usuario tiene placa de bias montada con
 R1=R2=680ohm pull-up/down + R3=132ohm (220||330) terminacion.
-Documentada en `~/joint/victron/docs/ne185_bias_board.pdf`.
+Documentada en `~/joint/p4/docs/ne185_bias_board.pdf`.
 Idle diff ~420mV, bias ~7.4mA. Bus electricamente OK.
 
 Tambien confirmado en este viaje:
@@ -216,9 +216,9 @@ Con `s_verbose_log = true` activado desde UI (LOG ON button):
 
 ## Archivos relevantes
 
-- `/home/jc/joint/victron/main/ne185/ne185.c` — implementacion principal
-- `/home/jc/joint/victron/main/ne185/include/ne185.h` — API
-- `/home/jc/joint/victron/main/ui/view_overview.c` — UI card camper con LOG ON / botones
+- `/home/jc/joint/p4/main/ne185/ne185.c` — implementacion principal
+- `/home/jc/joint/p4/main/ne185/include/ne185.h` — API
+- `/home/jc/joint/p4/main/ui/view_overview.c` — UI card camper con LOG ON / botones
 - `/home/jc/Documentos/joint spl 154/logs_joint_ne185/log_2026*.txt` — capturas sniffer 2026-05-25
 
 ## Tests pendientes

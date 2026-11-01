@@ -1,6 +1,6 @@
 # Joint SPL 145 Control (ex-VictronSolarDisplay) - Guition JC1060P470C_I
 
-Repo: github.com/Ehuntabi/victron-jc1060p470c-esp32p4
+Repo: github.com/Ehuntabi/p4
 
 > El último tag NO se escribe aquí: se consulta con `git describe --tags --match "v*.*"`
 > (un solo punto: los tags son `vX.Y`, no `vX.Y.Z` — el mismo patrón que usa
@@ -23,7 +23,7 @@ Repo: github.com/Ehuntabi/victron-jc1060p470c-esp32p4
 ## Stack
 - ESP-IDF v5.5.5 (la que usan el CI y release.sh)
 - LVGL para la UI
-- Workspace: ~/joint/victron
+- Workspace: ~/joint/p4
 
 ## Forks de drivers vendorizados
 

@@ -78,7 +78,7 @@ set -euo pipefail
 
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$AQUI/.." && pwd)"
-REPO_GH="Ehuntabi/victron-jc1060p470c-esp32p4"
+REPO_GH="Ehuntabi/p4"
 IDF_EXPORT="${IDF_EXPORT:-$HOME/.espressif/esp-idf-5.5/export.sh}"
 APP_BIN="build/joint_spl_145_control.bin"
 # El chip que tiene que haber en el puerto (paso 7) y los nombres EXACTOS de los

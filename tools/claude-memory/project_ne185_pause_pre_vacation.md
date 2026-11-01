@@ -14,8 +14,8 @@ o desconectada del bus RS-485 J5.
 
 ## Estado del codigo en pause (commit ~7dc2380 + posteriores)
 
-Repo: github.com/Ehuntabi/victron-jc1060p470c-esp32p4
-Path: ~/joint/victron/
+Repo: github.com/Ehuntabi/p4
+Path: ~/joint/p4/
 
 **Compilable y flasheado** con todos los fixes del 27-may:
 - Init sequence DESACTIVADA (comentada). Era hipotesis del wake-up que
@@ -97,15 +97,15 @@ User tiene placa bias montada con:
 - R1=R2=680ohm pull-up/pull-down
 - R3=132ohm (220||330) terminacion entre A/B
 
-Doc: ~/joint/victron/docs/ne185_bias_board.pdf
+Doc: ~/joint/p4/docs/ne185_bias_board.pdf
 Idle diff ~420mV, bias ~7.4mA. OK eléctricamente.
 
 ## Logs analizados hasta pausa
 
 79 frame15 únicos extraidos de 5 logs del 27-may en
-~/joint/victron/logs/. Analisis cross-log con scripts en /tmp/
+~/joint/p4/logs/. Analisis cross-log con scripts en /tmp/
 (quizá borrados al apagar PC). Reconstruir con
-`grep 'rx15:' ~/joint/victron/logs/*.txt`.
+`grep 'rx15:' ~/joint/p4/logs/*.txt`.
 
 ## Recordatorios al retomar
 

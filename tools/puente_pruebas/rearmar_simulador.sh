@@ -5,7 +5,7 @@
 # tarjetas enseñan "--").
 
 #!/bin/bash
-cd /home/jc/joint/victron/tools/puente_pruebas
+cd /home/jc/joint/p4/tools/puente_pruebas
 export PUENTE_AP_CLAVE=58xc6xfknk PUENTE_PORTAL_CLAVE=wau4xcyj
 python3 -u - <<'PY'
 import json, sys, time

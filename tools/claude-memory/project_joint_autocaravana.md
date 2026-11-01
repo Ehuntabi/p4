@@ -1,6 +1,6 @@
 ---
 name: project-joint-autocaravana
-description: ~/joint/ es la carpeta raiz de proyectos relacionados con la autocaravana (marca Joint). Contiene 3 proyectos victron + ficheros FreeCAD soportes
+description: ~/joint/ es la carpeta raiz de proyectos relacionados con la autocaravana (marca Joint). Contiene 3 proyectos (p4, cabina5, 35cabina) + ficheros FreeCAD soportes
 metadata: 
   node_type: memory
   type: project
@@ -18,14 +18,14 @@ metadata:
 └── soporte/toma/etc *.FCStd                                  # FreeCAD models soportes (bornas, led armario, secador-calefaccion)
 ```
 
-**Why:** 2026-05-26 el usuario reorganizo. Antes los proyectos victron estaban en `~/victron`, `~/victron_mini`, `~/victronsolardisplayesp-multi-device_pantalla_3.5`. Movidos a `~/joint/<name>/` para tener todo lo de la autocaravana junto. Las copias de respaldo `victron_broken_1858` y `waveshare_7b` fueron borradas (eran snapshots sin git, 827 MB liberados).
+**Why:** 2026-05-26 el usuario reorganizo. Antes los proyectos estaban en `~/victron`, `~/victron_mini`, `~/victronsolardisplayesp-multi-device_pantalla_3.5`. Movidos a `~/joint/<name>/` para tener todo lo de la autocaravana junto. Las copias de respaldo `victron_broken_1858` y `waveshare_7b` fueron borradas (eran snapshots sin git, 827 MB liberados).
 
 **How to apply:**
-- El path activo del victron 7" es ahora `~/joint/victron/` (NO `~/victron`)
-- CLAUDE.md del proyecto victron tiene `Workspace: ~/victron` que esta DESACTUALIZADO - actualizar si se edita
-- Builds ESP-IDF: el `build/` puede tener CMakeCache.txt con paths absolutos viejos `/home/jc/victron/...`. Si CMake falla tras el move -> `rm -rf build/` (NO fullclean!) para regenerar caches manteniendo sdkconfig - ver [[feedback-sdkconfig-known-good-tag]]
+- El path activo del victron 7" es ahora `~/joint/p4/` (NO `~/victron`)
+- CLAUDE.md del proyecto p4 tiene `Workspace: ~/victron` que esta DESACTUALIZADO - actualizar si se edita
+- Builds ESP-IDF: el `build/` puede tener CMakeCache.txt con paths absolutos viejos `/home/jc/joint/p4/...`. Si CMake falla tras el move -> `rm -rf build/` (NO fullclean!) para regenerar caches manteniendo sdkconfig - ver [[feedback-sdkconfig-known-good-tag]]
 - Repos GitHub:
-  - victron 7": git@github.com:Ehuntabi/victron-jc1060p470c-esp32p4.git
+  - victron 7": git@github.com:Ehuntabi/p4.git
   - victron_mini: RETIRADO el 17-sep-2026 (repo de GitHub y copia local borrados)
   - pantalla 3.5": git@github.com:Ehuntabi/victron-display-3.5-esp32-s3.git
 - Relacionado: [[project-victron-esp-idf]] - ESP-IDF 5.4.4 estricto para todos

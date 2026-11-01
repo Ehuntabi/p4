@@ -256,7 +256,7 @@ Ingeniería inversa en junio de 2026 sobre una autocaravana real (NE185 + NE187)
 esnifando el bus en vivo con un ESP32-P4 y luego sustituyendo el panel por él.
 Capturas, mapa de bytes completo e implementación funcional en ESP-IDF en:
 
-- Repo: https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4
+- Repo: https://github.com/Ehuntabi/p4
   (`main/ne185/ne185.c`, `docs/ne185_protocolo_completo.md`)
 
 Trabajo previo relacionado: `class142/ne-rs485` documenta el panel hermano

@@ -257,7 +257,7 @@ Reverse-engineered in June 2026 on a real motorhome (NE185 + NE187), by sniffing
 the live bus with an ESP32-P4 and then replacing the panel with it. Captures,
 the full byte map, and a working ESP-IDF implementation are in:
 
-- Repo: https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4
+- Repo: https://github.com/Ehuntabi/p4
   (`main/ne185/ne185.c`, `docs/ne185_protocolo_completo.md`)
 
 Related prior art: `class142/ne-rs485` documents the **NE334** sibling panel

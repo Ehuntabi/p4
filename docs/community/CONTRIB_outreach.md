@@ -33,7 +33,7 @@ del repo.
 >   polling**; so a replacement MCU wakes the unit simply by polling.
 >
 > Full byte map, captures, gotchas and a working ESP-IDF implementation:
-> https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/blob/main/docs/community/NE185_NE187_RS485_protocol_EN.md
+> https://github.com/Ehuntabi/p4/blob/main/docs/community/NE185_NE187_RS485_protocol_EN.md
 >
 > Happy to turn this into a PR adding an `NE187`/`NE185` section to the repo if
 > you'd like.
@@ -57,7 +57,7 @@ del repo.
 >   `FF 00 00 00 FF`; la centralita responde con una trama de 15 bytes con todos
 >   los datos.
 > - Mapa de bytes completo, checksum, el truco de la alternancia de polls y cómo
->   sustituir el panel: https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/blob/main/docs/community/NE185_NE187_RS485_protocolo_ES.md
+>   sustituir el panel: https://github.com/Ehuntabi/p4/blob/main/docs/community/NE185_NE187_RS485_protocolo_ES.md
 >
 > Si tienes otro modelo (NE334, etc.), comparte sus diferencias y ampliamos la doc.
 
@@ -70,7 +70,7 @@ del repo.
 > Common control unit in European campervans, zero public docs. Sniffed the bus,
 > mapped the whole protocol, and replaced the panel with an ESP32 (tank levels,
 > batteries, lights, pump, mains, cold-start wake). Full writeup, CC0:
-> https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/blob/main/docs/community/NE185_NE187_RS485_protocol_EN.md
+> https://github.com/Ehuntabi/p4/blob/main/docs/community/NE185_NE187_RS485_protocol_EN.md
 
 ---
 
@@ -84,8 +84,8 @@ para tener un enlace corto y fácil de encontrar por buscadores. Título del gis
 
 ## URLs (ya en el repo público)
 
-- EN: https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/blob/main/docs/community/NE185_NE187_RS485_protocol_EN.md
-- ES: https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/blob/main/docs/community/NE185_NE187_RS485_protocolo_ES.md
+- EN: https://github.com/Ehuntabi/p4/blob/main/docs/community/NE185_NE187_RS485_protocol_EN.md
+- ES: https://github.com/Ehuntabi/p4/blob/main/docs/community/NE185_NE187_RS485_protocolo_ES.md
 
 ## Antes de publicar
 

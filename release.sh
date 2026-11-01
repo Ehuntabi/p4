@@ -27,7 +27,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-REPO="Ehuntabi/victron-jc1060p470c-esp32p4"
+REPO="Ehuntabi/p4"
 # OJO: esto apuntaba a esp-idf-5.4 y por ahi se colaron las publicaciones de la
 # v2.37 a la v2.43: el CI compilaba con 5.5.5 (correcto) pero los .bin que se
 # publicaban los hace ESTE script, y salian con IDF 5.4.4 y el esp_video viejo

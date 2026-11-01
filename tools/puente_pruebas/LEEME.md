@@ -17,7 +17,7 @@ Con eso quedan cubiertas **las dos conexiones** de la P4 en el banco.
 
 ```bash
 # 1. Compilar y grabar en la placa ESP32 (NO en la P4)
-cd ~/joint/victron/tools/puente_pruebas
+cd ~/joint/p4/tools/puente_pruebas
 source ~/.espressif/esp-idf-5.5/export.sh
 idf.py set-target esp32c6      # o el chip que sea
 idf.py -p /dev/ttyACM1 flash   # ¡ojo al puerto, que la P4 es otro!
@@ -25,7 +25,7 @@ idf.py -p /dev/ttyACM1 flash   # ¡ojo al puerto, que la P4 es otro!
 # 2. Mandarle órdenes desde el PC
 python3 puente.py status
 python3 puente.py "wifiscan"
-python3 puente.py "wifista VictronConfig <clave del AP>"
+python3 puente.py "wifista P4Config <clave del AP>"     # o el nombre que tenga la P4 en su NVS
 python3 puente.py "httpget http://192.168.4.1/"
 ```
 
@@ -96,7 +96,7 @@ python3 puente.py "sim"               # informe: cuantas tramas de cada tipo
 python3 puente.py "sim stop"
 
 # Hacer de cabina/satelite contra la P4
-python3 puente.py "sat VictronConfig <clave del AP> victron <clave del portal>"
+python3 puente.py "sat P4Config <clave del AP> victron <clave del portal>"
 python3 puente.py "sat informe"
 python3 puente.py "sat stop"
 ```

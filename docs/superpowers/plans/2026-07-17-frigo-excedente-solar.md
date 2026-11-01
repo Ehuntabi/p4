@@ -55,7 +55,7 @@ Elimina el medidor AC PZEM que no se instalará. Libera GPIO1/GPIO2 y UART2, y q
 - [ ] **Step 1: Borrar los ficheros del módulo**
 
 ```bash
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 git rm main/pzem004t.c main/pzem004t.h
 ```
 
@@ -97,7 +97,7 @@ typedef enum {
 
 ```bash
 . ~/.espressif/esp-idf-5.4/export.sh
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 idf.py build
 ```
 
@@ -106,7 +106,7 @@ Expected: build **OK**, sin referencias colgadas a `pzem`. Si el linker se queja
 - [ ] **Step 8: Verificar que no queda rastro en firmware**
 
 ```bash
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 grep -rn "pzem\|PZEM\|WD_TASK_PZEM\|lbl_ac\|j\.ac\|UART_NUM_2" main/ components/ | grep -v build/
 ```
 
@@ -316,7 +316,7 @@ bool frigo_solar_eval(const frigo_solar_in_t *in, frigo_solar_sm_t *sm)
 - [ ] **Step 4: Compilar y correr el test en host**
 
 ```bash
-cd /home/jc/joint/victron/components/frigo
+cd /home/jc/joint/p4/components/frigo
 gcc -I. frigo_solar.c test/test_frigo_solar.c -o /tmp/tfs && /tmp/tfs
 ```
 
@@ -325,7 +325,7 @@ Expected: `ALL PASS` (código de salida 0). Si un `assert` falla, corrige `frigo
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 git add components/frigo/frigo_solar.h components/frigo/frigo_solar.c components/frigo/test/test_frigo_solar.c
 git commit -m "feat(frigo): maquina de estados pura del modo excedente solar + test host
 
@@ -539,7 +539,7 @@ bool    frigo_solar_get_active(void)  { return s_sol_sm.active; }
 
 ```bash
 . ~/.espressif/esp-idf-5.4/export.sh
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 idf.py build
 ```
 
@@ -650,7 +650,7 @@ Al final de `app_main` (tras inicializar frigo, ne185 y dashboard_state), arranc
 
 ```bash
 . ~/.espressif/esp-idf-5.4/export.sh
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 idf.py build
 ```
 
@@ -756,7 +756,7 @@ Crea las dos filas con sus botones (igual que `fanmin`), asigna `s_lbl_solon`/`s
 
 ```bash
 . ~/.espressif/esp-idf-5.4/export.sh
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 idf.py build
 ```
 
@@ -840,7 +840,7 @@ Añade `#include "frigo.h"` en `ui.c` si no está.
 
 ```bash
 . ~/.espressif/esp-idf-5.4/export.sh
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 idf.py build
 ```
 
@@ -946,7 +946,7 @@ El array `fields[8]` y `csv_split(line, fields, 8)` ya admiten 6+ columnas; el g
 
 ```bash
 . ~/.espressif/esp-idf-5.4/export.sh
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 idf.py build
 ```
 
@@ -1015,7 +1015,7 @@ En el bucle que lee `s_frigo_buf[i]` (~1751-1763), añade:
 
 ```bash
 . ~/.espressif/esp-idf-5.4/export.sh
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 idf.py build
 ```
 

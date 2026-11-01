@@ -302,7 +302,7 @@ void ui_init(void) {
      * dejaba "12345678" de fabrica en todas las pantallas. El SSID por defecto
      * tambien lo persiste wifi_ap_init. 2026-07-26. */
     if (wifi_err != ESP_OK) {
-        strncpy(default_ssid, "VictronConfig", sizeof(default_ssid));
+        strncpy(default_ssid, P4_SSID_FABRICA, sizeof(default_ssid));
         default_ssid[sizeof(default_ssid) - 1] = '\0';
         default_pass[0] = '\0';
         ap_enabled = 1;
@@ -1545,7 +1545,8 @@ static void gps_indicator_timer_cb(lv_timer_t *t)
  * guarda sola al perder el foco (settings_wifi.c, DEFOCUSED/READY), asi que
  * bastaba con abrir esa pantalla y tocarla para que el AP dejara de llamarse
  * como se llamaba. Paso el 21-ago-2026: un AP que llevaba semanas como
- * "VictronConfig" amanecio como "ESP_DC078D" y el satelite dejo de encontrarlo
+ * "VictronConfig" (hoy "P4Config") amanecio como "ESP_DC078D" y el satelite
+ * dejo de encontrarlo
  * (udp_rx: Desconectado reason=201).
  *
  * Si no hay nada guardado se deja el mismo valor de fabrica que usa el AP, no
@@ -1562,7 +1563,7 @@ void ui_update_wifi_ssid(ui_state_t *ui)
         if (nvs_get_str(h, "ssid", ssid, &len) != ESP_OK) ssid[0] = '\0';
         nvs_close(h);
     }
-    if (ssid[0] == '\0') snprintf(ssid, sizeof(ssid), "%s", "VictronConfig");
+    if (ssid[0] == '\0') snprintf(ssid, sizeof(ssid), "%s", P4_SSID_FABRICA);
 
     if (lvgl_port_lock(50)) {
         lv_textarea_set_text(ui->wifi.ssid, ssid);

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Instala Claude Code (binario nativo) en el portatil y migra memorias del repo
 # Uso desde el portatil:
-#   cd ~/joint/victron && git pull && bash tools/install-claude.sh
+#   cd ~/joint/p4 && git pull && bash tools/install-claude.sh
 # Sin sudo - todo en ~/.local/ y ~/.claude/
 
 set -uo pipefail
@@ -88,7 +88,7 @@ step "4. Migrar memorias persistentes"
 
 # Path dinamico: -home-<user> (no hardcoded -home-jc)
 USERNAME=$(whoami)
-for d in "$HOME/.claude/projects/-home-$USERNAME/memory" "$HOME/.claude/projects/-home-$USERNAME-joint-victron/memory"; do
+for d in "$HOME/.claude/projects/-home-$USERNAME/memory" "$HOME/.claude/projects/-home-$USERNAME-joint-p4/memory"; do
   mkdir -p "$d"
   if [ -n "$(ls -A "$d" 2>/dev/null)" ]; then
     bak="$d.bak.$(date +%Y%m%d-%H%M%S)"
@@ -110,7 +110,7 @@ echo ""
 echo "Listo. Para empezar:"
 echo ""
 echo "  source ~/.bashrc          # recargar PATH si se anadio"
-echo "  cd ~/joint/victron"
+echo "  cd ~/joint/p4"
 echo "  claude"
 echo ""
 echo "La primera vez te pedira auth (OAuth web o API key)."
@@ -120,4 +120,4 @@ echo "  > Empezamos con el sniff CHECK button NE187"
 echo ""
 echo "Las memorias persistentes estan en:"
 echo "  ~/.claude/projects/-home-jc/memory/"
-echo "  ~/.claude/projects/-home-jc-joint-victron/memory/"
+echo "  ~/.claude/projects/-home-jc-joint-p4/memory/"

@@ -3,7 +3,7 @@
 # Disenado para Linux Mint sin sudo (todo en home del usuario)
 #
 # Uso desde el portatil:
-#   curl -fsSL https://raw.githubusercontent.com/Ehuntabi/victron-jc1060p470c-esp32p4/main/setup-autocaravana.sh -o /tmp/setup.sh
+#   curl -fsSL https://raw.githubusercontent.com/Ehuntabi/p4/main/setup-autocaravana.sh -o /tmp/setup.sh
 #   (o copiar este archivo manualmente)
 #   bash /tmp/setup.sh
 #
@@ -69,17 +69,17 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-step "3. Clonar/actualizar los repos victron"
+step "3. Clonar/actualizar los repos joint"
 
 mkdir -p "$JOINT_DIR"
 cd "$JOINT_DIR"
 
 declare -A REPOS_SSH=(
-  ["victron"]="git@github.com:Ehuntabi/victron-jc1060p470c-esp32p4.git"
+  ["p4"]="git@github.com:Ehuntabi/p4.git"
   ["victronsolardisplayesp-multi-device_pantalla_3.5"]="git@github.com:Ehuntabi/victron-display-3.5-esp32-s3.git"
 )
 declare -A REPOS_HTTPS=(
-  ["victron"]="https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4.git"
+  ["p4"]="https://github.com/Ehuntabi/p4.git"
   ["victronsolardisplayesp-multi-device_pantalla_3.5"]="https://github.com/Ehuntabi/victron-display-3.5-esp32-s3.git"
 )
 
@@ -165,10 +165,10 @@ if ! grep -q "alias get_idf" ~/.bashrc; then
 
 # === Victron autocaravana setup (Claude 2026-06-16) ===
 alias get_idf='. $HOME/.espressif/esp-idf-5.5/export.sh'
-alias victron='cd ~/joint/victron && get_idf'
+alias p4='cd ~/joint/p4 && get_idf'
 alias pantalla='cd ~/joint/victronsolardisplayesp-multi-device_pantalla_3.5 && get_idf'
 EOF
-  ok "aliases anadidos a ~/.bashrc (get_idf, victron, pantalla)"
+  ok "aliases anadidos a ~/.bashrc (get_idf, p4, pantalla)"
   warn "Recargar bash: source ~/.bashrc o abrir terminal nueva"
 fi
 
@@ -180,7 +180,7 @@ if [ ${#FAILS[@]} -eq 0 ]; then
   echo ""
   echo "Empezar a trabajar:"
   echo "  source ~/.bashrc       # cargar aliases"
-  echo "  victron                # cd al proyecto + setup ESP-IDF"
+  echo "  p4                    # cd al proyecto + setup ESP-IDF"
   echo "  idf.py build           # build"
   echo "  idf.py -p /dev/ttyUSB0 flash monitor  # flash + serial monitor"
 else

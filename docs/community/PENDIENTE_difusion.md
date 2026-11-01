@@ -6,12 +6,12 @@
 
 ## Mis enlaces (ya públicos)
 
-- **Repo:** https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4
-- **Doc EN (para leer):** https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/blob/main/docs/community/NE185_NE187_RS485_protocol_EN.md
-- **Doc ES (para leer):** https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/blob/main/docs/community/NE185_NE187_RS485_protocolo_ES.md
-- **Textos de difusión:** https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/blob/main/docs/community/CONTRIB_outreach.md
-- **Raw EN (para gist / embeber):** https://raw.githubusercontent.com/Ehuntabi/victron-jc1060p470c-esp32p4/main/docs/community/NE185_NE187_RS485_protocol_EN.md
-- **Raw ES:** https://raw.githubusercontent.com/Ehuntabi/victron-jc1060p470c-esp32p4/main/docs/community/NE185_NE187_RS485_protocolo_ES.md
+- **Repo:** https://github.com/Ehuntabi/p4
+- **Doc EN (para leer):** https://github.com/Ehuntabi/p4/blob/main/docs/community/NE185_NE187_RS485_protocol_EN.md
+- **Doc ES (para leer):** https://github.com/Ehuntabi/p4/blob/main/docs/community/NE185_NE187_RS485_protocolo_ES.md
+- **Textos de difusión:** https://github.com/Ehuntabi/p4/blob/main/docs/community/CONTRIB_outreach.md
+- **Raw EN (para gist / embeber):** https://raw.githubusercontent.com/Ehuntabi/p4/main/docs/community/NE185_NE187_RS485_protocol_EN.md
+- **Raw ES:** https://raw.githubusercontent.com/Ehuntabi/p4/main/docs/community/NE185_NE187_RS485_protocolo_ES.md
 
 ## Checklist de publicación (5 min)
 

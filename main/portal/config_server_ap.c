@@ -7,6 +7,7 @@
  * parte pueda pararlo sin tocar sus estaticos directamente.
  */
 #include "config_server.h"
+#include "config_storage.h"   /* P4_SSID_FABRICA */
 #include "config_server_internal.h"
 #include "config_server_viaje.h"   /* viaje_flush_antes_de_reiniciar() */
 #include "ui/settings/restart_flush.h"   /* ui_flush_all_before_restart() */
@@ -909,7 +910,7 @@ esp_err_t wifi_ap_init(void)
     if (nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &h) == ESP_OK) {
         size_t sl = sizeof(ssid), pl = sizeof(pass);
         if (nvs_get_str(h, "ssid", ssid, &sl) != ESP_OK || sl <= 1) {
-            snprintf(ssid, sizeof(ssid), "%s", "VictronConfig");
+            snprintf(ssid, sizeof(ssid), "%s", P4_SSID_FABRICA);
             err = nvs_set_str(h, "ssid", ssid);
             if (err != ESP_OK) ESP_LOGW(TAG, "ssid por defecto no se pudo fijar en NVS: %s", esp_err_to_name(err));
         }

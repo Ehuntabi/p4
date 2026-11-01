@@ -4,7 +4,7 @@
 contra el código, después del arbitraje: ese día `destino_seguro()` cambió al
 criterio de la cabina (los tres separadores → `_`), y la tabla de vectores de
 abajo es la que sale HOY, no la que se quería. **Copia idéntica en los tres
-repos**: `victron/docs/`, `cabina5/docs/` y `35cabina/docs/`; se sincroniza a
+repos**: `p4/docs/`, `cabina5/docs/` y `35cabina/docs/`; se sincroniza a
 mano como `mini_proto.h`.)
 
 ## El problema

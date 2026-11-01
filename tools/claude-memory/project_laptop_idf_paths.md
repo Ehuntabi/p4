@@ -7,7 +7,7 @@ metadata:
   originSessionId: 5c9e46a5-ed43-43c5-b968-9a33b9e8eb45
 ---
 
-En el portatil de la autocaravana (usuario `db3`, repo en `/home/db3/joint/victron`)
+En el portatil de la autocaravana (usuario `db3`, repo en `/home/db3/joint/p4`)
 el entorno difiere de lo documentado en CLAUDE.md:
 
 - ESP-IDF v5.4.4 esta en `~/.espressif/esp-idf-5.4/export.sh` (NO en `~/esp/esp-idf`).
@@ -21,4 +21,4 @@ Setup que hubo que reparar una vez (2026-06-17, primer flash en este portatil):
   `python $IDF_PATH/tools/idf_tools.py install cmake ninja` (los baja a ~/.espressif/tools).
 
 Comando de flash que funciono: `idf.py -p /dev/ttyACM0 flash`.
-Relacionado: [[project_joint_autocaravana]], [[project_victron_esp_idf]].
+Relacionado: [[project_joint_autocaravana]], [[project_p4_esp_idf]].

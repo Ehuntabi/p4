@@ -2,7 +2,7 @@
 
 Guía **desde cero** para grabar el firmware en el display **Guition JC1060P470C_I** (ESP32-P4), aunque no hayas usado nunca una terminal. Tardarás unos 10 minutos.
 
-> Los ficheros de firmware se descargan de la página de **[Releases](https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/releases)** del proyecto.
+> Los ficheros de firmware se descargan de la página de **[Releases](https://github.com/Ehuntabi/p4/releases)** del proyecto.
 
 ### Antes de empezar: 4 palabras que van a salir
 
@@ -24,7 +24,7 @@ Guía **desde cero** para grabar el firmware en el display **Guition JC1060P470C
 
 ## Paso 1 — Descargar el firmware
 
-En la página de [Releases](https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/releases), abre la última versión y baja hasta la sección **Assets** (una lista plegable; si está cerrada, haz clic en **Assets** para abrirla). Descarga el fichero:
+En la página de [Releases](https://github.com/Ehuntabi/p4/releases), abre la última versión y baja hasta la sección **Assets** (una lista plegable; si está cerrada, haz clic en **Assets** para abrirla). Descarga el fichero:
 
 **`joint-spl-145-control-vX.Y-esp32p4-full.bin`**
 

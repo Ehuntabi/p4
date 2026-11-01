@@ -347,7 +347,7 @@ void create_about_settings_page(ui_state_t *ui, lv_obj_t *page)
     lv_obj_t *lbl_gh = lv_label_create(card3);
     lv_obj_set_style_text_font(lbl_gh, &lv_font_montserrat_20_es, 0);
     lv_obj_set_style_text_color(lbl_gh, UI_COLOR_TEXT_DIM, 0);
-    lv_label_set_text(lbl_gh, "github.com/Ehuntabi/victron-jc1060p470c-esp32p4");
+    lv_label_set_text(lbl_gh, "github.com/Ehuntabi/p4");
 
     lv_obj_t *lbl_cred = lv_label_create(card3);
     lv_obj_set_style_text_font(lbl_cred, &lv_font_montserrat_20_es, 0);

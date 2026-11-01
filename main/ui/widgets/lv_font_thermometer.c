@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 20 px
  * Bpp: 4
- * Opts: --font fa-solid.ttf -r 0xF2C9 --size 20 --format lvgl --bpp 4 -o /home/jc/victron/main/ui/lv_font_thermometer.c --no-compress
+ * Opts: --font fa-solid.ttf -r 0xF2C9 --size 20 --format lvgl --bpp 4 -o /home/jc/joint/p4/main/ui/lv_font_thermometer.c --no-compress
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE

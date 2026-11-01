@@ -7,7 +7,7 @@ metadata:
   originSessionId: 64ed8cac-6e51-4a9f-be24-926d3c876304
 ---
 
-El proyecto victron mantiene tags `sdkconfig-known-good-YYYY-MM-DD` en git que apuntan a estados de sdkconfig validados como funcionales en el HW del usuario (JD9165BA DSI + ESP32-P4 + PSRAM 200M). Antes de cualquier accion que pueda regenerar sdkconfig (build con IDF distinta, fullclean, menuconfig, etc.) hacer `git diff sdkconfig-known-good-<ultimo> -- sdkconfig` y revisar capabilities criticas.
+El proyecto p4 mantiene tags `sdkconfig-known-good-YYYY-MM-DD` en git que apuntan a estados de sdkconfig validados como funcionales en el HW del usuario (JD9165BA DSI + ESP32-P4 + PSRAM 200M). Antes de cualquier accion que pueda regenerar sdkconfig (build con IDF distinta, fullclean, menuconfig, etc.) hacer `git diff sdkconfig-known-good-<ultimo> -- sdkconfig` y revisar capabilities criticas.
 
 **Why:** El 2026-05-25 perdi 1+ hora reconstruyendo el setup tras un `fullclean` que regenero sdkconfig con valores incompatibles con el HW. El tag ya existia (`sdkconfig-known-good-2026-05-22`) y resolvio el problema cuando finalmente lo use. Habria evitado todo el desastre comparar PRIMERO.
 

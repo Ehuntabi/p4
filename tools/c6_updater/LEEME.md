@@ -37,7 +37,7 @@ cp ~/joint/firmware_radio/network_adapter_2.12.13.bin /media/<tu-lector>/network
 #     imagen de la radio en la particion ota_1, que es un hueco de 4 MB que no se
 #     usa mientras la placa arranca del ota_0. El modulo la lee de ahi, comprueba
 #     su crc y graba el C6. No hay que tocar la tarjeta.
-cd ~/joint/victron/tools/c6_updater
+cd ~/joint/p4/tools/c6_updater
 ./aplicar.sh flash-sin-sd
 
 # 2b. O con la SD (el camino de siempre): copia la imagen a la raiz de la SD y

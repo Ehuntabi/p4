@@ -1,4 +1,4 @@
-- [Victron + ESP-IDF 5.4.4 estricto](project_victron_esp_idf.md) — 5.4.4 obligatorio, capabilities DSI criticas
+- [P4 + ESP-IDF 5.4.4 estricto](project_p4_esp_idf.md) — 5.4.4 obligatorio, capabilities DSI criticas
 - [Protocolo NE187/NE185 RS-485](project_ne185_protocol.md) — cmd FF 4X overlay, polling 60ms, hold 2+ frames, checksum
 - [NE185 estado implementacion + hipotesis pendientes](project_ne185_implementation_status.md) — master mode v2, 8 hipotesis
 - [Revision estabilidad 2026-06](project_stability_review_2026-06.md) — #7 Rotar RESUELTO, pendiente solo #10 (DS18B20), modelo watchdog heartbeat

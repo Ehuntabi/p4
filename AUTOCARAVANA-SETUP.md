@@ -14,7 +14,7 @@ Para volver al estado de salida si rompes algo: `git checkout pre-autocaravana-2
 
 | Proyecto | Hardware | Target | Repo GitHub |
 |---|---|---|---|
-| `victron` (pantalla 7") | Guition JC1060P470C ESP32-P4 + C6 (SDIO) | esp32p4 | `Ehuntabi/victron-jc1060p470c-esp32p4` |
+| `victron` (pantalla 7") | Guition JC1060P470C ESP32-P4 + C6 (SDIO) | esp32p4 | `Ehuntabi/p4` |
 | `pantalla_3.5` | ESP32-S3 (display 3.5") | esp32s3 | `Ehuntabi/victron-display-3.5-esp32-s3` |
 
 ---
@@ -28,15 +28,15 @@ Tres opciones, en orden de facilidad:
 **A) Si tienes git+SSH key de GitHub configurada en el portátil:**
 ```bash
 cd ~
-git clone git@github.com:Ehuntabi/victron-jc1060p470c-esp32p4.git /tmp/victron-bootstrap
-bash /tmp/victron-bootstrap/tools/setup-autocaravana.sh
+git clone git@github.com:Ehuntabi/p4.git /tmp/p4-bootstrap
+bash /tmp/p4-bootstrap/tools/setup-autocaravana.sh
 ```
 
 **B) Si NO tienes SSH key de GitHub:**
 ```bash
 cd ~
-git clone https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4.git /tmp/victron-bootstrap
-bash /tmp/victron-bootstrap/tools/setup-autocaravana.sh
+git clone https://github.com/Ehuntabi/p4.git /tmp/p4-bootstrap
+bash /tmp/p4-bootstrap/tools/setup-autocaravana.sh
 ```
 
 **C) Si no tienes acceso a internet** (autocaravana sin wifi):
@@ -61,7 +61,7 @@ source ~/.bashrc        # cargar aliases nuevos
 
 Aliases creados:
 - `get_idf` → carga el entorno ESP-IDF en la shell actual
-- `victron` → cd al proyecto + get_idf
+- `p4` → cd al proyecto + get_idf
 - `pantalla` → cd a pantalla_3.5 + get_idf
 
 ---
@@ -71,7 +71,7 @@ Aliases creados:
 ### Workflow típico de cada proyecto:
 
 ```bash
-victron               # alias: cd ~/joint/victron + carga ESP-IDF
+victron               # alias: cd ~/joint/p4 + carga ESP-IDF
 idf.py build          # compilar
 idf.py -p /dev/ttyACM0 flash monitor   # flash + serial monitor
 # Ctrl+] para salir del monitor
@@ -150,7 +150,7 @@ el aviso. `mini_proto.h` ya lo daba por descartado.
 
 Sin pendientes activos según memoria.
 
-### Pendientes UI del repo `victron`:
+### Pendientes UI del repo `p4`:
 
 1. Debug rotación del salvapantallas (modo Rotar Live/Frigo/Batería cada N min)
 2. Aplicar cards a vistas Live: battery_monitor, solar_charger, simple, simple_devices
@@ -243,7 +243,7 @@ Si NO tienes wifi durante el viaje:
 ```bash
 # Crear paquete completo offline
 mkdir -p /tmp/viaje-autocaravana
-cp -r ~/joint/victron /tmp/viaje-autocaravana/
+cp -r ~/joint/p4 /tmp/viaje-autocaravana/
 cp -r ~/joint/victronsolardisplayesp-multi-device_pantalla_3.5 /tmp/viaje-autocaravana/
 cp -r ~/.espressif /tmp/viaje-autocaravana/dot-espressif
 # (~/.espressif sera 1-2 GB con todo el toolchain)
@@ -490,7 +490,7 @@ Si encuentras un bug serio que no sabes resolver:
 
 Cuando vuelvas al PC principal, retomar con:
 ```bash
-cd ~/joint/victron
+cd ~/joint/p4
 git fetch --all --tags
 git log --oneline -20             # ver commits del viaje
 git tag --list 'broken-*'         # tags de cosas que rompiste

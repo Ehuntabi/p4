@@ -2,7 +2,7 @@
  *
  * MANTENER SINCRONIZADO entre TRES proyectos, byte a byte (auditoria del
  * 27-oct-2026, X3: hay TRES copias y el CI las compara):
- *   - 7"       : ~/joint/victron/main/net/mini_proto.h
+ *   - 7"       : ~/joint/p4/main/net/mini_proto.h
  *   - 5"       : ~/joint/cabina5/main/net/mini_proto.h
  *   - 35cabina : ~/joint/35cabina/main/net/mini_proto.h
  *

@@ -15,7 +15,7 @@
 | Desarrollar: mapa del código, comandos, hardware / Develop: code map, commands, hardware | [`CLAUDE.md`](CLAUDE.md) |
 | Flujo multi-PC (sobremesa ↔ portátil) / Multi-PC dev workflow | [`docs/DESARROLLO.md`](docs/DESARROLLO.md) |
 | Referencia de hardware: pinouts, esquemáticos, protocolo NE185 / Hardware reference | [`docs/`](docs/) |
-| Historial de cambios por versión / Version changelog | [Releases de GitHub](https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4/releases) |
+| Historial de cambios por versión / Version changelog | [Releases de GitHub](https://github.com/Ehuntabi/p4/releases) |
 | Guía operativa para la autocaravana (uso interno, portátil) / Motorhome operations guide (internal) | [`AUTOCARAVANA-SETUP.md`](AUTOCARAVANA-SETUP.md) |
 
 ---
@@ -181,7 +181,8 @@ Páginas con cards de borde de color, dropdown scrollable cuando hay overflow, s
 - **v1.5.2**: la actualización OTA se reiniciaba a medias con cualquier versión, por contención de caché entre núcleos durante la escritura de flash (`spi_flash_op_block_func` bloqueando al núcleo que no escribe; si se alarga por carga concurrente, el TWDT lo detecta como colgado). `CONFIG_SPIRAM_XIP_FROM_PSRAM` mueve la ejecución del firmware a PSRAM para que ese bloqueo no le quite el código a ningún núcleo, más el margen del TWDT subido a 10 s.
 
 #### Portal web
-- AP `VictronConfig` automático al arrancar.
+- AP `P4Config` automático al arrancar (el nombre de fábrica; una placa que ya
+  tenga otro guardado sigue con el suyo hasta cambiarlo en Ajustes → Wi-Fi).
 - **Auto-off del servidor HTTP a los 15 min sin actividad** (peticiones, asociaciones o sondeos de un cliente; el AP **sigue emitiendo siempre**). No mira si queda alguien asociado: con un cliente callado, el portal se duerme igual (`AP_AUTO_OFF_MS` en `config_server_ap.c`).
   - Antes hacían falta **dos** clientes para mantenerlo vivo, porque el satélite viejo (el C6) estaba siempre asociado y solo *recibía* UDP. Con la 3,5" esa cuenta dejó de valer: ese satélite **habla por HTTP** para entregar los apuntes, y con el servidor apagado no podía. Como el auto-off solo se rearmaba con peticiones HTTP o con un cliente nuevo —y el satélite ya estaba asociado—, **la cola no se vaciaba nunca**: "N sin enviar" fijo en la cabina y `Connection reset by peer` al entregar, hasta reiniciar la P4 (24-ago-2026).
   - El ahorro se conserva: la 3,5" se apaga con el contacto, así que con el vehículo parado no queda nadie asociado y el portal se apaga igual.
@@ -212,8 +213,8 @@ Páginas con cards de borde de color, dropdown scrollable cuando hay overflow, s
 Requisitos: **ESP-IDF v5.5.5 exactamente**, target esp32p4 (es la que usan el CI, `release.sh` y los `.bin` publicados).
 
 ```bash
-git clone https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4
-cd victron-jc1060p470c-esp32p4
+git clone https://github.com/Ehuntabi/p4
+cd p4
 idf.py set-target esp32p4
 idf.py build
 scripts/grabar.sh /dev/ttyACM0   # graba lo PUBLICADO (y comprueba que lo esta)
@@ -221,7 +222,7 @@ scripts/grabar.sh /dev/ttyACM0   # graba lo PUBLICADO (y comprueba que lo esta)
 
 ### Configuración inicial
 
-1. Encender la pantalla — el AP Wi-Fi `VictronConfig` arranca automáticamente.
+1. Encender la pantalla — el AP Wi-Fi `P4Config` arranca automáticamente.
 2. Conectarse al AP desde móvil o PC y abrir `http://192.168.4.1` — por defecto se carga el **Dashboard**.
 3. Navegar a **Keys** (link superior) e introducir la MAC y clave AES de cada dispositivo Victron.
 4. Volver al Dashboard para ver los datos en vivo.
@@ -370,7 +371,8 @@ Pages with role-coloured cards, scrollbar visible on overflow, separators betwee
 - **v1.5.2**: Wi-Fi OTA updates kept restarting mid-upload on any version, due to cross-core cache contention during flash writes (`spi_flash_op_block_func` blocks the core not writing; if that stretches out under concurrent load, the TWDT sees it as hung). `CONFIG_SPIRAM_XIP_FROM_PSRAM` moves firmware execution to PSRAM so that block no longer starves either core of code to run, plus the TWDT margin raised to 10 s.
 
 #### Web portal
-- `VictronConfig` AP starts automatically on boot.
+- `P4Config` AP starts automatically on boot (factory name; a board that already
+  has another one stored keeps it until it is changed in Settings → Wi-Fi).
 - **HTTP server auto-off after 15 min without activity** (requests, associations or client probes; the **AP itself never stops**). It does not check whether a client is still associated: an idle client does not keep it awake (`AP_AUTO_OFF_MS` in `config_server_ap.c`).
   - It used to require **two** clients to stay alive, because the old satellite (the C6) was always associated and only *received* UDP. That no longer holds with the 3.5": this satellite **speaks HTTP** to deliver trip notes, and with the server off it couldn't. Since auto-off was only re-armed by HTTP requests or by a *new* client — and the satellite was already associated — **the queue never drained**: a permanent "N sin enviar" in the cabin and `Connection reset by peer` on delivery, until the P4 was rebooted (2026-08-24).
   - Power saving is preserved: the 3.5" powers off with the ignition, so with the vehicle parked nobody is associated and the portal shuts down as before.
@@ -401,8 +403,8 @@ Pages with role-coloured cards, scrollbar visible on overflow, separators betwee
 Requirements: **ESP-IDF v5.5.5 exactly**, target esp32p4 (the one used by CI, `release.sh` and the published `.bin`s).
 
 ```bash
-git clone https://github.com/Ehuntabi/victron-jc1060p470c-esp32p4
-cd victron-jc1060p470c-esp32p4
+git clone https://github.com/Ehuntabi/p4
+cd p4
 idf.py set-target esp32p4
 idf.py build
 scripts/grabar.sh /dev/ttyACM0   # graba lo PUBLICADO (y comprueba que lo esta)
@@ -410,7 +412,7 @@ scripts/grabar.sh /dev/ttyACM0   # graba lo PUBLICADO (y comprueba que lo esta)
 
 ### First-time setup
 
-1. Power on the display — the `VictronConfig` Wi-Fi AP starts automatically.
+1. Power on the display — the `P4Config` Wi-Fi AP starts automatically.
 2. Connect to the AP from your phone or PC and open `http://192.168.4.1` — the **Dashboard** loads by default.
 3. Click **Keys** in the top nav and enter the MAC and AES key for each Victron device.
 4. Back to Dashboard to see live data.

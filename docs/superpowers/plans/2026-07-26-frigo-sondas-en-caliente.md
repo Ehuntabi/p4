@@ -211,7 +211,7 @@ int main(void)
 - [ ] **Step 3: Ejecutar el test y comprobar que NO compila**
 
 ```bash
-cd /home/jc/joint/victron/components/frigo
+cd /home/jc/joint/p4/components/frigo
 gcc -I. frigo_sondas.c test/test_frigo_sondas.c -o /tmp/tfs
 ```
 
@@ -290,7 +290,7 @@ uint8_t frigo_sondas_evento(uint8_t flags_antes, uint8_t flags_ahora)
 - [ ] **Step 5: Ejecutar el test y comprobar que pasa**
 
 ```bash
-cd /home/jc/joint/victron/components/frigo
+cd /home/jc/joint/p4/components/frigo
 gcc -Wall -Wextra -I. frigo_sondas.c test/test_frigo_sondas.c -o /tmp/tfs && /tmp/tfs
 ```
 
@@ -305,7 +305,7 @@ En `components/frigo/CMakeLists.txt`, cambiar la línea de `SRCS`:
 ```
 
 ```bash
-cd /home/jc/joint/victron && . ~/.espressif/esp-idf-5.4/export.sh && idf.py build
+cd /home/jc/joint/p4 && . ~/.espressif/esp-idf-5.4/export.sh && idf.py build
 ```
 
 Esperado: `Project build complete`.
@@ -313,7 +313,7 @@ Esperado: `Project build complete`.
 - [ ] **Step 7: Commit**
 
 ```bash
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 git add components/frigo/frigo_sondas.c components/frigo/frigo_sondas.h \
         components/frigo/test/test_frigo_sondas.c components/frigo/CMakeLists.txt
 git commit -m "feat(frigo): logica pura de resolucion de sondas por numero de serie"
@@ -623,7 +623,7 @@ Y llamar a `nvs_save()` como ya se hace.
 - [ ] **Step 8: Compilar**
 
 ```bash
-cd /home/jc/joint/victron && . ~/.espressif/esp-idf-5.4/export.sh && idf.py build
+cd /home/jc/joint/p4 && . ~/.espressif/esp-idf-5.4/export.sh && idf.py build
 ```
 
 Esperado: `Project build complete`. Los únicos avisos aceptables son los tres previos de `main` (`ap_netif`, un `strncpy` y un `snprintf` de datalogger).
@@ -631,7 +631,7 @@ Esperado: `Project build complete`. Los únicos avisos aceptables son los tres p
 - [ ] **Step 9: Commit**
 
 ```bash
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 git add components/frigo/frigo.c components/frigo/frigo.h
 git commit -m "feat(frigo): reescaneo del bus 1-Wire bajo peticion y cada 5 minutos"
 ```
@@ -792,7 +792,7 @@ Donde hoy se hace `lv_dropdown_set_selected(s_dd_aletas, st->assignment[FRIGO_SL
 - [ ] **Step 5: Compilar**
 
 ```bash
-cd /home/jc/joint/victron && . ~/.espressif/esp-idf-5.4/export.sh && idf.py build
+cd /home/jc/joint/p4 && . ~/.espressif/esp-idf-5.4/export.sh && idf.py build
 ```
 
 Esperado: `Project build complete`.
@@ -800,7 +800,7 @@ Esperado: `Project build complete`.
 - [ ] **Step 6: Commit**
 
 ```bash
-cd /home/jc/joint/victron
+cd /home/jc/joint/p4
 git add main/ui/frigo_panel.c
 git commit -m "feat(frigo): boton Buscar sondas y aviso al cambiar el conjunto"
 ```

@@ -100,7 +100,7 @@ esp_err_t load_wifi_config(char *ssid_out, size_t *ssid_len,
     err = nvs_get_str(h, "ssid", ssid_out, ssid_len);
     if (err != ESP_OK) {
         // default SSID
-        const char *d = "VictronConfig";
+        const char *d = P4_SSID_FABRICA;   /* ver config_storage.h */
         size_t dlen = strlen(d) + 1;
         if (*ssid_len >= dlen) memcpy(ssid_out, d, dlen);
         *ssid_len = dlen;

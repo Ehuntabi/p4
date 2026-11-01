@@ -44,6 +44,22 @@ esp_err_t save_screensaver_settings(bool enabled, uint8_t brightness, uint16_t t
 esp_err_t load_screensaver_mode(uint8_t *mode_out, uint8_t *rotate_period_min_out);
 esp_err_t save_screensaver_mode(uint8_t mode, uint8_t rotate_period_min);
 
+/* NOMBRE DE FABRICA DEL AP (01-nov-2026).
+ *
+ * El proyecto ya no se llama "victron": eso es UNA parte de lo que lleva
+ * dentro (la integracion Victron: BLE, productos, claves). La placa es la
+ * P4, y las otras dos pantallas se llaman por lo que son (cabina5,
+ * 35cabina). El nombre viejo era "VictronConfig".
+ *
+ * CAMBIO SIN DEJAR A NADIE TIRADO: esto solo es el valor de FABRICA, el que
+ * se escribe en NVS cuando esa clave no existe. Una placa ya instalada
+ * sigue anunciandose con el nombre que tenga guardado (todas: "VictronConfig")
+ * hasta que se cambie a mano en Ajustes -> Wi-Fi. Eso se hace cuando las dos
+ * cabinas lleven la version que prueba los dos nombres (ver WIFI_SSID_* en
+ * el main/net/udp_rx.c de las cabinas), no antes: una cabina que no encuentre
+ * el AP se queda sin telemetria ni OTA, y hay dos en la autocaravana. */
+#define P4_SSID_FABRICA  "P4Config"
+
 // Wi‑Fi AP settings handling (NVS namespace: "wifi")
 // ssid_out and pass_out must have space for ssid_len and pass_len, respectively.
 // On return, *ssid_len and *pass_len are set to the actual string lengths (including null).

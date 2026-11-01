@@ -3,7 +3,7 @@
 # Capacidades de camara (SC2336) — Hito 1: camara viva + auto-brillo
 
 Fecha: 2026-06-29
-Proyecto: victron-jc1060p470c-esp32p4 (Guition JC1060P470C_I_W, ESP32-P4)
+Proyecto: p4 (Guition JC1060P470C_I_W, ESP32-P4)
 Estado: diseno aprobado, pendiente de revision antes del plan.
 
 ## 0. Vision y roadmap

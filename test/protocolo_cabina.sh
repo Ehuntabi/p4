@@ -29,7 +29,7 @@ fallos=0
 ok()   { printf '  [ok] %s\n' "$*"; }
 mal()  { printf '  [!!] %s\n' "$*"; fallos=$((fallos + 1)); }
 
-[ -d "$VICT" ] || { echo "ERROR: no encuentro el repo victron en $VICT"; exit 2; }
+[ -d "$VICT" ] || { echo "ERROR: no encuentro el repo p4 en $VICT"; exit 2; }
 [ -n "$CAB" ] && [ -d "$CAB" ] || { echo "ERROR: no encuentro el repo 35cabina (pasalo como 2o argumento)"; exit 2; }
 
 echo "== 1. El protocolo UDP es el mismo en las dos placas =="

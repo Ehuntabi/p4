@@ -123,7 +123,7 @@ Tras el hold, volver a `FF 40` durante al menos 2 frames (release) antes de acep
 
 ## How to apply
 
-- Codigo de referencia: `/home/jc/victron/main/ne185/ne185.c` (refactor 2026-05-26)
+- Codigo de referencia: `/home/jc/joint/p4/main/ne185/ne185.c` (refactor 2026-05-26)
 - Si surge confusion sobre que cmd usar, mirar comentarios al principio del archivo
 - Si aparecen bytes nuevos o tramas con valores fuera del rango esperado, activar `ne185_set_sniffer_tx(true)` para ver hex de cada RX
 - Validaciones realizadas 2026-05-26 (user confirma estado real autocaravana):
