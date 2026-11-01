@@ -188,6 +188,12 @@ if grep -q "alias victron=" ~/.bashrc; then
   sed -i "s|^alias victron=.*|alias p4='cd ~/joint/p4 \&\& get_idf'|" ~/.bashrc
   ok "alias viejo 'victron' sustituido por 'p4' en ~/.bashrc"
 fi
+# Y el "pantalla" viejo apuntaba al fork de la 3,5" que ya no existe: si esta,
+# se cambia por los dos alias de verdad.
+if grep -q "alias pantalla=" ~/.bashrc; then
+  sed -i "s|^alias pantalla=.*|alias 35cabina='cd ~/joint/35cabina \&\& get_idf'|" ~/.bashrc
+  ok "alias viejo 'pantalla' sustituido por '35cabina' en ~/.bashrc"
+fi
 
 # -----------------------------------------------------------------------------
 step "7. RESUMEN"

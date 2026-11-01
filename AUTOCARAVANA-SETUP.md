@@ -62,8 +62,9 @@ source ~/.bashrc        # cargar aliases nuevos
 
 Aliases creados:
 - `get_idf` → carga el entorno ESP-IDF en la shell actual
-- `p4` → cd al proyecto + get_idf
-- `pantalla` → cd a pantalla_3.5 + get_idf
+- `p4` → cd al proyecto de la P4 + get_idf
+- `cabina5` → cd a la pantalla de 5" + get_idf
+- `35cabina` → cd a la pantalla de 3,5" + get_idf
 
 ---
 

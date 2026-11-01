@@ -11,7 +11,7 @@ metadata:
 
 ```
 ~/joint/
-├── victron/                                                  # Pantalla 7" ESP32-P4+C6 (activo, principal)
+├── p4/                                                  # Pantalla 7" ESP32-P4+C6 (activo, principal)
 ├── victronsolardisplayesp-multi-device_pantalla_3.5/         # Pantalla 3.5" ESP32-S3 (funciona OK Orion)
 ├── analizador_logico_centralita/                             # Trabajo con analizador logico centralita
 ├── control_luz_armario/                                      # Control luz interior
