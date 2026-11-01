@@ -392,7 +392,7 @@ echo "=== 9. mini_proto.h igual en los dos repos (si esta al lado) ==="
 # que el cambio del P4: el protocolo se sincroniza A MANO.
 if [ -f ../35cabina/main/net/mini_proto.h ]; then
     diff -q main/net/mini_proto.h ../35cabina/main/net/mini_proto.h >/dev/null 2>&1 \
-        && ok "mini_proto.h identico en victron y 35cabina" \
+        && ok "mini_proto.h identico en p4 y 35cabina" \
         || mal "mini_proto.h DISTINTO entre los dos repos (sincronizar a mano)"
 else
     echo "  (sin el repo de la cabina al lado: se omite)"

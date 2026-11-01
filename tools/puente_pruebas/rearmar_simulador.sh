@@ -13,6 +13,8 @@ sys.path.insert(0,'.')
 from puente import Puente
 p = Puente(); p.sincronizar()
 print("[1] puente reiniciado y consola lista", flush=True)
+# SSID = el que tenga la placa en su NVS ("VictronConfig" en las instaladas,
+# "P4Config" en una nueva de fabrica).
 p.esperar_ok("wifista VictronConfig 58xc6xfknk", veces=2, espera=25)
 print("[2] asociado al AP de la P4", flush=True)
 devs=[d for d in json.load(open("/tmp/devices_victron.json")) if d.get("nombre")][:3]

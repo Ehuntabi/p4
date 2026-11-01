@@ -74,13 +74,20 @@ step "3. Clonar/actualizar los repos joint"
 mkdir -p "$JOINT_DIR"
 cd "$JOINT_DIR"
 
+# Las tres pantallas y la app. Los nombres son los de las carpetas en ~/joint
+# (01-nov-2026: la P4 ya no se llama "victron", y la 3,5" es 35cabina, no el
+# fork viejo victronsolardisplayesp-multi-device_pantalla_3.5, que ya no existe).
 declare -A REPOS_SSH=(
   ["p4"]="git@github.com:Ehuntabi/p4.git"
-  ["victronsolardisplayesp-multi-device_pantalla_3.5"]="git@github.com:Ehuntabi/victron-display-3.5-esp32-s3.git"
+  ["cabina5"]="git@github.com:Ehuntabi/cabina5.git"
+  ["35cabina"]="git@github.com:Ehuntabi/35cabina.git"
+  ["victron-app"]="git@github.com:Ehuntabi/victron-app.git"
 )
 declare -A REPOS_HTTPS=(
   ["p4"]="https://github.com/Ehuntabi/p4.git"
-  ["victronsolardisplayesp-multi-device_pantalla_3.5"]="https://github.com/Ehuntabi/victron-display-3.5-esp32-s3.git"
+  ["cabina5"]="https://github.com/Ehuntabi/cabina5.git"
+  ["35cabina"]="https://github.com/Ehuntabi/35cabina.git"
+  ["victron-app"]="https://github.com/Ehuntabi/victron-app.git"
 )
 
 for name in "${!REPOS_SSH[@]}"; do
@@ -160,16 +167,26 @@ ls -la /dev/ttyUSB* /dev/ttyACM* 2>/dev/null || echo "  (ningun puerto serie - c
 # -----------------------------------------------------------------------------
 step "6. Anadir alias util a ~/.bashrc"
 
-if ! grep -q "alias get_idf" ~/.bashrc; then
+# El guard mira el alias NUEVO, no get_idf (revision del 01-nov-2026): un
+# portatil que ya ejecuto el setup viejo tiene get_idf y "alias victron", y con
+# el guard anterior NUNCA recibia "alias p4".
+if ! grep -q "alias p4=" ~/.bashrc; then
   cat >> ~/.bashrc <<'EOF'
 
-# === Victron autocaravana setup (Claude 2026-06-16) ===
+# === joint autocaravana setup (Claude 2026-06-16, renombrado 2026-11-01) ===
 alias get_idf='. $HOME/.espressif/esp-idf-5.5/export.sh'
 alias p4='cd ~/joint/p4 && get_idf'
-alias pantalla='cd ~/joint/victronsolardisplayesp-multi-device_pantalla_3.5 && get_idf'
+alias cabina5='cd ~/joint/cabina5 && get_idf'
+alias 35cabina='cd ~/joint/35cabina && get_idf'
 EOF
-  ok "aliases anadidos a ~/.bashrc (get_idf, p4, pantalla)"
+  ok "aliases anadidos a ~/.bashrc (get_idf, p4, cabina5, 35cabina)"
   warn "Recargar bash: source ~/.bashrc o abrir terminal nueva"
+fi
+# El alias viejo (victron -> ~/joint/victron) apunta a una carpeta que ya no
+# existe: si esta, se cambia por el nuevo para no dejar una trampa.
+if grep -q "alias victron=" ~/.bashrc; then
+  sed -i "s|^alias victron=.*|alias p4='cd ~/joint/p4 \&\& get_idf'|" ~/.bashrc
+  ok "alias viejo 'victron' sustituido por 'p4' en ~/.bashrc"
 fi
 
 # -----------------------------------------------------------------------------

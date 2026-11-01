@@ -25,7 +25,9 @@ idf.py -p /dev/ttyACM1 flash   # ¡ojo al puerto, que la P4 es otro!
 # 2. Mandarle órdenes desde el PC
 python3 puente.py status
 python3 puente.py "wifiscan"
-python3 puente.py "wifista P4Config <clave del AP>"     # o el nombre que tenga la P4 en su NVS
+# El SSID es el que tenga la placa en su NVS: "VictronConfig" en las ya
+# instaladas, "P4Config" en una nueva de fabrica (desde la v4.69).
+python3 puente.py "wifista P4Config <clave del AP>"
 python3 puente.py "httpget http://192.168.4.1/"
 ```
 

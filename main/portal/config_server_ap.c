@@ -1084,7 +1084,7 @@ esp_err_t wifi_ap_init(void)
          * y se arreglo grabandomelo; (2) el host y el C6 NO van emparejados: con
          * el host nuevo (2.12.13) y un C6 viejo el AP sale bien pero el BLE no
          * arranca, asi que ese caso se detecta antes por el BLE. El
-         * procedimiento de grabado esta en victron/tools/c6_updater/LEEME.md. */
+         * procedimiento de grabado esta en tools/c6_updater/LEEME.md. */
         if (strcmp((const char *)leida.ap.ssid, ssid) != 0) {
             ESP_LOGW(TAG, "El AP NO se llama '%s' sino '%s': el C6 esta ignorando "
                           "la configuracion (firmware de fabrica). Es el nombre que "

@@ -179,6 +179,8 @@ def main():
         mandar(orden_ble)
         mandar("sim ritmo 50")
         mandar("sim caos on")
+        # El SSID es el que tenga LA PLACA en su NVS: las instaladas siguen
+        # anunciandose como "VictronConfig" (una nueva de fabrica, "P4Config").
         mandar(f"sat VictronConfig {AP_CLAVE} victron {PORTAL_CLAVE}")
 
     armar()
