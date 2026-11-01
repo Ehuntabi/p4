@@ -125,6 +125,14 @@ static void cfg_srv_ap_stop_idempotent(void *arg, esp_event_base_t base,
  * temporizador caduca como pretendemos. */
 #define AP_AUTO_OFF_MS  (15 * 60 * 1000)
 static esp_timer_handle_t s_ap_off_timer = NULL;
+static void ap_off_timer_arm(void);   /* fwd: la usa el auto-off antes de definirse */
+
+/* CUANTOS CLIENTES HAY ASOCIADOS AHORA (29-oct-2026). Se lleva por EVENTOS y no
+ * preguntando a la radio: esp_wifi_ap_get_sta_list() es un RPC al C6 por SDIO y
+ * ap_auto_off_cb corre en la tarea de esp_timer, donde bloquear paraliza TODOS
+ * los timers (incluido el feed de 1 s del excedente solar, que abre el rele del
+ * frigo si se queda sin refresco 3 s -- ver el comentario de abajo). */
+static volatile int s_clientes_asociados = 0;
 
 /* ── Ciclo de vida del portal/AP: UNA cola, UNA tarea ───────────────────────
  *
@@ -276,6 +284,22 @@ static void ap_auto_off_cb(void *arg)
 {
     (void)arg;
     if (!config_server_is_running()) return;   /* ya parado */
+    /* CON UN CLIENTE ASOCIADO, NO SE DUERME (29-oct-2026). El temporizador solo
+     * se rearmaba al ASOCIARSE alguien, asi que una cabina que se conecta y se
+     * queda quieta dejaba de rearmarlo: a los 15 min el portal se apagaba CON LA
+     * CABINA DENTRO, y entonces sus apuntes y su consulta de actualizacion se
+     * encontraban el puerto cerrado sin que nadie lo despertara (los avisos que
+     * lo despiertan son el probe request del movil y una asociacion NUEVA, y la
+     * cabina ya estaba asociada). El comentario de la desconexion ya decia que
+     * "si aun quedan clientes, ap_auto_off_cb volvera a rearmar": ahora es
+     * verdad. Se sigue durmiendo cuando no queda nadie, que es lo que se queria
+     * ahorrar. */
+    if (s_clientes_asociados > 0) {
+        ESP_LOGI(TAG, "auto-off: %d cliente(s) dentro, el portal sigue despierto",
+                 s_clientes_asociados);
+        ap_off_timer_arm();
+        return;
+    }
     /* Nada bloqueante en la tarea esp_timer: esp_wifi_ap_get_sta_list es un RPC al
      * C6 por SDIO y httpd_stop espera a que salga la tarea httpd (hasta
      * send_wait_timeout = 30 s si hay una descarga en vuelo). Bloquear aqui
@@ -681,6 +705,7 @@ static void cfg_srv_ap_sta_connected(void *arg, esp_event_base_t base,
      * arranque, no llamandolo aqui: config_server_start monta SPIFFS y lee NVS,
      * y esto corre en la tarea de eventos del sistema. */
     if (!config_server_is_running()) cfg_job_post(CFG_JOB_START);
+    s_clientes_asociados++;
     ap_off_timer_arm();
 }
 static void cfg_srv_ap_sta_disconnected(void *arg, esp_event_base_t base,
@@ -692,7 +717,9 @@ static void cfg_srv_ap_sta_disconnected(void *arg, esp_event_base_t base,
              e->aid);
     /* Al irse un cliente reiniciamos la cuenta atras del auto-off: si era el
      * ultimo, el portal se apagara 15 min despues (ahorro cuando no hay nadie).
-     * Si aun quedan clientes, ap_auto_off_cb volvera a rearmar al caducar. */
+     * Si aun quedan clientes, ap_auto_off_cb volvera a rearmar al caducar (ahora
+     * de verdad: mira s_clientes_asociados). */
+    if (s_clientes_asociados > 0) s_clientes_asociados--;
     ap_off_timer_arm();
 }
 static void cfg_srv_ap_probe_req(void *arg, esp_event_base_t base,
