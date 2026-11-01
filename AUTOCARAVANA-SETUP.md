@@ -14,8 +14,9 @@ Para volver al estado de salida si rompes algo: `git checkout pre-autocaravana-2
 
 | Proyecto | Hardware | Target | Repo GitHub |
 |---|---|---|---|
-| `victron` (pantalla 7") | Guition JC1060P470C ESP32-P4 + C6 (SDIO) | esp32p4 | `Ehuntabi/p4` |
-| `pantalla_3.5` | ESP32-S3 (display 3.5") | esp32s3 | `Ehuntabi/victron-display-3.5-esp32-s3` |
+| `p4` (pantalla 7") | Guition JC1060P470C ESP32-P4 + C6 (SDIO) | esp32p4 | `Ehuntabi/p4` |
+| `35cabina` (pantalla 3,5") | ESP32-S3 (display 3.5") | esp32s3 | `Ehuntabi/35cabina` |
+| `cabina5` (pantalla 5") | ESP32-S3 (display 5") | esp32s3 | `Ehuntabi/cabina5` |
 
 ---
 
@@ -71,21 +72,21 @@ Aliases creados:
 ### Workflow típico de cada proyecto:
 
 ```bash
-victron               # alias: cd ~/joint/p4 + carga ESP-IDF
+p4                    # alias: cd ~/joint/p4 + carga ESP-IDF
 idf.py build          # compilar
 idf.py -p /dev/ttyACM0 flash monitor   # flash + serial monitor
 # Ctrl+] para salir del monitor
 ```
 
 **Importante puerto serie**:
-- ESP32-P4 (victron): suele aparecer como `/dev/ttyACM0` o `/dev/ttyACM1`
+- ESP32-P4 (p4): suele aparecer como `/dev/ttyACM0` o `/dev/ttyACM1`
 - ESP32-C6/S3 (mini, pantalla): suele aparecer como `/dev/ttyUSB0` (USB-Serial CP210x)
 - Para detectar: `ls /dev/ttyUSB* /dev/ttyACM*` antes y después de conectar el cable
 
 ### Flujo de trabajo: hago un cambio → flasheo → pruebo
 
 ```bash
-victron
+p4
 # editar código
 scripts/grabar.sh        # compila y graba SOLO si lo que se graba esta publicado
 idf.py monitor           # el log, aparte (grabar.sh no abre el monitor)
@@ -106,7 +107,7 @@ get_idf      # alias que ejecuta . ~/.espressif/esp-idf-5.5/export.sh
 
 ## 3. Estado actual de cada proyecto (qué probar primero)
 
-### 3.1 `victron` (pantalla 7" ESP32-P4) — el principal
+### 3.1 `p4` (pantalla 7" ESP32-P4) — el principal
 
 **Hardware en autocaravana**: pantalla DSI 1024x600, conectada al sistema RS-485 NE185.
 
@@ -244,7 +245,7 @@ Si NO tienes wifi durante el viaje:
 # Crear paquete completo offline
 mkdir -p /tmp/viaje-autocaravana
 cp -r ~/joint/p4 /tmp/viaje-autocaravana/
-cp -r ~/joint/victronsolardisplayesp-multi-device_pantalla_3.5 /tmp/viaje-autocaravana/
+cp -r ~/joint/35cabina /tmp/viaje-autocaravana/
 cp -r ~/.espressif /tmp/viaje-autocaravana/dot-espressif
 # (~/.espressif sera 1-2 GB con todo el toolchain)
 tar czf /tmp/viaje.tar.gz -C /tmp viaje-autocaravana
@@ -439,7 +440,7 @@ Tipos: `feat`, `fix`, `refactor`, `docs`, `chore`, `diag` (diagnostic logging), 
 ## 9. Notas hardware/conexiones
 
 ### 9.1 Cable serie para flashear
-- ESP32-P4 (victron): USB-C directo. Puerto `/dev/ttyACM*` (CDC nativo)
+- ESP32-P4 (p4): USB-C directo. Puerto `/dev/ttyACM*` (CDC nativo)
 - ESP32-S3 (pantalla_3.5): igual que P4, USB-C directo. Puerto `/dev/ttyACM*` o `/dev/ttyUSB*` según hardware
 
 ### 9.2 Si el ESP no entra en modo flash automaticamente
@@ -472,7 +473,7 @@ Si encuentras un bug serio que no sabes resolver:
 
 ## 11. Checklist rápido pre-viaje (hacer hoy desde el PC principal)
 
-- [x] Commit + push 17 commits pendientes en `victron`
+- [x] Commit + push 17 commits pendientes en `p4`
 - [x] Tag `pre-autocaravana-2026-06-16` en los repos activos
 - [x] Script `tools/setup-autocaravana.sh` creado
 - [x] Documento `AUTOCARAVANA-SETUP.md` (este) creado
