@@ -427,7 +427,11 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_t *c4_title = lv_label_create(card4);
     lv_obj_set_style_text_font(c4_title, &lv_font_montserrat_24_es, 0);
     lv_obj_set_style_text_color(c4_title, UI_COLOR_GREEN, 0);
-    lv_label_set_text(c4_title, LV_SYMBOL_SETTINGS "  Acceso a Actualizar y Claves");
+    /* El dueno (02-nov-2026): "la P4 solo tiene punto de acceso y otro usuario
+     * y clave para lo demas". Es verdad: en su placa hay UNA pareja. El titulo
+     * anterior ("Acceso a Actualizar y Claves") parecia anunciar una tercera
+     * cosa; ahora dice lo que es: la clave de todo, y la segunda es opcional. */
+    lv_label_set_text(c4_title, LV_SYMBOL_SETTINGS "  Usuario y clave (la de todo)");
     ui_card_wrap_title(card4, c4_title, UI_COLOR_GREEN);
 
     lv_obj_t *c4_user = lv_label_create(card4);
@@ -486,8 +490,8 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
                                         adm_pass, sizeof(adm_pass));
     s_c4_adm_lbl = lv_label_create(card4);
     lv_obj_set_style_text_font(s_c4_adm_lbl, &lv_font_montserrat_20_es, 0);
-    lv_label_set_text_fmt(s_c4_adm_lbl, "Admin (Actualizar/Claves):  %s",
-                          adm_pass[0] ? adm_pass : "(las de arriba)");
+    lv_label_set_text_fmt(s_c4_adm_lbl, "Administracion (opcional):  %s",
+                          adm_pass[0] ? adm_pass : "no hay: vale la de arriba");
 
     lv_obj_t *c4_btn_admin = lv_btn_create(card4);
     lv_obj_set_width(c4_btn_admin, lv_pct(100));
@@ -495,7 +499,7 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_t *c4_lbl_admin = lv_label_create(c4_btn_admin);
     lv_obj_set_style_text_font(c4_lbl_admin, &lv_font_montserrat_20_es, 0);
     lv_obj_set_style_text_color(c4_lbl_admin, UI_COLOR_BG, 0);
-    lv_label_set_text(c4_lbl_admin, LV_SYMBOL_SETTINGS "  Clave de administracion");
+    lv_label_set_text(c4_lbl_admin, LV_SYMBOL_SETTINGS "  Crear clave de administracion (opcional)");
     lv_obj_center(c4_lbl_admin);
     lv_obj_add_event_cb(c4_btn_admin, generar_clave_admin_cb, LV_EVENT_CLICKED, NULL);
 
@@ -510,9 +514,13 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_add_event_cb(c4_btn_nueva, generar_clave_portal_cb, LV_EVENT_CLICKED, NULL);
 
     lv_label_set_text(c4_hint,
-                      "La web, la app del movil y Actualizar (/ota) piden este usuario y "
-                      "clave, y se leen aqui. Ojo: la web va por HTTP sin cifrar, "
-                      "protegida solo por la clave Wi-Fi de arriba, no por esta.");
+                      "El usuario y la clave de arriba los pide TODO: la web, la app, "
+                      "las pantallas y tambien Actualizar. La clave de administracion es "
+                      "OPCIONAL: solo hace falta si quieres una llave aparte para las "
+                      "tres cosas que pueden dejar la placa inservible (grabar firmware, "
+                      "las claves de los Victron y /save). Mientras no la crees, vale la "
+                      "de arriba.\n\nOjo: la web va por HTTP sin cifrar, protegida solo "
+                      "por la clave Wi-Fi, no por estas.");
 
     /* Igualar la altura de la card de ACCESO (la que va al lado) a la de "Punto de
      * acceso" (la mas alta) para que ambas queden simetricas lado a lado. */
@@ -580,7 +588,7 @@ static void clave_admin_nueva_do(void)
         return;
     }
     if (s_c4_adm_lbl)
-        lv_label_set_text_fmt(s_c4_adm_lbl, "Admin (Actualizar/Claves):  %s", nueva);
+        lv_label_set_text_fmt(s_c4_adm_lbl, "Administracion (opcional):  %s", nueva);
     char msg[460];
     snprintf(msg, sizeof(msg),
              "Usuario:  %s\nClave de ADMINISTRACION:  %s\n\n"
