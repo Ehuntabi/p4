@@ -913,6 +913,22 @@ esp_err_t wifi_ap_init(void)
             snprintf(ssid, sizeof(ssid), "%s", P4_SSID_FABRICA);
             err = nvs_set_str(h, "ssid", ssid);
             if (err != ESP_OK) ESP_LOGW(TAG, "ssid por defecto no se pudo fijar en NVS: %s", esp_err_to_name(err));
+        } else if (strcmp(ssid, "VictronConfig") == 0) {
+            /* ── MIGRACION DEL NOMBRE DEL AP (02-nov-2026) ────────────────────
+             * El AP de fabrica era "VictronConfig" y pasa a "P4Config" (el
+             * proyecto ya no se llama victron). Se renombra UNA vez, y solo si
+             * sigue siendo exactamente el viejo: si el dueno le puso un nombre
+             * propio, se respeta.
+             *
+             * La clave NO se toca. Las dos cabinas ya llevan la version que
+             * prueba los dos nombres (buscan el otro solo si el suyo no aparece
+             * en el escaneo), asi que se recolocan solas; el movil del dueno
+             * tiene que volver a unirse a la red nueva con la misma clave. */
+            snprintf(ssid, sizeof(ssid), "%s", P4_SSID_FABRICA);
+            err = nvs_set_str(h, "ssid", ssid);
+            if (err != ESP_OK) ESP_LOGW(TAG, "migracion del nombre del AP no persistio: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "nombre del AP migrado 'VictronConfig' -> '%s' (las cabinas "
+                          "prueban los dos; el movil hay que volver a unirlo)", ssid);
         }
         /* La clave la deja lista config_server_ensure_ap_password(), que corre
          * antes de la UI (ver alli el porque). Aqui solo se lee. */
