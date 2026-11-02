@@ -671,8 +671,27 @@ static void ap_off_timer_ensure(void)
     if (err != ESP_OK) ESP_LOGW(TAG, "timer ap_auto_off no se creo: %s", esp_err_to_name(err));
 }
 
+/* ── EL PORTAL YA NO SE DUERME NUNCA (02-nov-2026) ─────────────────────────
+ *
+ * El dueno: "el problema creo que es que la P4 apaga el portal si no se usa...
+ * la que se apaga es la de 5, la P4 esta siempre encendida en un viaje".
+ *
+ * El ahorro no existia: se apagaba el SERVIDOR WEB (no la Wi-Fi: el AP y la
+ * telemetria UDP siguen), y la P4 esta alimentada de la bateria de la
+ * autocaravana todo el viaje. Lo que si costaba era un fallo intermitente: al
+ * encender la 5", su asociacion despierta el portal, pero montar SPIFFS y leer
+ * la NVS tarda 1-2 s, asi que su PRIMERA peticion (un apunte del viaje o la
+ * consulta de OTA) se la encontraba cerrada. El apunte se reintenta (cola), la
+ * consulta de OTA no: "a veces no conecta".
+ *
+ * Asi que se queda encendido siempre. El codigo del auto-off se conserva por si
+ * algun dia vuelve a hacer falta (poner PORTAL_SIEMPRE_ENCENDIDO a 0 lo
+ * devuelve tal cual estaba: 15 min sin clientes y a dormir). */
+#define PORTAL_SIEMPRE_ENCENDIDO 1
+
 static void ap_off_timer_arm(void)
 {
+    if (PORTAL_SIEMPRE_ENCENDIDO) return;
     if (!s_ap_off_timer) return;
     esp_timer_stop(s_ap_off_timer);   /* idempotente */
     esp_err_t err = esp_timer_start_once(s_ap_off_timer, (uint64_t)AP_AUTO_OFF_MS * 1000);
@@ -685,6 +704,7 @@ static void ap_off_timer_arm(void)
  * 15 min de la ULTIMA peticion valida se apaga solo (se conserva el ahorro). */
 void ap_off_timer_kick(void)
 {
+    if (PORTAL_SIEMPRE_ENCENDIDO) return;
     if (!s_ap_off_timer) return;
     esp_timer_stop(s_ap_off_timer);
     esp_err_t err = esp_timer_start_once(s_ap_off_timer, (uint64_t)AP_AUTO_OFF_MS * 1000);
@@ -1141,7 +1161,9 @@ esp_err_t wifi_ap_init(void)
      * ningún STA_CONNECTED nuevo, el HTTP se para (el WiFi AP sigue para
      * que el mini reciba UDP). El handler STA_CONNECTED rearma el timer
      * y reactiva el HTTP si lo encuentra parado. */
-    ap_off_timer_ensure();
+    /* Con el portal siempre encendido no hay cuenta atras que crear (ver
+     * PORTAL_SIEMPRE_ENCENDIDO). Si algun dia se vuelve atras, descomentar. */
+    if (!PORTAL_SIEMPRE_ENCENDIDO) ap_off_timer_ensure();
     dhcp_vigila_ensure();
     ap_off_timer_arm();
 
