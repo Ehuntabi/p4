@@ -433,7 +433,7 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_t *c4_user = lv_label_create(card4);
     lv_obj_set_style_text_font(c4_user, &lv_font_montserrat_20_es, 0);
     lv_label_set_text_fmt(c4_user, "Usuario:  %s",
-                          web_user[0] ? web_user : "victron");
+                          web_user[0] ? web_user : "p4");
 
     /* Se guardan para poder ACTUALIZARLAS al generar una clave nueva: si no,
      * la tarjeta seguiria enseñando la vieja justo despues de cambiarla, que es
@@ -541,7 +541,7 @@ static void clave_portal_nueva_do(void)
     static const char abc[] = "abcdefghijkmnpqrstuvwxyz23456789";
     char user[33] = {0}, pass[33] = {0}, nueva[17] = {0};
     config_server_get_web_credentials(user, sizeof(user), pass, sizeof(pass));
-    if (!user[0]) snprintf(user, sizeof(user), "victron");
+    if (!user[0]) snprintf(user, sizeof(user), "p4");
     for (int i = 0; i < 12; i++) nueva[i] = abc[esp_random() % (sizeof(abc) - 1)];
     esp_err_t e = config_server_set_web_credentials(user, nueva);
     if (e != ESP_OK) {

@@ -177,7 +177,7 @@ const char SETTIME_SCRIPT[] =
 /* BasicAuth — credenciales NO hardcoded en el repo.
  *
  * Al primer boot generamos un default por dispositivo:
- *   user = "victron"
+ *   user = "p4"  (hasta la v4.70 era "victron"; ver PORTAL_USER_LEGADO)
  *   pass = 8 chars ALEATORIOS (esp_random). NO derivada de la MAC (el esquema
  *   antiguo "v_<MAC>" era adivinable porque la MAC es el BSSID que se emite).
  * Se persiste en NVS y se muestra en Ajustes -> Wi-Fi (solo en la pantalla
@@ -186,6 +186,23 @@ const char SETTIME_SCRIPT[] =
  * La cadena "Basic <base64>" se calcula en RAM al arrancar el HTTP server
  * y se guarda en s_auth_header. check_basic_auth() solo compara strings. */
 static char s_auth_header[96] = "";
+
+/* ── EL USUARIO DEL PORTAL YA NO ES "victron" (02-nov-2026) ─────────────────
+ *
+ * El proyecto de esta placa ya no se llama victron (es la P4), asi que el
+ * usuario de fabrica pasa de "victron" a "p4". Pero el usuario del portal es una
+ * CREDENCIAL: la llevan compilada las dos cabinas y guardada la app, y sin ella
+ * una cabina no manda apuntes de viaje Y, peor, no puede pedir el firmware
+ * (/api/pantalla/info y /bin van con esta clave): se quedaria sin poder
+ * actualizarse por OTA.
+ *
+ * Por eso, mientras el usuario sea el nuevo "p4", se acepta TAMBIEN el viejo
+ * "victron" con la misma clave (la clave NO cambia). En cuanto el dueno ponga un
+ * usuario propio en Ajustes -> Wi-Fi, deja de aceptarse el viejo. Asi el cambio
+ * se puede hacer sin actualizar antes las tres placas ni la app. */
+#define PORTAL_USER_FABRICA  "p4"
+#define PORTAL_USER_LEGADO   "victron"
+static char s_auth_header_legado[96] = "";
 
 /* NIVEL DE ADMINISTRACION: OTRO SECRETO (auditoria de seguridad del
  * 13-oct-2026). /ota (escribir firmware), /keys (las claves AES de los Victron)
@@ -236,9 +253,18 @@ void http_auth_init(void)
         }
         esp_err_t err;
         if (need_default_user) {
-            snprintf(user, sizeof(user), "%s", "victron");
+            snprintf(user, sizeof(user), "%s", PORTAL_USER_FABRICA);
             err = nvs_set_str(h, "http_user", user);
             if (err != ESP_OK) ESP_LOGW(TAG, "http_user por defecto no se pudo fijar en NVS: %s", esp_err_to_name(err));
+        } else if (strcmp(user, PORTAL_USER_LEGADO) == 0) {
+            /* El de fabrica viejo: se migra a "p4" (ver PORTAL_USER_FABRICA). Se
+             * hace una sola vez y solo si el dueno no lo habia cambiado. El
+             * usuario viejo se sigue aceptando (s_auth_header_legado). */
+            snprintf(user, sizeof(user), "%s", PORTAL_USER_FABRICA);
+            err = nvs_set_str(h, "http_user", user);
+            if (err != ESP_OK) ESP_LOGW(TAG, "migracion de http_user no persistio: %s", esp_err_to_name(err));
+            ESP_LOGW(TAG, "usuario del portal migrado '%s' -> '%s' (el viejo se sigue aceptando)",
+                     PORTAL_USER_LEGADO, PORTAL_USER_FABRICA);
         }
         if (need_default_pass) {
             /* Pass ALEATORIA (no derivable de la MAC). Se muestra en
@@ -283,6 +309,16 @@ void http_auth_init(void)
                                (const unsigned char *)up, n) == 0) {
         snprintf(s_auth_header, sizeof(s_auth_header), "Basic %.*s",
                  (int)b64_len, (const char *)b64);
+    }
+
+    /* Y la del usuario VIEJO con la MISMA clave (ver PORTAL_USER_LEGADO): solo
+     * mientras el usuario sea el de fabrica nuevo, para que poner un usuario
+     * propio vuelva a cerrar la puerta del todo. */
+    s_auth_header_legado[0] = '\0';
+    if (strcmp(user, PORTAL_USER_FABRICA) == 0) {
+        if (!cabecera_basic(PORTAL_USER_LEGADO, pass, s_auth_header_legado,
+                            sizeof(s_auth_header_legado)))
+            s_auth_header_legado[0] = '\0';
     }
 
     /* ── Credenciales de ADMINISTRACION (ver el comentario de s_admin_header) ──
@@ -710,8 +746,14 @@ static esp_err_t auth_comprueba(httpd_req_t *req, const char *esperada_cab,
      * pantalla y la cabina no podia mandar apuntes. Justo lo contrario de lo que
      * promete el boton. */
     const char *esperada = esperada_cab;
+    /* El nivel ABIERTO acepta tambien el usuario viejo del portal con la misma
+     * clave (ver PORTAL_USER_LEGADO): es lo que deja cambiar de nombre sin
+     * quedarse ninguna cabina ni la app fuera. El nivel de ADMINISTRACION no:
+     * esa clave es otra y no se toca. */
+    const bool es_legado = (!es_admin && s_auth_header_legado[0] != '\0' &&
+                            auth_equal_ct(auth, s_auth_header_legado));
     if (err == ESP_OK && esperada && esperada[0] != '\0' &&
-        auth_equal_ct(auth, esperada)) {
+        (auth_equal_ct(auth, esperada) || es_legado)) {
         s_fallos = 0;
         /* Tambien los de ESA IP: si no, seguiria contando fallos viejos y el
          * siguiente desliz la mandaria a 429 sin motivo. */
