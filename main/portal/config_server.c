@@ -57,6 +57,9 @@ static const char *TAG = "cfg_srv";
 
 static httpd_handle_t s_httpd = NULL;
 static httpd_handle_t s_httpd_heavy = NULL;   /* .tar/OTA/vigilancia, ver PORTAL_HEAVY_BASE */
+/* Tope para no reintentar el servidor pesado en bucle (ver config_server_start). */
+#define PORTAL_REARME_MIN_MS  30000
+static int64_t s_ultimo_rearme_ms = 0;
 static dns_server_handle_t s_dns = NULL;
 
 bool config_server_is_running(void)
@@ -913,28 +916,132 @@ static void registrar(httpd_handle_t srv, const httpd_uri_t *uri)
                  uri->uri, esp_err_to_name(e));
 }
 
+/* ── ARRANCA (O REARRANCA) SOLO EL SERVIDOR PESADO ──────────────────────────
+ *
+ * Puerto PORTAL_HEAVY_PORT (8081): /ota, .tar, /pantallas, /api/pantalla/bin y
+ * /subir. Se separa en su propia funcion por la revision independiente del
+ * 02-nov-2026: con el portal siempre encendido hay que poder reintentarlo SIN
+ * tirar el servidor ligero del puerto 80 (que es el que sirve /api/state a la
+ * app y a las cabinas). Si el 8081 falla de forma persistente, tirar el portal
+ * bueno cada vez que un movil sondea seria peor que no tener OTA.
+ *
+ * Los handlers van con la instancia: se registran aqui cada vez (es barato y
+ * registrar() comprueba el retorno).
+ *
+ * Devuelve ESP_OK si el servidor quedo arriba. */
+static esp_err_t arranca_pesado(void)
+{
+    if (s_httpd_heavy) return ESP_OK;
+    httpd_handle_t server_heavy = NULL;
+    httpd_config_t cfg_heavy = HTTPD_DEFAULT_CONFIG();
+    cfg_heavy.server_port = PORTAL_HEAVY_PORT;
+    cfg_heavy.ctrl_port += 1;   /* puerto de control interno, tambien distinto */
+    cfg_heavy.uri_match_fn = httpd_uri_match_wildcard;
+    cfg_heavy.task_priority = 3;
+    cfg_heavy.stack_size = 20480;
+    cfg_heavy.send_wait_timeout = 30;
+    cfg_heavy.recv_wait_timeout = 30;
+    cfg_heavy.max_open_sockets = 4;
+    cfg_heavy.lru_purge_enable = true;
+    cfg_heavy.max_uri_handlers = 28;
+    cfg_heavy.max_resp_headers = 16;
+    esp_err_t e = httpd_start(&server_heavy, &cfg_heavy);
+    if (e != ESP_OK) {
+        ESP_LOGE(TAG, "httpd_start (pesado, puerto %d) fallo: %s -- .tar/OTA/"
+                      "vigilancia sin servir (se reintenta)", PORTAL_HEAVY_PORT,
+                 esp_err_to_name(e));
+        return e;
+    }
+    s_httpd_heavy = server_heavy;
+    httpd_uri_t uri_ota_get = { .uri = "/ota", .method = HTTP_GET, .handler = handle_ota_page };
+registrar(server_heavy, &uri_ota_get);
+    httpd_uri_t uri_ota_post = { .uri = "/ota", .method = HTTP_POST, .handler = handle_ota_post };
+registrar(server_heavy, &uri_ota_post);
+    httpd_uri_t uri_ota_aviso = { .uri = "/ota_aviso", .method = HTTP_POST, .handler = ota_aviso_post };
+registrar(server_heavy, &uri_ota_aviso);
+    httpd_uri_t uri_pantalla_pagina = { .uri = "/pantallas", .method = HTTP_GET, .handler = ota_pantalla_pagina };
+registrar(server_heavy, &uri_pantalla_pagina);
+    httpd_uri_t uri_pantalla_bin = { .uri = "/api/pantalla/bin", .method = HTTP_GET, .handler = ota_pantalla_bin };
+registrar(server_heavy, &uri_pantalla_bin);
+    httpd_uri_t uri_pantalla_subir = { .uri = "/api/pantalla/subir", .method = HTTP_POST, .handler = ota_pantalla_subir };
+registrar(server_heavy, &uri_pantalla_subir);
+    httpd_uri_t uri_data_frigo = { .uri = "/data/frigo", .method = HTTP_GET, .handler = handle_data_frigo };
+registrar(server_heavy, &uri_data_frigo);
+    httpd_uri_t uri_data_frigo_csv = { .uri = "/data/frigo.csv", .method = HTTP_GET, .handler = handle_data_frigo_csv };
+registrar(server_heavy, &uri_data_frigo_csv);
+    httpd_uri_t uri_data_ne185v_csv = { .uri = "/data/ne185v.csv", .method = HTTP_GET, .handler = handle_data_ne185v_csv };
+registrar(server_heavy, &uri_data_ne185v_csv);
+    httpd_uri_t uri_data_bat = { .uri = "/data/bateria", .method = HTTP_GET, .handler = handle_data_bateria };
+registrar(server_heavy, &uri_data_bat);
+    httpd_uri_t uri_data_bat_csv = { .uri = "/data/bateria.csv", .method = HTTP_GET, .handler = handle_data_bateria_csv };
+registrar(server_heavy, &uri_data_bat_csv);
+    httpd_uri_t uri_data_frigo_tar = { .uri = "/data/frigo.tar", .method = HTTP_GET, .handler = handle_data_frigo_tar };
+registrar(server_heavy, &uri_data_frigo_tar);
+    httpd_uri_t uri_data_bat_tar = { .uri = "/data/bateria.tar", .method = HTTP_GET, .handler = handle_data_bateria_tar };
+registrar(server_heavy, &uri_data_bat_tar);
+    httpd_uri_t uri_data_solar_tar = { .uri = "/data/solar.tar", .method = HTTP_GET, .handler = handle_data_solar_tar };
+registrar(server_heavy, &uri_data_solar_tar);
+    httpd_uri_t uri_data_vig_tar = { .uri = "/data/vigilancia.tar", .method = HTTP_GET, .handler = handle_data_vigilancia_tar };
+registrar(server_heavy, &uri_data_vig_tar);
+    httpd_uri_t uri_data_cfg_tar = { .uri = "/data/config.tar", .method = HTTP_GET, .handler = handle_data_config_tar };
+registrar(server_heavy, &uri_data_cfg_tar);
+    httpd_uri_t uri_data_logs_tar = { .uri = "/data/logs.tar", .method = HTTP_GET, .handler = handle_data_logs_tar };
+registrar(server_heavy, &uri_data_logs_tar);
+    httpd_uri_t uri_data_viaje_tar = { .uri = "/data/viaje.tar", .method = HTTP_GET, .handler = handle_data_viaje_tar };
+registrar(server_heavy, &uri_data_viaje_tar);
+    httpd_uri_t uri_vig = { .uri = "/vigilancia", .method = HTTP_GET, .handler = handle_vigilancia };
+registrar(server_heavy, &uri_vig);
+    httpd_uri_t uri_vigf = { .uri = "/vigilancia/*", .method = HTTP_GET, .handler = handle_vigilancia };
+registrar(server_heavy, &uri_vigf);
+    httpd_uri_t uri_vig_json = { .uri = "/vigilancia.json", .method = HTTP_GET, .handler = handle_vigilancia_json };
+registrar(server_heavy, &uri_vig_json);
+    httpd_uri_t uri_vig_thumb = { .uri = "/vigilancia_thumb/*", .method = HTTP_GET, .handler = handle_vigilancia_thumb };
+registrar(server_heavy, &uri_vig_thumb);
+    httpd_uri_t uri_hist = { .uri = "/data/historico.tar", .method = HTTP_GET, .handler = handle_data_historico_tar };
+registrar(server_heavy, &uri_hist);
+    httpd_uri_t uri_data_cap_tar = { .uri = "/data/capturas.tar", .method = HTTP_GET, .handler = handle_data_capturas_tar };
+    registrar(server_heavy, &uri_data_cap_tar);
+    httpd_register_err_handler(server_heavy, HTTPD_404_NOT_FOUND, http_404_error_handler);
+    ESP_LOGI(TAG, "servidor pesado (puerto %d) arriba con %d handlers",
+             PORTAL_HEAVY_PORT, 23);
+    return ESP_OK;
+}
+
 esp_err_t config_server_start(void) {
     /* Idempotente: si ya esta TODO arriba no hacemos nada. */
     if (s_httpd && s_httpd_heavy) {
         ESP_LOGD(TAG, "config_server ya activo, skip");
         return ESP_OK;
     }
-    /* ── SI FALTA UNO, SE REARMA ENTERO (02-nov-2026, revision independiente) ──
+    /* ── SI SOLO FALTA EL PESADO, SE ARRANCA EL PESADO (02-nov-2026) ──────────
      *
-     * Con el portal siempre encendido (PORTAL_SIEMPRE_ENCENDIDO, ver
-     * config_server_ap.c) se quito el ciclo de auto-off, y con el se fue el unico
-     * camino que volvia a intentar el arranque del servidor PESADO si fallaba:
-     * antes, a los 15 min se paraba el ligero y el siguiente arranque montaba los
-     * dos. Si ahora fallara httpd_start del 8081 (memoria, sockets), las cabinas
-     * se quedarian SIN PODER ACTUALIZARSE todo el viaje y el icono del portal
-     * seguiria en verde.
+     * Revision independiente: con el portal siempre encendido (ver
+     * PORTAL_SIEMPRE_ENCENDIDO en config_server_ap.c) se quito el ciclo de
+     * auto-off, y con el el unico camino que reintentaba el arranque del servidor
+     * PESADO (8081: /ota, .tar, /pantallas). Si falla, las cabinas se quedarian
+     * sin poder actualizarse todo el viaje.
      *
-     * Se para lo que haya y se monta de nuevo: es el camino que ya estaba
-     * probado. Lo pide cualquier asociacion o sondeo (ver
-     * cfg_srv_ap_sta_connected/probe_req, que encolan START cuando
-     * config_server_is_running() es falso) o el boton "Reactivar" de Ajustes. */
+     * PERO SIN TIRAR EL LIGERO: si el 8081 falla de forma persistente y cada
+     * sondeo de un movil (o cada asociacion) parase el puerto 80 para volver a
+     * montarlo todo, el portal bueno (el que sirve /api/state) estaria cayendo y
+     * volviendo sin parar. Asi que:
+     *   - ligero arriba y pesado no  -> se arranca SOLO el pesado.
+     *   - ligero caido               -> se monta todo (camino de siempre).
+     * Con un tope de uno cada PORTAL_REARME_MIN_MS para no machacar. */
+    if (s_httpd && !s_httpd_heavy) {
+        const int64_t ahora_ms = esp_timer_get_time() / 1000;
+        if (s_ultimo_rearme_ms && ahora_ms - s_ultimo_rearme_ms < PORTAL_REARME_MIN_MS) {
+            ESP_LOGW(TAG, "el servidor pesado sigue caido; reintento en %d s",
+                     (int)((PORTAL_REARME_MIN_MS - (ahora_ms - s_ultimo_rearme_ms)) / 1000));
+            return ESP_ERR_INVALID_STATE;
+        }
+        s_ultimo_rearme_ms = ahora_ms;
+        ESP_LOGW(TAG, "el portal esta a medias (pesado caido, ligero bien): "
+                      "arranco solo el pesado");
+        return arranca_pesado();
+    }
     if (s_httpd || s_httpd_heavy) {
-        ESP_LOGW(TAG, "el portal esta a medias (ligero=%s, pesado=%s): lo rearmo",
+        ESP_LOGW(TAG, "el portal esta a medias (ligero=%s, pesado=%s): lo rearmo entero",
                  s_httpd ? "si" : "NO", s_httpd_heavy ? "si" : "NO");
         cfg_http_stop();
     }
@@ -973,38 +1080,12 @@ esp_err_t config_server_start(void) {
     }
     s_httpd = server;   /* publicar tras start exitoso */
 
-    /* Segunda instancia, puerto PORTAL_HEAVY_PORT: solo .tar/OTA/vigilancia
-     * (ver el comentario junto a PORTAL_HEAVY_BASE en config_server_internal.h).
-     * Mismo stack/prioridad que la principal -- son los mismos handlers que
-     * ya estaban dimensionados para esto, solo cambian de instancia. Si
-     * falla el arranque de esta, NO abortamos el portal entero: se sigue
-     * sin la mejora de concurrencia, pero /api/state y el resto de la web
-     * (instancia principal, ya arrancada arriba) no dependen de ella. */
-    httpd_handle_t server_heavy = NULL;
-    httpd_config_t cfg_heavy = HTTPD_DEFAULT_CONFIG();
-    cfg_heavy.server_port = PORTAL_HEAVY_PORT;
-    cfg_heavy.ctrl_port += 1;   /* puerto de control interno, tambien debe ser distinto */
-    cfg_heavy.uri_match_fn = httpd_uri_match_wildcard;
-    cfg_heavy.task_priority = 3;
-    cfg_heavy.stack_size = 20480;
-    cfg_heavy.send_wait_timeout = 30;
-    cfg_heavy.recv_wait_timeout = 30;
-    cfg_heavy.max_open_sockets = 4;
-    cfg_heavy.lru_purge_enable = true;
-    /* 28 plazas para 24 handlers (contados el 17-oct-2026: los 21 de antes mas
-     * /api/pantalla/bin, /api/pantalla/subir y /pantallas). El margen es 4: si
-     * algun dia no cabe uno, ahora se ve en el log -- registrar() comprueba el
-     * retorno -- en vez de desaparecer en silencio. */
-    cfg_heavy.max_uri_handlers = 28;
-    cfg_heavy.max_resp_headers = 16;
-    esp_err_t herr_heavy = httpd_start(&server_heavy, &cfg_heavy);
-    if (herr_heavy != ESP_OK) {
-        ESP_LOGE(TAG, "httpd_start (heavy, puerto %d) fallo: %s -- .tar/OTA/vigilancia "
-                      "sin servir hasta el proximo intento", PORTAL_HEAVY_PORT,
-                 esp_err_to_name(herr_heavy));
-    } else {
-        s_httpd_heavy = server_heavy;
-    }
+    /* Segunda instancia, puerto PORTAL_HEAVY_PORT (8081: .tar/OTA/vigilancia).
+     * Se arranca en su propia funcion para poder reintentarla sin tirar el
+     * servidor ligero del 80 (ver el comentario de arranca_pesado). Si falla,
+     * NO se aborta el portal: /api/state y la web siguen en el 80. */
+    arranca_pesado();
+
 
     httpd_uri_t uri_root = { .uri = "/",    .method = HTTP_GET,  .handler = handle_root };
     registrar(server, &uri_root);
@@ -1017,13 +1098,7 @@ esp_err_t config_server_start(void) {
 
     /* Actualizacion del firmware por Wi-Fi (ota_update.c). Con contrasena: deja
      * escribir el firmware entero, asi que no puede quedar abierta. */
-    httpd_uri_t uri_ota_get = { .uri = "/ota", .method = HTTP_GET, .handler = handle_ota_page };
-    if (server_heavy) registrar(server_heavy, &uri_ota_get);
-    httpd_uri_t uri_ota_post = { .uri = "/ota", .method = HTTP_POST, .handler = handle_ota_post };
-    if (server_heavy) registrar(server_heavy, &uri_ota_post);
     /* Aviso previo (la pagina lo pide antes de subir el fichero) */
-    httpd_uri_t uri_ota_aviso = { .uri = "/ota_aviso", .method = HTTP_POST, .handler = ota_aviso_post };
-    if (server_heavy) registrar(server_heavy, &uri_ota_aviso);
 
     /* OTA de las CABINAS (5" y 3,5"), ver ota_pantalla.c. La info va en el
      * servidor LIGERO (80), como /api/state: es JSON pequeno y se pide al
@@ -1034,12 +1109,6 @@ esp_err_t config_server_start(void) {
      * excepcion conocida del 80. */
     httpd_uri_t uri_pantalla_info = { .uri = "/api/pantalla/info", .method = HTTP_GET, .handler = ota_pantalla_info };
     registrar(server, &uri_pantalla_info);
-    httpd_uri_t uri_pantalla_pagina = { .uri = "/pantallas", .method = HTTP_GET, .handler = ota_pantalla_pagina };
-    if (server_heavy) registrar(server_heavy, &uri_pantalla_pagina);
-    httpd_uri_t uri_pantalla_bin = { .uri = "/api/pantalla/bin", .method = HTTP_GET, .handler = ota_pantalla_bin };
-    if (server_heavy) registrar(server_heavy, &uri_pantalla_bin);
-    httpd_uri_t uri_pantalla_subir = { .uri = "/api/pantalla/subir", .method = HTTP_POST, .handler = ota_pantalla_subir };
-    if (server_heavy) registrar(server_heavy, &uri_pantalla_subir);
 
     // Register captive portal handlers BEFORE the catch-all!
     httpd_uri_t uri_generate_204 = { .uri = "/generate_204", .method = HTTP_GET, .handler = handle_captive_redirect };
@@ -1079,42 +1148,8 @@ esp_err_t config_server_start(void) {
      * resolver (auditoria 15-sep-2026, 2.H10). Los enlaces de las paginas
      * apuntan ya a PORTAL_HEAVY_BASE; la app pide el CSV al 8081 desde la
      * 1.4.15. */
-    httpd_uri_t uri_data_frigo = { .uri = "/data/frigo", .method = HTTP_GET, .handler = handle_data_frigo };
-    if (server_heavy) registrar(server_heavy, &uri_data_frigo);
-    httpd_uri_t uri_data_frigo_csv = { .uri = "/data/frigo.csv", .method = HTTP_GET, .handler = handle_data_frigo_csv };
-    if (server_heavy) registrar(server_heavy, &uri_data_frigo_csv);
-    httpd_uri_t uri_data_ne185v_csv = { .uri = "/data/ne185v.csv", .method = HTTP_GET, .handler = handle_data_ne185v_csv };
-    if (server_heavy) registrar(server_heavy, &uri_data_ne185v_csv);
-    httpd_uri_t uri_data_bat = { .uri = "/data/bateria", .method = HTTP_GET, .handler = handle_data_bateria };
-    if (server_heavy) registrar(server_heavy, &uri_data_bat);
-    httpd_uri_t uri_data_bat_csv = { .uri = "/data/bateria.csv", .method = HTTP_GET, .handler = handle_data_bateria_csv };
-    if (server_heavy) registrar(server_heavy, &uri_data_bat_csv);
-    httpd_uri_t uri_data_frigo_tar = { .uri = "/data/frigo.tar", .method = HTTP_GET, .handler = handle_data_frigo_tar };
-    if (server_heavy) registrar(server_heavy, &uri_data_frigo_tar);
-    httpd_uri_t uri_data_bat_tar = { .uri = "/data/bateria.tar", .method = HTTP_GET, .handler = handle_data_bateria_tar };
-    if (server_heavy) registrar(server_heavy, &uri_data_bat_tar);
-    httpd_uri_t uri_data_solar_tar = { .uri = "/data/solar.tar", .method = HTTP_GET, .handler = handle_data_solar_tar };
-    if (server_heavy) registrar(server_heavy, &uri_data_solar_tar);
-    httpd_uri_t uri_data_cap_tar ={ .uri = "/data/capturas.tar", .method = HTTP_GET, .handler = handle_data_capturas_tar };
-    if (server_heavy) registrar(server_heavy, &uri_data_cap_tar);
-    httpd_uri_t uri_data_vig_tar = { .uri = "/data/vigilancia.tar", .method = HTTP_GET, .handler = handle_data_vigilancia_tar };
-    if (server_heavy) registrar(server_heavy, &uri_data_vig_tar);
-    httpd_uri_t uri_data_cfg_tar = { .uri = "/data/config.tar", .method = HTTP_GET, .handler = handle_data_config_tar };
-    if (server_heavy) registrar(server_heavy, &uri_data_cfg_tar);
-    httpd_uri_t uri_data_logs_tar = { .uri = "/data/logs.tar", .method = HTTP_GET, .handler = handle_data_logs_tar };
-    if (server_heavy) registrar(server_heavy, &uri_data_logs_tar);
-    httpd_uri_t uri_data_viaje_tar = { .uri = "/data/viaje.tar", .method = HTTP_GET, .handler = handle_data_viaje_tar };
-    if (server_heavy) registrar(server_heavy, &uri_data_viaje_tar);
-    httpd_uri_t uri_vig = { .uri = "/vigilancia", .method = HTTP_GET, .handler = handle_vigilancia };
-    if (server_heavy) registrar(server_heavy, &uri_vig);
-    httpd_uri_t uri_vigf = { .uri = "/vigilancia/*", .method = HTTP_GET, .handler = handle_vigilancia };
-    if (server_heavy) registrar(server_heavy, &uri_vigf);
     /* La lista en JSON para la app (mismo puerto pesado que la pagina). OJO: no
      * choca con el comodin de vigilancia, que exige la barra detras. */
-    httpd_uri_t uri_vig_json = { .uri = "/vigilancia.json", .method = HTTP_GET, .handler = handle_vigilancia_json };
-    if (server_heavy) registrar(server_heavy, &uri_vig_json);
-    httpd_uri_t uri_vig_thumb = { .uri = "/vigilancia_thumb/*", .method = HTTP_GET, .handler = handle_vigilancia_thumb };
-    if (server_heavy) registrar(server_heavy, &uri_vig_thumb);
     httpd_uri_t uri_ausente = { .uri = "/ausente", .method = HTTP_GET, .handler = handle_ausente };
     registrar(server, &uri_ausente);
     httpd_uri_t uri_control = { .uri = "/control", .method = HTTP_POST, .handler = handle_control };
@@ -1131,15 +1166,12 @@ esp_err_t config_server_start(void) {
     /* Lista de viajes con su estado, y el historico con su nombre de verdad. */
     httpd_uri_t uri_viajes = { .uri = "/data/viajes", .method = HTTP_GET, .handler = handle_data_viajes };
     registrar(server, &uri_viajes);
-    httpd_uri_t uri_hist = { .uri = "/data/historico.tar", .method = HTTP_GET, .handler = handle_data_historico_tar };
-    if (server_heavy) registrar(server_heavy, &uri_hist);
 
     httpd_uri_t uri_static = { .uri = "/*",  .method = HTTP_GET,  .handler = handle_static };
     registrar(server, &uri_static);
 
     // 404 handler for captive portal
     httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, http_404_error_handler);
-    if (server_heavy) httpd_register_err_handler(server_heavy, HTTPD_404_NOT_FOUND, http_404_error_handler);
 
     ESP_LOGI(TAG, "HTTP config server running (with captive‐portal redirect)");
 
