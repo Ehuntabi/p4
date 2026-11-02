@@ -61,7 +61,11 @@ static dns_server_handle_t s_dns = NULL;
 
 bool config_server_is_running(void)
 {
-    return s_httpd != NULL;
+    /* "Estoy arriba" = los DOS (revision independiente del 02-nov-2026). Antes
+     * solo miraba el ligero del puerto 80, asi que si el PESADO (8081: /ota,
+     * .tar, /pantallas) no llegaba a arrancar, todo el mundo lo daba por bueno y
+     * nadie volvia a intentarlo. */
+    return s_httpd != NULL && s_httpd_heavy != NULL;
 }
 
 /* Para el HTTP dejando el AP en pie. La llama tambien el ciclo de vida del AP
@@ -910,11 +914,29 @@ static void registrar(httpd_handle_t srv, const httpd_uri_t *uri)
 }
 
 esp_err_t config_server_start(void) {
-    /* Idempotente: si el server ya está arriba (p.ej. tras auto-off + STA
-     * nuevo que lo reactiva) no hacemos nada. */
-    if (s_httpd) {
+    /* Idempotente: si ya esta TODO arriba no hacemos nada. */
+    if (s_httpd && s_httpd_heavy) {
         ESP_LOGD(TAG, "config_server ya activo, skip");
         return ESP_OK;
+    }
+    /* ── SI FALTA UNO, SE REARMA ENTERO (02-nov-2026, revision independiente) ──
+     *
+     * Con el portal siempre encendido (PORTAL_SIEMPRE_ENCENDIDO, ver
+     * config_server_ap.c) se quito el ciclo de auto-off, y con el se fue el unico
+     * camino que volvia a intentar el arranque del servidor PESADO si fallaba:
+     * antes, a los 15 min se paraba el ligero y el siguiente arranque montaba los
+     * dos. Si ahora fallara httpd_start del 8081 (memoria, sockets), las cabinas
+     * se quedarian SIN PODER ACTUALIZARSE todo el viaje y el icono del portal
+     * seguiria en verde.
+     *
+     * Se para lo que haya y se monta de nuevo: es el camino que ya estaba
+     * probado. Lo pide cualquier asociacion o sondeo (ver
+     * cfg_srv_ap_sta_connected/probe_req, que encolan START cuando
+     * config_server_is_running() es falso) o el boton "Reactivar" de Ajustes. */
+    if (s_httpd || s_httpd_heavy) {
+        ESP_LOGW(TAG, "el portal esta a medias (ligero=%s, pesado=%s): lo rearmo",
+                 s_httpd ? "si" : "NO", s_httpd_heavy ? "si" : "NO");
+        cfg_http_stop();
     }
     /* Inicializar BasicAuth: lee user/pass de NVS o genera default por MAC. */
     http_auth_init();

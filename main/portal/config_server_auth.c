@@ -51,6 +51,11 @@ static bool spiffs_allowlist_has(const char *name) {
 
 // Mount SPIFFS partition, list contents and cache the list en RAM
 void mount_spiffs(void) {
+    /* IDEMPOTENTE (02-nov-2026): config_server_start() puede rearmar el portal
+     * entero si alguno de los dos httpd se quedo a medias, y volver a registrar
+     * SPIFFS daba "Failed to mount SPIFFS" (ESP_ERR_INVALID_STATE) ademas de
+     * saltarse la lista de ficheros del allow-list. Si ya esta montado, nada. */
+    if (esp_spiffs_mounted("spiffs")) return;
     ESP_LOGI(TAG, "Mounting SPIFFS...");
     esp_vfs_spiffs_conf_t conf = {
         .base_path = "/spiffs",
