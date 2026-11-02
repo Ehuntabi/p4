@@ -23,7 +23,7 @@ Está siempre, en todas las pantallas. De izquierda a derecha:
 | **Hora y fecha** | Si aparecen en blanco, la pantalla tiene la hora bien puesta |
 | **Bluetooth** | En verde: está escuchando a los aparatos Victron |
 | **Altavoz** | Toca aquí para el sonido y los avisos |
-| **Wi-Fi** | Verde: la página web está lista. Azul: la red está encendida pero la web se ha dormido (se despierta sola al conectarte). Gris: el Wi-Fi está apagado. Toca aquí para encenderlo o apagarlo |
+| **Wi-Fi** | Verde: la página web está lista. Azul: la red está encendida pero la web no responde (se rearma sola al conectarte). Gris: el Wi-Fi está apagado. Toca aquí para encenderlo o apagarlo |
 | **GPS** | Verde: hay posición. Naranja: está buscando satélites, dale un par de minutos. Gris: no llega nada del módulo. Este **no se toca**, solo informa |
 | **Casa / engranaje** | Vuelve al inicio o entra en los ajustes |
 | **Exterior** | La temperatura de fuera |
@@ -294,7 +294,7 @@ quieras en **Ajustes → Autocaravana → Trip computer → Inicio**.
 | Temperaturas con guiones `--` | La sonda no responde. Mira el cable y usa **Buscar sondas** |
 | Un aparato Victron no aparece | Su clave no está dada de alta, o está fuera de alcance |
 | No encuentro su red Wi-Fi | Mira el icono Wi-Fi de la barra: si está gris, está apagada — tócalo para encenderla. La red **no** se apaga sola |
-| Entré en el Wi-Fi pero no abre la página | Es normal si llevaba rato sin nadie: la web se duerme a los 15 minutos y **se despierta sola** al conectarte. Espera unos segundos y recarga. Comprueba también que escribes `http://192.168.4.1` (no `https`) |
+| Entré en el Wi-Fi pero no abre la página | Comprueba que escribes `http://192.168.4.1` (no `https`). Si aun así no abre, en la pantalla toca Ajustes → Wi-Fi → **Reactivar portal web** (lo rearma sin reiniciar) |
 | El display pequeño se quedó sin datos | Comprueba que el Wi-Fi de la pantalla grande está encendido: el mini recibe los datos por esa red |
 | Me pide usuario y contraseña al actualizar o al abrir Claves | Es a propósito: son las dos páginas protegidas. Los datos están en **Ajustes → Wi-Fi**, tarjeta *Acceso a Actualizar y Claves* |
 | La pantalla está negra y no responde | Puede estar en **modo ausente**: cuatro toques en la esquina superior izquierda |

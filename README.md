@@ -103,7 +103,7 @@ Páginas con cards de borde de color, dropdown scrollable cuando hay overflow, s
 - Reloj + fecha (RTC), iconos interactivos:
   - 🔵 BLE — gris si no hay datos en 5 s.
   - 🔊 / 🔇 Volumen — tap = mute/unmute.
-  - 📶 Wi-Fi — tap = toggle AP on/off en caliente. Verde: portal web accesible. Azul: AP encendido pero portal dormido por el auto-off. Gris: Wi-Fi deshabilitado.
+  - 📶 Wi-Fi — tap = toggle AP on/off en caliente. Verde: portal web accesible. Azul: la web no responde (se rearma sola). Gris: Wi-Fi deshabilitado.
   - ⚙ / 🏠 — navega entre Live y Settings.
   - 🌡 **Exterior: +26.0 °C** — temperatura del DS18B20 exterior, siempre visible a la derecha.
 
@@ -183,8 +183,8 @@ Páginas con cards de borde de color, dropdown scrollable cuando hay overflow, s
 #### Portal web
 - AP `P4Config` automático al arrancar (el nombre de fábrica; una placa que ya
   tenga otro guardado sigue con el suyo hasta cambiarlo en Ajustes → Wi-Fi).
-- **Auto-off del servidor HTTP a los 15 min sin actividad** (peticiones, asociaciones o sondeos de un cliente; el AP **sigue emitiendo siempre**). No mira si queda alguien asociado: con un cliente callado, el portal se duerme igual (`AP_AUTO_OFF_MS` en `config_server_ap.c`).
-  - Antes hacían falta **dos** clientes para mantenerlo vivo, porque el satélite viejo (el C6) estaba siempre asociado y solo *recibía* UDP. Con la 3,5" esa cuenta dejó de valer: ese satélite **habla por HTTP** para entregar los apuntes, y con el servidor apagado no podía. Como el auto-off solo se rearmaba con peticiones HTTP o con un cliente nuevo —y el satélite ya estaba asociado—, **la cola no se vaciaba nunca**: "N sin enviar" fijo en la cabina y `Connection reset by peer` al entregar, hasta reiniciar la P4 (24-ago-2026).
+- **El portal web ya no se duerme** (02-nov-2026): se queda siempre encendido. Antes se paraba a los 15 min sin actividad y volvia a arrancar al asociarse un cliente; con la P4 alimentada del vehiculo todo el viaje el ahorro era nulo y costaba un fallo intermitente (la primera peticion de la cabina se encontraba el puerto cerrado mientras el portal arrancaba). El AP y el UDP nunca se han apagado. Se puede volver al comportamiento viejo con `PORTAL_SIEMPRE_ENCENDIDO` en `config_server_ap.c`.
+  - Historia (por si alguien vuelve al auto-off): antes hacian falta **dos** clientes para mantenerlo vivo, porque el satelite viejo (el C6) estaba siempre asociado y solo *recibia* UDP. Con la 3,5" esa cuenta dejo de valer: ese satelite **habla por HTTP** para entregar los apuntes, y con el servidor apagado no podia. Como el auto-off solo se rearmaba con peticiones HTTP o con un cliente nuevo -- y el satelite ya estaba asociado --, **la cola no se vaciaba nunca**: "N sin enviar" fijo en la cabina y `Connection reset by peer` al entregar, hasta reiniciar la P4 (24-ago-2026).
   - El ahorro se conserva: la 3,5" se apaga con el contacto, así que con el vehículo parado no queda nadie asociado y el portal se apaga igual.
   - Si el móvil ya estaba asociado y aun así no responde, hay un botón *Reactivar portal web* en Ajustes → Wi-Fi.
 - **Seguridad — dos niveles** (`check_basic_auth` / `check_basic_auth_strict` en `config_server_auth.c`):
@@ -309,7 +309,7 @@ Pages with role-coloured cards, scrollbar visible on overflow, separators betwee
 - Clock + date (RTC), interactive icons:
   - 🔵 BLE — grey if no data for 5 s.
   - 🔊 / 🔇 Volume — tap to mute/unmute.
-  - 📶 Wi-Fi — tap to toggle the AP live. Green: web portal reachable. Blue: AP up but portal asleep after auto-off. Grey: Wi-Fi disabled.
+  - 📶 Wi-Fi — tap to toggle the AP live. Green: web portal reachable. Blue: web not answering (it re-arms itself). Grey: Wi-Fi disabled.
   - ⚙ / 🏠 — navigate between Live and Settings.
   - 🌡 **Exterior: +26.0 °C** — outdoor DS18B20 reading, always visible on the right.
 
@@ -373,7 +373,7 @@ Pages with role-coloured cards, scrollbar visible on overflow, separators betwee
 #### Web portal
 - `P4Config` AP starts automatically on boot (factory name; a board that already
   has another one stored keeps it until it is changed in Settings → Wi-Fi).
-- **HTTP server auto-off after 15 min without activity** (requests, associations or client probes; the **AP itself never stops**). It does not check whether a client is still associated: an idle client does not keep it awake (`AP_AUTO_OFF_MS` in `config_server_ap.c`).
+- **The web portal no longer sleeps** (2026-11-02): it stays up. It used to stop after 15 min without activity and restart when a client associated; with the P4 powered from the vehicle all trip long, the saving was nil and it cost an intermittent failure (the cabin's first request found the port closed while the portal was starting). The AP and UDP were never stopped. The old behaviour is behind `PORTAL_SIEMPRE_ENCENDIDO` in `config_server_ap.c`.
   - It used to require **two** clients to stay alive, because the old satellite (the C6) was always associated and only *received* UDP. That no longer holds with the 3.5": this satellite **speaks HTTP** to deliver trip notes, and with the server off it couldn't. Since auto-off was only re-armed by HTTP requests or by a *new* client — and the satellite was already associated — **the queue never drained**: a permanent "N sin enviar" in the cabin and `Connection reset by peer` on delivery, until the P4 was rebooted (2026-08-24).
   - Power saving is preserved: the 3.5" powers off with the ignition, so with the vehicle parked nobody is associated and the portal shuts down as before.
   - If the phone was already associated and it still doesn't answer, there is a *Reactivar portal web* button in Settings → Wi-Fi.
