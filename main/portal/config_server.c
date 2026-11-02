@@ -1002,8 +1002,7 @@ registrar(server_heavy, &uri_hist);
     httpd_uri_t uri_data_cap_tar = { .uri = "/data/capturas.tar", .method = HTTP_GET, .handler = handle_data_capturas_tar };
     registrar(server_heavy, &uri_data_cap_tar);
     httpd_register_err_handler(server_heavy, HTTPD_404_NOT_FOUND, http_404_error_handler);
-    ESP_LOGI(TAG, "servidor pesado (puerto %d) arriba con %d handlers",
-             PORTAL_HEAVY_PORT, 23);
+    ESP_LOGI(TAG, "servidor pesado (puerto %d) arriba", PORTAL_HEAVY_PORT);
     return ESP_OK;
 }
 
