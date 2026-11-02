@@ -433,7 +433,7 @@ esp_err_t config_server_set_web_credentials(const char *user, const char *pass)
  * administracion puesta, esa actualizacion desde el movil deja de funcionar (401)
  * y hay que hacerla desde el navegador, que es donde se teclea la clave de
  * administracion (Ajustes -> Wi-Fi de la P4 la enseña). La app lo dice con un
- * mensaje propio en vez de un 401 en crudo (ver victron-app). El resto de la app
+ * mensaje propio en vez de un 401 en crudo (ver joint-apk). El resto de la app
  * (estado, control, camara, descargas y los apuntes del satelite) va por el nivel
  * abierto y no le afecta.
  *

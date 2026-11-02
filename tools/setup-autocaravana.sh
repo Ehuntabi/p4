@@ -81,13 +81,13 @@ declare -A REPOS_SSH=(
   ["p4"]="git@github.com:Ehuntabi/p4.git"
   ["cabina5"]="git@github.com:Ehuntabi/cabina5.git"
   ["35cabina"]="git@github.com:Ehuntabi/35cabina.git"
-  ["victron-app"]="git@github.com:Ehuntabi/victron-app.git"
+  ["joint-apk"]="git@github.com:Ehuntabi/joint-apk.git"
 )
 declare -A REPOS_HTTPS=(
   ["p4"]="https://github.com/Ehuntabi/p4.git"
   ["cabina5"]="https://github.com/Ehuntabi/cabina5.git"
   ["35cabina"]="https://github.com/Ehuntabi/35cabina.git"
-  ["victron-app"]="https://github.com/Ehuntabi/victron-app.git"
+  ["joint-apk"]="https://github.com/Ehuntabi/joint-apk.git"
 )
 
 for name in "${!REPOS_SSH[@]}"; do

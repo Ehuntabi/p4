@@ -10,7 +10,7 @@
  *
  * Si cambias los campos que pide una operacion, o los que publica /ausente,
  * actualiza tambien test/test_contrato_app.c y el fichero de la app que lo use
- * (victron-app/lib/data/api_client.dart). */
+ * (joint-apk/lib/data/api_client.dart). */
 #pragma once
 #include <stdbool.h>
 #include <stddef.h>

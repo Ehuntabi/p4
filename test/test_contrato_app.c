@@ -7,7 +7,7 @@
  * ausente_json(). Si alguien vuelve a exigir "id" a la operacion "borrar", o
  * quita un campo del estado, aqui se pone rojo antes de grabar nada.
  *
- * Si cambia lo que la app espera (victron-app/lib/data/api_client.dart), se
+ * Si cambia lo que la app espera (joint-apk/lib/data/api_client.dart), se
  * actualiza esta tabla. */
 #include "contrato_app.h"
 #include <stdio.h>

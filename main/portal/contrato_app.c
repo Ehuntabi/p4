@@ -43,7 +43,7 @@ int ausente_json(char *out, size_t n, bool activo, const char *motivo,
     json_texto(salud  ? salud  : "", sal, sizeof(sal));
     json_texto(aviso  ? aviso  : "", avi, sizeof(avi));
 
-    /* Campos que lee la app (victron-app/lib/data/api_client.dart,
+    /* Campos que lee la app (joint-apk/lib/data/api_client.dart,
      * vigilanciaEstado()): vigilancia, motivo, salud, aviso, fotos, rotando. */
     return snprintf(out, n,
                     "{\"vigilancia\":%s,\"motivo\":\"%s\",\"salud\":\"%s\","
