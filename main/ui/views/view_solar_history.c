@@ -279,6 +279,11 @@ void ui_show_solar_history_screen(ui_state_t *ui)
 
     lv_obj_t *prev = lv_scr_act();
     lv_obj_t *scr = lv_obj_create(NULL);
+    /* PANTALLA QUE NO SE DESLIZA (02-nov-2026): un lv_obj_create(NULL) nace con
+     * LV_OBJ_FLAG_SCROLLABLE, asi que un roce desplazaba la pantalla entera y
+     * se quedaba cortada por los bordes ("descuadrada") hasta reiniciar. Paso de
+     * verdad en la cabina de 5" (nav.c) y aqui podia pasar igual. */
+    lv_obj_clear_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
         /* v3.8: fondo de pagina de la paleta, no negro puro (coherencia con el resto) */
     lv_obj_set_style_bg_color(scr, UI_COLOR_BG, 0);
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
