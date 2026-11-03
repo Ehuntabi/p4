@@ -2514,7 +2514,15 @@ static bool escribir_resumen(const char *carpeta)
     /* DONDE ESTA EL MAPA (02-nov-2026): en la misma carpeta, viaje.gpx con el
      * recorrido y una chincheta por apunte con posicion. Antes solo estaba
      * ruta.csv (el camino) y los gastos no salian en el mapa. */
-    fprintf(f, "Mapa: viaje.gpx (recorrido + una chincheta por apunte con GPS)\n");
+    {
+        char gpx[RUTA_MAX];
+        snprintf(gpx, sizeof(gpx), "%s/" "viaje.gpx", carpeta);
+        struct stat st_g;
+        if (stat(gpx, &st_g) == 0 && st_g.st_size > 0)
+            fprintf(f, "Mapa: viaje.gpx (recorrido + una chincheta por apunte con GPS)\n");
+        else
+            fprintf(f, "Mapa: no hay (el viaje no tiene traza de GPS)\n");
+    }
 
     trip_computer_t t;
     trip_computer_get(&t);
@@ -3167,16 +3175,16 @@ static esp_err_t op_fin(httpd_req_t *req, const cJSON *j, uint32_t id)
      * totales de ahora, y asi un intento que se corto a medias no deja unas
      * cuentas viejas. Y ya no puede fallar por "el destino existe":
      * publicar_resumen() lo aparta a .bak. */
-    escrito = escribir_resumen(carpeta) && escrito;
-    /* Y el mapa (recorrido + chinchetas de los apuntes): ver viaje_gpx_generar.
-     * Se genera aqui, al cerrar, porque ya no van a cambiar ni la traza ni los
-     * apuntes; si falla no se da el viaje por no cerrado (el .gpx es un extra,
-     * no el resumen), pero queda en el log. */
+    /* EL MAPA PRIMERO, Y ANTES DEL RESUMEN (revision del 02-nov-2026): el
+     * resumen dice si hay mapa o no, asi que tiene que estar hecho ya; y aqui,
+     * al cerrar, porque ni la traza ni los apuntes van a cambiar. Si falla no se
+     * da el viaje por no cerrado (el .gpx es un extra), pero queda en el log. */
     if (escrito) {
         if (!viaje_gpx_generar(carpeta))
-            ESP_LOGW(TAG, "el viaje %s se cierra sin mapa (sin traza o sin tarjeta)",
-                     carpeta);
+            ESP_LOGW(TAG, "el viaje %s se cierra sin mapa (sin traza, sin GPS o "
+                          "sin tarjeta)", carpeta);
     }
+    escrito = escribir_resumen(carpeta) && escrito;
 
     if (!escrito) {
         /* El viaje NO se cierra: sin resumen no esta cerrado del todo, y
@@ -3655,41 +3663,108 @@ static esp_err_t op_descartar(httpd_req_t *req, const cJSON *j, uint32_t id)
  *  - La moneda se limpia a letras/numeros (nada de comas ni comillas): asi el
  *    fichero se lee con un split por comas y sin comillas que interpretar.
  */
-static bool punto_con_posicion(const char *carpeta, const char *cuando,
-                               const char *tipo, const cJSON *datos)
+/* Cuanto puede haber tardado un apunte en llegar para fiarse del GPS de AHORA.
+ * La cabina reintenta cada pocos segundos mientras tiene red; mas de esto ya es
+ * un apunte que espero en la cola y la P4 puede estar en otro sitio. */
+#define PUNTO_FRESCO_S  180
+
+/* El importe que se ensena en la chincheta, por tipo de apunte. Mismo criterio
+ * que totales_sumar_en(): el campo de DINERO de cada tipo, leido con numero_de()
+ * (que acepta texto, y la cabina los manda como texto: "Bombonas: 2 / Precio:
+ * 25,90 EUR" -> datos.precio = "25,90"). Antes esto miraba datos.importe y solo
+ * si era numero: nunca acertaba y la chincheta salia sin el importe. */
+static double importe_de_apunte(const cJSON *datos, const char *tipo)
 {
+    if (!tipo) return -1.0;
+    if (!strcmp(tipo, "repostaje") || !strcmp(tipo, "peaje"))
+        return numero_de(datos, "importe", NULL);
+    if (!strcmp(tipo, "bombona") || !strcmp(tipo, "itv"))
+        return numero_de(datos, "precio", NULL);
+    if (!strcmp(tipo, "mantenimiento"))
+        return numero_de(datos, "coste", NULL);
+    if (!strcmp(tipo, "pernocta"))
+        return numero_de(datos, "precio", NULL);
+    if (!strcmp(tipo, "agua"))   /* suma de lo que se pago por cada servicio */
+        return numero_de(datos, "precio_agua", NULL) +
+               numero_de(datos, "precio_grises", NULL) +
+               numero_de(datos, "precio_wc", NULL);
+    return -1.0;   /* servicios, valoracion...: no llevan dinero */
+}
+
+/* Diferencia entre la hora LOCAL y la UTC, en segundos. El 'ts' de los apuntes
+ * viene en epoch LOCAL (ver la cabecera de este fichero) y time(NULL) es UTC de
+ * verdad: restarlos sin esto metia el desfase del huso (1-2 h) en la cuenta. */
+static long desfase_local_utc(time_t ahora)
+{
+    struct tm tl, tu;
+    if (!localtime_r(&ahora, &tl) || !gmtime_r(&ahora, &tu)) return 0;
+    return (long)(mktime(&tl) - mktime(&tu));
+}
+
+/* ── DONDE SE HIZO CADA APUNTE (02-nov-2026) ───────────────────────────────
+ *
+ * [comentario original: ver el bloque de arriba]
+ *
+ * BEST-EFFORT A PROPOSITO (revision independiente del 02-nov-2026): que no se
+ * pueda apuntar el sitio NO puede tumbar el apunte. Lo que manda es el dinero
+ * (eventos.csv + <tipo>s.csv + la NVS); esto es un extra para el mapa. Antes un
+ * fallo aqui deshacia las otras filas y contestaba 507, y con la cola de la
+ * cabina eso podia bloquear TODOS los apuntes siguientes. Ahora se avisa en el
+ * log y se sigue.
+ *
+ * Y SOLO SI EL APUNTE ES FRESCO (PUNTO_FRESCO_S): el GPS que se lee es el de
+ * AHORA. Si el apunte espero en la cola, la P4 puede estar a 50 km y la
+ * chincheta saldria en el sitio equivocado; mejor sin chincheta que mal puesta.
+ * 'aprox' quiere decir que lo selló la P4 al recibirlo, asi que ese es fresco
+ * por definicion. */
+static bool punto_con_posicion(const char *carpeta, const char *cuando,
+                               const char *tipo, const cJSON *datos,
+                               off_t marca, time_t t_apunte, bool aprox)
+{
+    if (!aprox) {
+        const time_t ahora = time(NULL);
+        const long tarde = (long)(t_apunte - (ahora + desfase_local_utc(ahora)));
+        if (tarde < -PUNTO_FRESCO_S || tarde > PUNTO_FRESCO_S) {
+            ESP_LOGW(TAG, "el apunte '%s' llego %ld s tarde: no le pongo sitio "
+                          "(el GPS de ahora no es el de entonces)", tipo, tarde);
+            return true;
+        }
+    }
+
     gps_data_t g;
     gps_get(&g);
     /* Sin fix no se apunta nada: una chincheta en el golfo de Guinea (0,0) es
-     * peor que no tener chincheta. El apunte en si (y su importe) ya esta
-     * guardado igual: esto es solo el "donde". */
+     * peor que no tener chincheta. */
     if (!g.hay_fix) return true;
 
     char ruta[RUTA_MAX];
     snprintf(ruta, sizeof(ruta), "%s/puntos.csv", carpeta);
-    struct stat st;
-    bool nuevo = !(stat(ruta, &st) == 0 && st.st_size > 0);
+    /* La cabecera la decide la MARCA que se tomo antes de escribir (como los
+     * otros dos ficheros), no un stat de ahora: si ese stat fallara, se colaria
+     * una cabecera en medio de un fichero que ya tenia filas. */
+    const bool nuevo = (marca == 0);
 
-    /* Importe y moneda, si el apunte los lleva. */
     char importe[16] = "";
+    const double imp = importe_de_apunte(datos, tipo);
+    if (imp >= 0.0) snprintf(importe, sizeof(importe), "%.2f", imp);
+
     char moneda[MONEDA_MAX + 1] = "";
-    if (datos) {
-        const cJSON *ji = cJSON_GetObjectItem(datos, "importe");
-        if (cJSON_IsNumber(ji)) snprintf(importe, sizeof(importe), "%.2f", ji->valuedouble);
-        const cJSON *jm = cJSON_GetObjectItem(datos, "moneda");
-        if (cJSON_IsString(jm)) {
-            size_t k = 0;
-            for (size_t i = 0; jm->valuestring[i] && k < sizeof(moneda) - 1; i++) {
-                char c = jm->valuestring[i];
-                if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                    (c >= '0' && c <= '9')) moneda[k++] = c;
-            }
-            moneda[k] = 0;
+    const cJSON *jm = datos ? cJSON_GetObjectItem(datos, "moneda") : NULL;
+    if (cJSON_IsString(jm)) {
+        size_t k = 0;
+        for (size_t i = 0; jm->valuestring[i] && k < sizeof(moneda) - 1; i++) {
+            char c = jm->valuestring[i];
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9')) moneda[k++] = c;
         }
+        moneda[k] = 0;
     }
 
     FILE *f = fopen(ruta, "a");
-    if (!f) return false;   /* que falle el apunte entero: se reintenta */
+    if (!f) {
+        ESP_LOGW(TAG, "no puedo abrir puntos.csv: el apunte '%s' se guarda sin sitio", tipo);
+        return false;
+    }
     if (nuevo) fprintf(f, "fecha_hora,tipo,importe,moneda,lat,lon,alt\n");
     fprintf(f, "%s,%s,%s,%s,%.6f,%.6f,%.0f\n", cuando, tipo, importe, moneda,
             g.lat, g.lon, (double)g.altitud_m);
@@ -4014,7 +4089,7 @@ static esp_err_t op_registro(httpd_req_t *req, const cJSON *j, uint32_t id)
      * -- dos repostajes en el CSV y el analizador del PC suma los dos. Antes se
      * escribia igual y solo se dejaba un ESP_LOGW. Mejor no escribir nada: el
      * apunte sigue en la cola y entra cuando la tarjeta responda. */
-    if (marca_ev < 0 || marca_tipo < 0 || marca_pun < 0) {
+    if (marca_ev < 0 || marca_tipo < 0) {
         camera_sd_bus_unlock();
         anota_fallo_escritura();
         ESP_LOGE(TAG, "no puedo comprobar el estado de %s/%ss.csv (marca=%d/%d): "
@@ -4030,14 +4105,16 @@ static esp_err_t op_registro(httpd_req_t *req, const cJSON *j, uint32_t id)
     /* El "donde" va en su propio fichero (ver punto_con_posicion). Si falla, el
      * apunte entero se deshace y se reintenta: una bombona sin sitio es justo lo
      * que el dueno reporto. */
-    escrito = punto_con_posicion(carpeta, cuando, tipo, jd) && escrito;
+    /* El sitio es un EXTRA: si falla se avisa y el apunte sigue su camino (el
+     * dinero manda). Ver el comentario de punto_con_posicion. */
+    if (!punto_con_posicion(carpeta, cuando, tipo, jd, marca_pun, t, aprox))
+        ESP_LOGW(TAG, "el apunte '%s' no ha podido apuntar su sitio (puntos.csv)", tipo);
     if (!escrito) {
         /* Tambien aqui importa si se pudo deshacer (16-oct-2026): ver el
          * comentario largo del 507 de mas abajo. La fila a medias que se quede
          * se cuenta aparte, en el log, para poder cuadrarla al analizar. */
         bool d_ev   = marca_deshacer(ruta_ev, marca_ev);
         bool d_tipo = marca_deshacer(ruta_tipo, marca_tipo);
-        bool d_pun  = marca_deshacer(ruta_pun, marca_pun);
         if (!d_ev || !d_tipo)
             ESP_LOGW(TAG, "escritura a medias en '%s' que NO he podido deshacer "
                           "(%s=%d, %s=%d): puede quedar una fila a medias",
@@ -4130,7 +4207,6 @@ static esp_err_t op_registro(httpd_req_t *req, const cJSON *j, uint32_t id)
          * nadie mas de lo que ya se bloquea en la escritura.) */
         bool deshecho_ev   = marca_deshacer(ruta_ev, marca_ev);
         bool deshecho_tipo = marca_deshacer(ruta_tipo, marca_tipo);
-        bool deshecho_pun  = marca_deshacer(ruta_pun, marca_pun);
         camera_sd_bus_unlock();
         /* SI NO SE HA PODIDO DESHACER, EL REINTENTO DUPLICA (16-oct-2026).
          *
@@ -4142,7 +4218,7 @@ static esp_err_t op_registro(httpd_req_t *req, const cJSON *j, uint32_t id)
          * repostajes. Como no se puede arreglar desde aqui, se dice en el log
          * con el nombre del fichero, que es lo unico que permite encontrarlo
          * despues al mirar el viaje. */
-        if (!deshecho_ev || !deshecho_tipo || !deshecho_pun) {
+        if (!deshecho_ev || !deshecho_tipo) {
             ESP_LOGE(TAG, "OJO: no he podido deshacer la fila de '%s' (%s=%d, "
                           "%s=%d). El reintento la volvera a escribir: si el "
                           "viaje sale con un apunte de mas, es este (mira %s y %s)",
@@ -4201,6 +4277,44 @@ static void xml_escapa(const char *in, char *out, size_t n)
     if (n) out[k] = 0;
 }
 
+/* Publica un fichero ya escrito en .tmp, PISANDO el destino (02-nov-2026).
+ *
+ * En FatFs un rename() NO pisa: si el destino existe devuelve FR_EXIST. Con el
+ * .gpx eso significaba que la segunda generacion (al bajarlo, o un cierre
+ * reintentado) fallaba siempre y se quedaba el mapa VIEJO o a medias para
+ * siempre. Se hace lo mismo que publicar_resumen(): apartar el destino a .bak,
+ * poner el nuevo y borrar el .bak; si falla, se restaura el viejo. */
+static bool publicar_tmp(const char *tmp, const char *destino)
+{
+    struct stat st;
+    if (stat(destino, &st) != 0) {
+        if (rename(tmp, destino) == 0) return true;
+        ESP_LOGE(TAG, "no he podido renombrar %s a %s", tmp, destino);
+        remove(tmp);
+        return false;
+    }
+    char bak[RUTA_MAX + 8];
+    if (snprintf(bak, sizeof(bak), "%s.bak", destino) >= (int)sizeof(bak)) {
+        remove(tmp);
+        return false;
+    }
+    remove(bak);                          /* resto de un intento anterior */
+    if (rename(destino, bak) != 0) {      /* 1) apartar el viejo */
+        ESP_LOGW(TAG, "no he podido apartar %s: se queda el mapa anterior", destino);
+        remove(tmp);
+        return false;
+    }
+    if (rename(tmp, destino) != 0) {      /* 2) poner el nuevo */
+        ESP_LOGE(TAG, "no he podido poner %s: restauro el anterior", destino);
+        if (rename(bak, destino) != 0)
+            ESP_LOGE(TAG, "OJO: el mapa anterior se quedo en %s", bak);
+        remove(tmp);
+        return false;
+    }
+    remove(bak);                          /* 3) ya no hace falta */
+    return true;
+}
+
 bool viaje_gpx_generar(const char *carpeta)
 {
     if (!carpeta || !carpeta[0]) return false;
@@ -4223,6 +4337,12 @@ bool viaje_gpx_generar(const char *carpeta)
     /* 1) Las chinchetas: cada apunte con posicion. */
     int n_wpt = 0;
     FILE *fp = fopen(pun_in, "r");
+    if (!fp && errno != ENOENT) {
+        /* La tarjeta falla (no es "no hay fichero"): mejor sin mapa que con uno
+         * a medias. */
+        remove(tmp);
+        return false;
+    }
     if (fp) {
         char linea[256];
         bool cabecera = true;
@@ -4253,11 +4373,19 @@ bool viaje_gpx_generar(const char *carpeta)
             else            snprintf(nombre, sizeof(nombre), "%s", tipo);
             char nombre_xml[128];
             xml_escapa(nombre, nombre_xml, sizeof(nombre_xml));
+            char cuando_xml[64];
+            xml_escapa(cuando, cuando_xml, sizeof(cuando_xml));
             fprintf(ft, "  <wpt lat=\"%s\" lon=\"%s\"><name>%s</name>"
-                        "<desc>%s</desc></wpt>\n", lat, lon, nombre_xml, cuando);
+                        "<desc>%s</desc></wpt>\n", lat, lon, nombre_xml, cuando_xml);
             n_wpt++;
         }
+        const bool fallo_lectura = ferror(fp) != 0;
         fclose(fp);
+        if (fallo_lectura) {
+            ESP_LOGW(TAG, "error leyendo %s: no publico el mapa a medias", pun_in);
+            remove(tmp);
+            return false;
+        }
     }
 
     /* 2) El recorrido. */
@@ -4291,7 +4419,13 @@ bool viaje_gpx_generar(const char *carpeta)
             n_punto++;
         }
         fprintf(ft, "  </trkseg></trk>\n");
+        const bool fallo_ruta = ferror(fr) != 0;
         fclose(fr);
+        if (fallo_ruta) {
+            ESP_LOGW(TAG, "error leyendo %s: no publico el mapa a medias", ruta_in);
+            remove(tmp);
+            return false;
+        }
     }
     fprintf(ft, "</gpx>\n");
     fflush(ft);
@@ -4303,7 +4437,7 @@ bool viaje_gpx_generar(const char *carpeta)
         remove(tmp);
         return false;
     }
-    if (rename(tmp, salida) != 0) { remove(tmp); return false; }
+    if (!publicar_tmp(tmp, salida)) return false;
     ESP_LOGI(TAG, "mapa del viaje: %s (%d puntos de recorrido, %d chinchetas)",
              salida, n_punto, n_wpt);
     return true;

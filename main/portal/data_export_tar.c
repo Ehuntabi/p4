@@ -479,15 +479,6 @@ esp_err_t handle_data_viaje_tar(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    /* EL MAPA DEL VIAJE, AL SERVIRLO (02-nov-2026). Se genera uno nuevo si el
-     * viaje se cerro con una version que aun no lo hacia, para que el .tar baje
-     * siempre con su viaje.gpx (recorrido + chinchetas de los apuntes). Es
-     * idempotente y barato (unos cientos de KB), y va con el cerrojo tomado,
-     * como el resto de lecturas de la tarjeta de este fichero. */
-    if (!hist && camera_sd_bus_lock(3000)) {
-        viaje_gpx_generar(dir);
-        camera_sd_bus_unlock();
-    }
 
     /* UN VIAJE QUE LA P4 TIENE ABIERTO NO SE SIRVE, AUNQUE TENGA resumen.txt
      * (auditoria del 16-oct-2026). El "cerrado" de arriba es un stat() de
@@ -533,6 +524,19 @@ esp_err_t handle_data_viaje_tar(httpd_req_t *req)
 
     if (hist) snprintf(nombre, sizeof(nombre), "vehiculo.tar");
     else      snprintf(nombre, sizeof(nombre), "%s%s.tar", v, incompleto ? "_INCOMPLETO" : "");
+
+    /* EL MAPA DEL VIAJE, AL SERVIRLO (02-nov-2026). Se genera aqui y no antes: a
+     * este punto ya se sabe que el viaje se va a servir de verdad (esta cerrado,
+     * no es el que la P4 tiene abierto ni le faltan apuntes). Hacerlo antes
+     * dejaba un viaje.gpx a medias en la carpeta de un viaje que luego se
+     * contestaba con 409/503, y como el .gpx ya existia, el cierre tampoco lo
+     * reemplazaba (el rename de FatFs no pisa): mapa roto para siempre.
+     * Sirve tambien para los viajes cerrados con versiones que aun no lo hacian. */
+    if (!hist && camera_sd_bus_lock(3000)) {
+        viaje_gpx_generar(dir);
+        camera_sd_bus_unlock();
+    }
+
     const char *dirs[1]     = { dir };
     const char *prefixes[1] = { hist ? "vehiculo" : v };
     return tar_send_dirs(req, nombre, dirs, prefixes, 1);
