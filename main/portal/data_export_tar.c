@@ -479,6 +479,16 @@ esp_err_t handle_data_viaje_tar(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    /* EL MAPA DEL VIAJE, AL SERVIRLO (02-nov-2026). Se genera uno nuevo si el
+     * viaje se cerro con una version que aun no lo hacia, para que el .tar baje
+     * siempre con su viaje.gpx (recorrido + chinchetas de los apuntes). Es
+     * idempotente y barato (unos cientos de KB), y va con el cerrojo tomado,
+     * como el resto de lecturas de la tarjeta de este fichero. */
+    if (!hist && camera_sd_bus_lock(3000)) {
+        viaje_gpx_generar(dir);
+        camera_sd_bus_unlock();
+    }
+
     /* UN VIAJE QUE LA P4 TIENE ABIERTO NO SE SIRVE, AUNQUE TENGA resumen.txt
      * (auditoria del 16-oct-2026). El "cerrado" de arriba es un stat() de
      * resumen.txt, y ese fichero puede existir con el viaje todavia abierto en

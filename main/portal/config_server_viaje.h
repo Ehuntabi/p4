@@ -39,6 +39,13 @@ bool viaje_abierto_nombre(char *out, size_t n);
  * .tar lo rechaza con 409 y lo dice. */
 bool viaje_es_el_abierto(const char *nombre);
 
+/* Escribe <carpeta>/viaje.gpx con el recorrido (ruta.csv) y una chincheta por
+ * apunte con posicion (puntos.csv). Se llama al cerrar el viaje y al servirlo
+ * por /data/viaje.tar (para los viajes de antes de esta version). Requiere el
+ * cerrojo de la tarjeta tomado. Devuelve false si no habia nada que escribir o
+ * si la tarjeta fallo. */
+bool viaje_gpx_generar(const char *carpeta);
+
 /* Vuelca a la SD lo unico que vive en RAM y se perderia en un reinicio: los
  * puntos de ruta del viaje abierto (hasta 5 min de traza). Se llama desde TODOS
  * los caminos de reinicio menos el del watchdog, que no puede hacer I/O de
