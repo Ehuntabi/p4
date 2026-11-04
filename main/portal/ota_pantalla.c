@@ -563,7 +563,7 @@ esp_err_t ota_pantalla_info(httpd_req_t *req)
 static const char PANTALLA_PAGINA_CABECERA[] =
     "<!doctype html><html lang='es'><head><meta charset='utf-8'>"
     "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-    "<title>Actualizar las pantallas</title>"
+    "<title>Actualizar la pantalla de cabina</title>"
     "<style>"
     "body{font-family:sans-serif;padding:24px;max-width:640px;margin:0 auto}"
     "h2{margin:0 0 12px}"
@@ -572,7 +572,7 @@ static const char PANTALLA_PAGINA_CABECERA[] =
     ".resultado{min-height:1.2em}"
     "progress{width:100%;height:18px}"
     "</style></head><body>"
-    "<h2>Actualizar las pantallas</h2>"
+    "<h2>Actualizar la pantalla de cabina</h2>"
     "<p class='aviso'><b>La pantalla se actualiza sola en el proximo minuto.</b> "
     "No hay que tocar nada en ella. Mientras se actualiza se reinicia (es "
     "normal). Si algo se corta, la pantalla sigue con la version que tenia.</p>"

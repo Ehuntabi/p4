@@ -463,7 +463,6 @@ esp_err_t ota_update_receive(httpd_req_t *req)
         if (strcmp(nueva.project_name, proyecto_actual) != 0) {
             const char *cual = NULL;
             if (strcmp(nueva.project_name, "cabina5") == 0)        cual = "la pantalla de 5\"";
-            else if (strcmp(nueva.project_name, "35cabina") == 0)  cual = "la pantalla de 3,5\"";
             char msg[192];
             if (cual)
                 snprintf(msg, sizeof(msg),
@@ -546,7 +545,7 @@ esp_err_t ota_update_page(httpd_req_t *req)
         "<h2>Actualizar la pantalla</h2>"
         "<p>Version instalada: <b>%s</b><br>Compilada el %s</p>"
         "%s"
-        "<p><a href='/pantallas'>Actualizar las pantallas (5\" y 3,5\")</a></p>"
+        "<p><a href='/pantallas'>Actualizar la pantalla de cabina (5\")</a></p>"
         "<p><input type='file' id='f' accept='.bin'></p>"
         "<p><button id='b' style='padding:12px 20px;font-size:16px'>Instalar</button></p>"
         "<p id='e'></p>"
