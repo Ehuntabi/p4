@@ -6,6 +6,7 @@
  * la vista antes de fotografiarla.
  */
 #include "capture_carousel.h"
+#include "sim_overview.h"   /* SIM_OVERVIEW_ENABLE (capturas) */
 #include "ui.h"
 #include "gallery.h"
 #include "ui/settings/settings_panel.h"
@@ -332,6 +333,16 @@ const char *ui_tour_goto_screen(int idx)
  * que mantener dos listas sincronizadas. */
 bool ui_tour_screen_needs_strict_auth(int idx)
 {
+    /* TEMPORAL, SOLO PARA EL FIRMWARE DE CAPTURAS (4-nov-2026): con la clave
+     * del portal aparte, /captura ya no puede pedir el nivel estricto para
+     * sacar la pantalla de Wi-Fi (esa clave solo se ve en la pantalla, o sea
+     * que no habria forma de pedirla). En el firmware que se publica esto NO
+     * se compila: la bandera va con el simulador. La clave que salga en la
+     * foto se tapa despues, igual que la del Wi-Fi. */
+#if SIM_OVERVIEW_ENABLE
+    (void)idx;
+    return false;
+#endif
     if (idx < TOUR_I_SETSUB0 || idx >= ui_tour_screen_count()) return false;
     int s = idx - TOUR_I_SETSUB0;
     if (s >= (int)(sizeof(TOUR_SET_NAMES) / sizeof(TOUR_SET_NAMES[0]))) return false;

@@ -374,19 +374,28 @@ static esp_err_t handle_tar_dir(httpd_req_t *req, const char *src_dir, const cha
 
 esp_err_t handle_data_frigo_tar(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
+     * La del punto de acceso es para hablar con la P4 (app y cabina);
+     * lo que saca datos de la tarjeta va con la otra. */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
     return handle_tar_dir(req, "/sdcard/frigo", "frigo.tar");
 }
 
 esp_err_t handle_data_bateria_tar(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
+     * La del punto de acceso es para hablar con la P4 (app y cabina);
+     * lo que saca datos de la tarjeta va con la otra. */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
     return handle_tar_dir(req, "/sdcard/bateria", "bateria.tar");
 }
 
 esp_err_t handle_data_solar_tar(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
+     * La del punto de acceso es para hablar con la P4 (app y cabina);
+     * lo que saca datos de la tarjeta va con la otra. */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
     return handle_tar_dir(req, "/sdcard/solar", "solar.tar");
 }
 
@@ -402,7 +411,10 @@ esp_err_t handle_data_solar_tar(httpd_req_t *req)
  * propio paquete. */
 esp_err_t handle_data_historico_tar(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
+     * La del punto de acceso es para hablar con la P4 (app y cabina);
+     * lo que saca datos de la tarjeta va con la otra. */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
     static const char *const dirs[]     = { "/sdcard/bateria", "/sdcard/solar", "/sdcard/frigo" };
     static const char *const prefixes[] = { "bateria",         "solar",         "frigo"         };
     return tar_send_dirs(req, "historico.tar", dirs, prefixes, 3);
@@ -544,13 +556,19 @@ esp_err_t handle_data_viaje_tar(httpd_req_t *req)
 
 esp_err_t handle_data_capturas_tar(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
+     * La del punto de acceso es para hablar con la P4 (app y cabina);
+     * lo que saca datos de la tarjeta va con la otra. */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
     return handle_tar_dir(req, "/sdcard/screenshots", "capturas.tar");
 }
 
 esp_err_t handle_data_vigilancia_tar(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
+     * La del punto de acceso es para hablar con la P4 (app y cabina);
+     * lo que saca datos de la tarjeta va con la otra. */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
     return handle_tar_dir_of_subdirs(req, "/sdcard/vigilancia", "vigilancia", "vigilancia.tar");
 }
 
@@ -568,7 +586,10 @@ esp_err_t handle_data_vigilancia_tar(httpd_req_t *req)
  * de bueno. */
 esp_err_t handle_data_config_tar(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
+     * La del punto de acceso es para hablar con la P4 (app y cabina);
+     * lo que saca datos de la tarjeta va con la otra. */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
 
     struct stat st;
     if (!camera_sd_bus_lock(3000)) {
@@ -646,6 +667,9 @@ esp_err_t handle_data_config_tar(httpd_req_t *req)
  * subcarpeta por dia. */
 esp_err_t handle_data_logs_tar(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
+     * La del punto de acceso es para hablar con la P4 (app y cabina);
+     * lo que saca datos de la tarjeta va con la otra. */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
     return handle_tar_dir_of_subdirs(req, "/sdcard/logs", "logs", "logs.tar");
 }

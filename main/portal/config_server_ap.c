@@ -872,6 +872,40 @@ void config_server_ensure_ap_password(void)
         if (err != ESP_OK) ESP_LOGW(TAG, "clave del AP regenerada pero NO persistio: %s", esp_err_to_name(err));
         else ESP_LOGW(TAG, "clave del AP regenerada (aleatoria): verla en Ajustes -> Wi-Fi");
     }
+    /* Y DE UNA SOLA CLAVE PARA COMUNICAR (4-nov-2026): la del portal (la que
+     * piden la app y las pantallas de cabina) pasa a ser la misma que la del
+     * Wi-Fi. Antes habia tres claves -- Wi-Fi, portal y administracion -- y el
+     * dueño pidio dos. Esta se escribe ANTES de que http_auth_init() construya
+     * la cabecera Basic, asi que el cambio vale desde el primer arranque.
+     * Si falla, se sigue con la que hubiera: no se deja a nadie fuera. */
+    char portal[33] = {0};
+    size_t pl_portal = sizeof(portal);
+    if (nvs_get_str(h, "password", portal, &pl_portal) == ESP_OK && portal[0]) {
+        esp_err_t e = nvs_set_str(h, "http_pass", portal);
+        if (e == ESP_OK) e = nvs_commit(h);
+        if (e != ESP_OK) ESP_LOGW(TAG, "no pude igualar la clave del portal a la del AP: %s",
+                                  esp_err_to_name(e));
+    }
+
+    /* LA SEGUNDA CLAVE (4-nov-2026): la del PORTAL, que es la que piden grabar
+     * firmware (OTA) y CUALQUIER descarga. Antes era opcional y, si no estaba,
+     * valia la primera -- o sea que en la practica habia una sola llave para
+     * todo. El dueño quiere dos de verdad, asi que se crea sola al arrancar si
+     * falta y se puede leer/cambiar en Ajustes -> Wi-Fi. Aleatoria de 12, del
+     * mismo alfabeto que las otras (sin caracteres que se confunden al
+     * copiarlos a mano). */
+    char adm[33] = {0};
+    size_t al = sizeof(adm);
+    if (nvs_get_str(h, "adm_pass", adm, &al) != ESP_OK || strlen(adm) < 8) {
+        static const char cs[] = "abcdefghijkmnpqrstuvwxyz23456789";
+        for (int i = 0; i < 12; i++) adm[i] = cs[esp_random() % (sizeof(cs) - 1)];
+        adm[12] = '\0';
+        esp_err_t e = nvs_set_str(h, "adm_user", "portal");
+        if (e == ESP_OK) e = nvs_set_str(h, "adm_pass", adm);
+        if (e == ESP_OK) e = nvs_commit(h);
+        if (e == ESP_OK) ESP_LOGW(TAG, "clave del PORTAL (OTA y descargas) creada: verla en Ajustes -> Wi-Fi");
+        else            ESP_LOGW(TAG, "no pude crear la clave del portal: %s", esp_err_to_name(e));
+    }
     nvs_close(h);
 }
 

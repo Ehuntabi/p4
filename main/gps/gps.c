@@ -412,6 +412,33 @@ void gps_crudo_get(int i, char *out, size_t n)
 
 uint32_t gps_sincronizaciones(void) { return s_sincs; }
 
+/* Solo para sim_overview.c: pone la fecha y la hora que enseña la pantalla y da
+ * por hecho el ajuste del reloj. Sin esto, una captura del banco sale con
+ * "HORA DEL GPS --" y con el aviso "el reloj todavía no se ha puesto en hora",
+ * que parece una averia y no lo es: es que no hay modulo que mande la trama. */
+void gps_sim_hora(const char *fecha, const char *hora)
+{
+    if (!s_mtx) return;
+    xSemaphoreTake(s_mtx, portMAX_DELAY);
+    snprintf(s_d.fecha, sizeof(s_d.fecha), "%s", fecha ? fecha : "");
+    snprintf(s_d.hora,  sizeof(s_d.hora),  "%s", hora ? hora : "");
+    if (s_sincs == 0) s_sincs = 1;
+    xSemaphoreGive(s_mtx);
+}
+
+/* Solo para sim_overview.c: deja unas tramas NMEA en el anillo de diagnostico,
+ * para que la caja "TRAMAS EN CRUDO" no salga vacia en la captura. */
+void gps_sim_crudo(const char *const *tramas, int n)
+{
+    if (!s_mtx || !tramas) return;
+    xSemaphoreTake(s_mtx, portMAX_DELAY);
+    for (int i = 0; i < n; i++) {
+        snprintf(s_crudo[s_crudo_next], LINEA_MAX, "%s", tramas[i]);
+        s_crudo_next = (s_crudo_next + 1) % GPS_CRUDO_N;
+    }
+    xSemaphoreGive(s_mtx);
+}
+
 void gps_sim_inject(bool hay_fix, uint8_t satelites, double lat, double lon,
                     float altitud_m, uint8_t snr_mejor, uint8_t snr_medio)
 {

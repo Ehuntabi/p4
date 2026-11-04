@@ -28,6 +28,11 @@ uint32_t watchdog_get_reset_count(void);
  * Ajustes -> Acerca de, para poder empezar a contar de nuevo. */
 void watchdog_clear_reset_count(void);
 
+/* Borra TAMBIEN el ultimo reinicio apuntado (fecha y motivo) y deja el contador
+ * a cero. Solo para el firmware de capturas: la pantalla "Acerca de" del manual
+ * no debe enseñar el panic del banco de pruebas. */
+void watchdog_olvida_arranque(void);
+
 /* Suspende (true) o reanuda (false) la detección de UI congelada. Para
  * operaciones que se sabe que bloquean LVGL mucho rato sin ser un cuelgue
  * real (p.ej. el borrado de flash al empezar una actualización OTA). */

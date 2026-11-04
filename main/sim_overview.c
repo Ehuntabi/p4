@@ -2,6 +2,7 @@
  * con valores que cambian en el tiempo. Activar via SIM_OVERVIEW_ENABLE
  * en sim_overview.h o desactivar para deshabilitar. */
 #include "sim_overview.h"
+#include "watchdog.h"   /* borrar el historico de reinicios del banco */
 /* DATALOGGER_CSV_HEADER: el dia inventado de frigo se escribe con la MISMA
  * cabecera que el log de verdad, definida en un solo sitio. */
 #include "datalogger.h"
@@ -76,11 +77,24 @@ static uint8_t tank_level_from_pct(float pct) {
     return 4;                    /* lleno */
 }
 
+/* Se generan una sola vez, en cuanto la tarjeta esta montada de verdad. */
+static volatile bool s_historicos_ok;
+static volatile bool s_reinicios_olvidados;   /* basura del banco borrada una vez */
+static bool sim_generar_historicos(void);   /* definida mas abajo */
+
 static void sim_task(void *arg) {
     (void)arg;
     ESP_LOGI(TAG, "Simulacion overview ACTIVA — datos ficticios FIJOS");
     (void)now_ms;   /* datos estaticos: ya no usamos el reloj */
     while (1) {
+        if (!s_historicos_ok && sim_generar_historicos()) s_historicos_ok = true;
+        /* Y una sola vez, cuando ya han pasado unos segundos: main.c apunta el
+         * motivo del arranque DESPUES de esto, asi que borrarlo al principio no
+         * servia de nada (el panic volvia a quedar apuntado). */
+        if (!s_reinicios_olvidados) {
+            static int espera;
+            if (++espera >= 15) { watchdog_olvida_arranque(); s_reinicios_olvidados = true; }
+        }
         /* Frame FIJO (el usuario quiere rellenar una vez, sin animar): da
          * SoC ~62% descargando, TTG ~250min, 13.4V, DC-DC activo, solar ~210W,
          * frigo -10C, tanques parciales. Los valores NO cambian entre capturas. */
@@ -116,6 +130,11 @@ static void sim_task(void *arg) {
         float pv_w = tri(0.0f, 280.0f, t, 80000);
         memset(&d, 0, sizeof(d));
         d.type = VICTRON_BLE_RECORD_SOLAR_CHARGER;
+        /* device_state: la pastilla de la card Solar lee esto. Sin ponerlo
+         * valia 0 y salia "Apagado" al lado de 210 W y 15 A (lo canto el
+         * arbitro de las capturas el 4-nov-2026). 3 = Bulk, que es lo que hace
+         * un MPPT a media mañana. */
+        d.record.solar.device_state = 3;
         d.record.solar.pv_power_w = (uint16_t)pv_w;
         d.record.solar.battery_voltage_centi = v_centi;
         d.record.solar.battery_current_deci = (int16_t)(pv_w / v_centi * 1000);
@@ -179,6 +198,29 @@ static void sim_task(void *arg) {
          *   (el modulo no manda posicion) asi que, igual que el resto de este
          *   frame, se deja fijo. */
         gps_sim_inject(true, 9, 43.2969, -2.2542, 12.0f, 42, 34);
+        /* La hora del GPS se saca del reloj del sistema (UTC), no se deja fija:
+         * si no, la pantalla enseñaria una hora que no cuadra con la del
+         * reloj de la barra de abajo. */
+        {
+            time_t ahora = time(NULL);
+            struct tm tmu;
+            gmtime_r(&ahora, &tmu);
+            char f[11], h[9];
+            strftime(f, sizeof(f), "%d-%m-%Y", &tmu);
+            strftime(h, sizeof(h), "%H:%M:%S", &tmu);
+            gps_sim_hora(f, h);
+        }
+        /* Tramas de ejemplo (checksum calculado a mano sobre las coordenadas
+         * de arriba) para que la caja de "tramas en crudo" no salga vacia. */
+        {
+            static const char *const tramas[] = {
+                "$GPGGA,083000.00,4317.8140,N,00215.2520,E,1,09,1.2,12.0,M,50.1,M,,*55",
+                "$GPRMC,083000.00,A,4317.8140,N,00215.2520,E,0.0,0.0,041126,,,A*5A",
+                "$GPGSV,3,1,09,05,45,120,38,07,30,240,35,08,60,060,42,13,20,300,30*74",
+                "$GPGSV,3,2,09,15,55,180,40,17,25,090,32,19,70,270,36,20,15,200,28*70",
+            };
+            gps_sim_crudo(tramas, (int)(sizeof(tramas) / sizeof(tramas[0])));
+        }
 
         vTaskDelay(pdMS_TO_TICKS(SIM_TICK_MS));
     }
@@ -204,6 +246,17 @@ static void sim_task(void *arg) {
 #define SIM_PASO_MIN   5     /* una muestra cada 5 min -> 288 al dia */
 
 static bool sim_existe(const char *p) { struct stat st; return stat(p, &st) == 0; }
+
+/* Minuto del dia que es ahora mismo (0..1439). Se usa para que el dia
+ * inventado acabe en el minuto actual y no a las 23:55. */
+static int sim_minuto_de_hoy(void)
+{
+    time_t ahora = time(NULL);
+    struct tm tml;
+    localtime_r(&ahora, &tml);
+    int m = tml.tm_hour * 60 + tml.tm_min;
+    return (m < 0) ? 0 : (m > 24 * 60 - 1 ? 24 * 60 - 1 : m);
+}
 
 /* Aparta el fichero del dia en curso antes de escribir el inventado.
  *
@@ -234,8 +287,14 @@ static bool sim_apartar(const char *path)
     }
     snprintf(bak, sizeof(bak), "%s.real", path);
     if (sim_existe(bak)) {
-        ESP_LOGW(TAG, "ya habia copia de %s: no toco nada", path);
-        return false;
+        /* Ya hay copia buena guardada: se puede reescribir el inventado sin
+         * miedo (era el motivo del "no toco nada"). Y HACE FALTA reescribirlo:
+         * el registrador sigue apuntando muestras de verdad en el mismo
+         * fichero, asi que al segundo arranque el "dia inventado" acababa a
+         * las 23:55 con las de ahora detras y el eje de la grafica se volvia
+         * un desproposito. Visto el 4-nov-2026. */
+        ESP_LOGW(TAG, "ya habia copia de %s: reescribo el inventado", path);
+        return true;
     }
     if (rename(path, bak) != 0) {
         ESP_LOGW(TAG, "no puedo apartar %s", path);
@@ -255,14 +314,14 @@ static float sim_sol(int minuto)
     return s * s;   /* mas estrecha: mediodia marcado */
 }
 
-static void sim_escribir_frigo(const char *fecha)
+static bool sim_escribir_frigo(const char *fecha)
 {
     char path[64];
     snprintf(path, sizeof(path), "/sdcard/frigo/%s.csv", fecha);
-    if (!sim_apartar(path)) return;
+    if (!sim_apartar(path)) return true;   /* ya habia copia: nada que hacer */
     mkdir("/sdcard/frigo", 0777);
     FILE *f = fopen(path, "w");
-    if (!f) { ESP_LOGW(TAG, "no puedo escribir %s", path); return; }
+    if (!f) { ESP_LOGW(TAG, "no puedo escribir %s", path); return false; }
     fprintf(f, DATALOGGER_CSV_HEADER);
     /* min_solar acumula como lo hace la placa de verdad: suma el paso entero
      * mientras el excedente esta activo (mismo criterio que la columna 6). */
@@ -275,7 +334,10 @@ static void sim_escribir_frigo(const char *fecha)
         int   fan      = (t_aletas <= 35.0f) ? 0
                        : (int)((t_aletas - 35.0f) / 13.0f * 100.0f);
         if (fan > 100) fan = 100;
-        int exc = (sol > 0.55f) ? 1 : 0;
+        /* Un rato de excedente solar por la mañana. Estaba en 0.55 y a la hora
+         * de la captura aun no habia llegado, asi que la linea morada "Sol"
+         * salia plana a cero y la grafica no enseñaba nada de eso. */
+        int exc = (sol > 0.30f) ? 1 : 0;
         if (exc) min_solar += SIM_PASO_MIN;
         /* OJO: la fila se escribe a mano y comparte cabecera con el log de
          * verdad: al anadir una columna hay que tocar los DOS sitios. Por aqui
@@ -287,18 +349,25 @@ static void sim_escribir_frigo(const char *fecha)
     }
     fclose(f);
     ESP_LOGI(TAG, "historico frigo inventado -> %s", path);
+    return true;
 }
 
-static void sim_escribir_bateria(const char *fecha)
+static bool sim_escribir_bateria(const char *fecha)
 {
     char path[64];
     snprintf(path, sizeof(path), "/sdcard/bateria/%s.csv", fecha);
-    if (!sim_apartar(path)) return;
+    if (!sim_apartar(path)) return true;
     mkdir("/sdcard/bateria", 0777);
     FILE *f = fopen(path, "w");
-    if (!f) { ESP_LOGW(TAG, "no puedo escribir %s", path); return; }
+    if (!f) { ESP_LOGW(TAG, "no puedo escribir %s", path); return false; }
     fprintf(f, "timestamp,source,milli_amps,milli_amps_max,milli_amps_min,"
                "centi_volts,pv_watts\n");
+    /* El dia ENTERO, hasta las 23:55, aunque el reloj vaya por la mañana: la
+     * grafica normaliza cada serie a su propia ventana y, si el inventado
+     * acabara en "ahora", la de la placa (que solo tiene horas de dia) dejaria
+     * de cuadrar con la de la bateria y las curvas saldrian descolocadas.
+     * Lo que el registrador añada detras se ve como un tramo corto al final,
+     * que es mucho menos feo que dos curvas cruzadas. Visto el 4-nov-2026. */
     for (int m = 0; m < 24 * 60; m += SIM_PASO_MIN) {
         float sol = sim_sol(m);
         int pv_w  = (int)(340.0f * sol);
@@ -316,16 +385,24 @@ static void sim_escribir_bateria(const char *fecha)
     }
     fclose(f);
     ESP_LOGI(TAG, "historico bateria inventado -> %s", path);
+    return true;
 }
 
-/* Produccion dia a dia: una linea por dia, los 10 anteriores a hoy. */
-static void sim_escribir_solar(void)
+/* Produccion dia a dia: una linea por dia, los 10 anteriores a hoy.
+ *
+ * ANTES ESTE NO SE TOCABA, a proposito: los dias de produccion de verdad de los
+ * viajes lucen mejor que cualquier invento. Se cambio el 4-nov-2026 al rehacer
+ * las capturas del manual: el dueño pidio que TODAS las pantallas del manual
+ * salgan con datos inventados, y esta mezclaba sus dias reales con los de
+ * mentira. Ahora se aparta el bueno como ".real" (igual que los de bateria y
+ * frigo) y lo devuelve sim_overview_restaurar_reales() al apagar el simulador. */
+static bool sim_escribir_solar(void)
 {
     const char *path = "/sdcard/solar/produccion.csv";
-    if (sim_existe(path)) { ESP_LOGW(TAG, "YA EXISTE, no lo toco: %s", path); return; }
+    if (!sim_apartar(path)) return true;
     mkdir("/sdcard/solar", 0777);
     FILE *f = fopen(path, "w");
-    if (!f) { ESP_LOGW(TAG, "no puedo escribir %s", path); return; }
+    if (!f) { ESP_LOGW(TAG, "no puedo escribir %s", path); return false; }
     fprintf(f, "fecha,kwh,horas,pico_w,kwh_consumo\n");
     time_t now = time(NULL);
     for (int d = 10; d >= 1; --d) {
@@ -345,16 +422,17 @@ static void sim_escribir_solar(void)
     }
     fclose(f);
     ESP_LOGI(TAG, "historico solar inventado -> %s", path);
+    return true;
 }
 
-static void sim_generar_historicos(void)
+static bool sim_generar_historicos(void)
 {
     time_t now = time(NULL);
     struct tm tm_l;
     localtime_r(&now, &tm_l);
     if (tm_l.tm_year + 1900 < 2020) {
         ESP_LOGW(TAG, "sin hora valida: no genero historicos (saldrian con fecha absurda)");
-        return;
+        return false;
     }
     char fecha[11];
     strftime(fecha, sizeof(fecha), "%Y-%m-%d", &tm_l);
@@ -362,16 +440,22 @@ static void sim_generar_historicos(void)
     /* Serializar con la camara, como el resto de accesos a la tarjeta. */
     if (!camera_sd_bus_lock(5000)) {
         ESP_LOGW(TAG, "tarjeta ocupada: no genero historicos");
-        return;
+        return false;
     }
-    sim_escribir_frigo(fecha);
-    sim_escribir_bateria(fecha);
-    sim_escribir_solar();
+    bool ok = sim_escribir_frigo(fecha);
+    ok = sim_escribir_bateria(fecha) && ok;
+    ok = sim_escribir_solar() && ok;
     camera_sd_bus_unlock();
+    return ok;
 }
 
 void sim_overview_start(void) {
-    sim_generar_historicos();
+    /* Aqui la tarjeta TODAVIA no esta montada (init_sd_rtc_frigo va despues de
+     * init_devices): la primera vuelta falla con "no puedo escribir". Antes se
+     * intentaba solo aqui y por eso los historicos inventados no se escribian
+     * nunca, aunque el codigo pareciera correcto. El reintento va en sim_task,
+     * que ya corre con todo montado. */
+    if (sim_generar_historicos()) s_historicos_ok = true;
     xTaskCreate(sim_task, "sim_overview", 4096, NULL, 4, NULL);
 }
 
@@ -436,5 +520,6 @@ void sim_overview_restaurar_reales(void)
 {
     restaurar_dir("/sdcard/frigo");
     restaurar_dir("/sdcard/bateria");
+    restaurar_dir("/sdcard/solar");   /* produccion.csv (desde el 4-nov-2026) */
 }
 #endif

@@ -610,3 +610,21 @@ void watchdog_clear_reset_count(void)
     ESP_LOGI(TAG, "contador de resets puesto a cero por el usuario");
 }
 
+/* Olvida el ULTIMO reinicio apuntado (fecha y motivo), ademas de poner el
+ * contador a cero. La usa SOLO el firmware de capturas (sim_overview), para que
+ * la pantalla "Acerca de" del manual no salga enseñando el panic que se llevo
+ * la placa en el banco de pruebas: eso es un fallo real que hay que arreglar,
+ * no un ejemplo que publicar. */
+void watchdog_olvida_arranque(void)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_erase_key(h, KEY_ARRANQUE);
+    nvs_commit(h);
+    nvs_close(h);
+    s_arranque_epoch = 0;
+    s_arranque_reason_code = 0xFF;
+    s_reset_count = 0;
+    ESP_LOGW(TAG, "historico de reinicios borrado (firmware de capturas)");
+}
+

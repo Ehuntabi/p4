@@ -279,7 +279,22 @@ void create_about_settings_page(ui_state_t *ui, lv_obj_t *page)
     /* Poner a cero el contador de reinicios por vigilante/fallo. La fecha y el
      * motivo del ultimo reinicio NO se tocan: eso sigue siendo cierto y es lo
      * que se mira para diagnosticar. */
-    lv_obj_t *btn_zero = lv_btn_create(card2);
+    /* Los dos botones de accion van en la MISMA fila (4-nov-2026): el de
+     * Reiniciar estaba al final de la tarjeta de creditos y se quedaba FUERA de
+     * la pantalla -- habia que hacer scroll para verlo, que es justo lo que no
+     * puede pasar con el boton que se usa para reiniciar. Aqui, en la fila de
+     * "Poner a cero", entra sin scroll. */
+    lv_obj_t *fila_acciones = lv_obj_create(card2);
+    lv_obj_remove_style_all(fila_acciones);
+    lv_obj_set_width(fila_acciones, lv_pct(100));
+    lv_obj_set_height(fila_acciones, LV_SIZE_CONTENT);
+    lv_obj_set_layout(fila_acciones, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(fila_acciones, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(fila_acciones, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(fila_acciones, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *btn_zero = lv_btn_create(fila_acciones);
     lv_obj_set_size(btn_zero, 230, 44);
     lv_obj_set_style_bg_color(btn_zero, UI_COLOR_CARD_BORDER, 0);
     lv_obj_set_style_radius(btn_zero, 8, 0);
@@ -288,6 +303,18 @@ void create_about_settings_page(ui_state_t *ui, lv_obj_t *page)
     lv_obj_set_style_text_font(lbl_zero, &lv_font_montserrat_20_es, 0);
     lv_obj_center(lbl_zero);
     lv_obj_add_event_cb(btn_zero, reset_count_btn_cb, LV_EVENT_CLICKED, NULL);
+
+    /* Reiniciar, a la derecha de la misma fila (mismo criterio que tenia en la
+     * tarjeta de creditos: fila propia para que no se pelee con el titulo). */
+    lv_obj_t *btn_reboot = lv_btn_create(fila_acciones);
+    lv_obj_set_size(btn_reboot, 160, 44);
+    lv_obj_set_style_bg_color(btn_reboot, UI_COLOR_RED_DARK, 0);
+    lv_obj_set_style_radius(btn_reboot, 8, 0);
+    lv_obj_t *lbl_reboot = lv_label_create(btn_reboot);
+    lv_label_set_text(lbl_reboot, LV_SYMBOL_POWER "  Reiniciar");
+    lv_obj_set_style_text_font(lbl_reboot, &lv_font_montserrat_20_es, 0);
+    lv_obj_center(lbl_reboot);
+    lv_obj_add_event_cb(btn_reboot, reboot_btn_cb, LV_EVENT_CLICKED, ui);
 
     /* === Card 3: Credits === */
     lv_obj_t *card3 = lv_obj_create(cont);
@@ -353,34 +380,6 @@ void create_about_settings_page(ui_state_t *ui, lv_obj_t *page)
     lv_obj_set_style_text_font(lbl_cred, &lv_font_montserrat_20_es, 0);
     lv_obj_set_style_text_color(lbl_cred, UI_COLOR_TEXT_DIM, 0);
     lv_label_set_text(lbl_cred, "Basado en: CamdenSutherland, wytr");
-
-    /* === Boton Reiniciar: abajo a la derecha de esta tarjeta ===
-     *
-     * Antes iba en la cabecera, al lado del titulo (ui_card_wrap_title_with):
-     * esa fila lleva un hueco espaciador del ancho del boton + el titulo + el
-     * boton, y con la fuente del titulo no cabe en el ancho de la tarjeta, asi
-     * que el flex lo apretaba y el boton acababa ENCIMA del titulo. Aqui va en
-     * su propia fila, alineada a la derecha: no depende del ancho del titulo.
-     * (Peticion del usuario, 24-sep-2026.) */
-    lv_obj_t *fila_reboot = lv_obj_create(card3);
-    lv_obj_remove_style_all(fila_reboot);
-    lv_obj_set_width(fila_reboot, lv_pct(100));
-    lv_obj_set_height(fila_reboot, LV_SIZE_CONTENT);
-    lv_obj_set_layout(fila_reboot, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(fila_reboot, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(fila_reboot, LV_FLEX_ALIGN_END,
-                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(fila_reboot, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_t *btn_reboot = lv_btn_create(fila_reboot);
-    lv_obj_set_size(btn_reboot, 130, 40);
-    lv_obj_set_style_bg_color(btn_reboot, UI_COLOR_RED_DARK, 0);
-    lv_obj_set_style_radius(btn_reboot, 8, 0);
-    lv_obj_t *lbl_reboot = lv_label_create(btn_reboot);
-    lv_label_set_text(lbl_reboot, LV_SYMBOL_POWER "  Reiniciar");
-    lv_obj_set_style_text_font(lbl_reboot, &lv_font_montserrat_20_es, 0);
-    lv_obj_center(lbl_reboot);
-    lv_obj_add_event_cb(btn_reboot, reboot_btn_cb, LV_EVENT_CLICKED, ui);
 
     /* Refrescar y crear timer */
     about_refresh_dynamic(ui);

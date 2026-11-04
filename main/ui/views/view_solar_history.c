@@ -47,6 +47,11 @@ static lv_obj_t *s_lbl_rotulo = NULL;
 static lv_obj_t *s_lbl_hint  = NULL;
 static lv_obj_t *s_xlabels   = NULL;
 static lv_obj_t *s_totales[4] = { NULL, NULL, NULL, NULL };
+/* SOLO PARA LAS CAPTURAS DEL MANUAL: abrir la grafica solar directamente en
+ * "Por dias". 0 en el firmware que se publica. */
+#ifndef CAPTURA_SOLAR_DIAS
+#define CAPTURA_SOLAR_DIAS 0
+#endif
 static bool      s_modo_dias = false;
 /* Las dos primeras etiquetas del pie son la LEYENDA: tocarlas muestra u oculta
  * su serie, igual que en el historico de bateria. Al apagarse se ponen grises. */
@@ -410,8 +415,18 @@ void ui_show_solar_history_screen(ui_state_t *ui)
     }
     sol_actualizar_totales();
 
+#if CAPTURA_SOLAR_DIAS
+    /* TEMPORAL (4-nov-2026): la captura del manual de la grafica solar se hace
+     * en modo "Por dias", que es lo que cuenta el manual ("dia a dia"). En modo
+     * "Hoy" el grafico se llena del anillo de 24 h en RAM, que en el banco esta
+     * vacio y sale una grafica en blanco. Se vuelve a 0 despues de capturar. */
+    s_modo_dias = true;
+    sol_cargar_dias();
+    lv_label_set_text(s_lbl_modo, "Por dias");
+#else
     s_modo_dias = false;
     sol_cargar_hoy();
+#endif
 
     lv_scr_load(scr);
 }

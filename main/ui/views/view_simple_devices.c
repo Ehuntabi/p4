@@ -9,22 +9,29 @@
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
+/* EN CASTELLANO (4-nov-2026). Estos nombres vienen del protocolo Victron, que
+ * los manda en ingles, y se estaban enseñando tal cual en las pantallas de
+ * detalle: "Absorption (0x04)", "Off Reason 0x00000000"... El resto del manual
+ * y de la pantalla estan en castellano, asi que se traducen aqui. Los codigos
+ * (0x04 y compañia) se siguen enseñando entre parentesis donde ayudan a
+ * diagnosticar, pero el texto que se lee es el de siempre en la P4 (el mismo
+ * que usa la vista general y la pantalla de la placa). */
 static const char *device_state_to_string(uint8_t state)
 {
     switch (state) {
-    case 0: return "Off";
-    case 1: return "Low Power";
-    case 2: return "Fault";
+    case 0: return "Apagado";
+    case 1: return "Bajo consumo";
+    case 2: return "Fallo";
     case 3: return "Bulk";
-    case 4: return "Absorption";
+    case 4: return "Absorcion";
     case 5: return "Float";
     case 6: return "Storage";
-    case 7: return "Equalize (Man)";
-    case 8: return "Equalize (Auto)";
-    case 9: return "Inverting";
-    case 10: return "Power Supply";
-    case 11: return "Starting";
-    default: return "Unknown";
+    case 7: return "Ecualizacion (manual)";
+    case 8: return "Ecualizacion (auto)";
+    case 9: return "Invirtiendo";
+    case 10: return "Fuente";
+    case 11: return "Arrancando";
+    default: return "Desconocido";
     }
 }
 
@@ -32,27 +39,27 @@ static const char *charger_error_to_string(uint8_t code)
 {
     switch (code) {
     case 0:   return "OK";
-    case 1:   return "Battery temp high";
-    case 2:   return "Battery volt high";
+    case 1:   return "Bateria caliente";
+    case 2:   return "Bateria con tension alta";
     case 3:
-    case 4:   return "Remote temp sensor";
-    case 5:   return "Remote temp lost";
+    case 4:   return "Sonda de temperatura remota";
+    case 5:   return "Sonda de temperatura perdida";
     case 6:
-    case 7:   return "Remote volt sense";
-    case 8:   return "Remote volt lost";
-    case 11:  return "High ripple";
-    case 14:  return "Temp too low";
-    case 17:  return "Charger temp";
-    case 18:  return "Over current";
-    case 19:  return "Polarity";
-    case 26:  return "Overheated";
-    case 27:  return "Short circuit";
-    case 33:  return "Input volt high";
-    case 34:  return "Input curr high";
-    case 38:  return "Input shutdown";
-    case 114: return "CPU temp";
-    case 116: return "Cal lost";
-    default:  return "Unknown";
+    case 7:   return "Sensor de tension remoto";
+    case 8:   return "Sensor de tension perdido";
+    case 11:  return "Rizado alto";
+    case 14:  return "Temperatura demasiado baja";
+    case 17:  return "Temperatura del cargador";
+    case 18:  return "Sobrecorriente";
+    case 19:  return "Polaridad";
+    case 26:  return "Sobrecalentado";
+    case 27:  return "Cortocircuito";
+    case 33:  return "Tension de entrada alta";
+    case 34:  return "Corriente de entrada alta";
+    case 38:  return "Entrada desconectada";
+    case 114: return "Temperatura de la CPU";
+    case 116: return "Calibracion perdida";
+    default:  return "Desconocido";
     }
 }
 
@@ -110,7 +117,10 @@ static void format_inverter_alarm(lv_obj_t *label, const victron_data_t *data)
         return;
     }
     const victron_record_inverter_t *r = &data->record.inverter;
-    lv_label_set_text_fmt(label, "0x%04X", (unsigned)r->alarm_reason);
+    /* Sin alarma se dice, no se enseña "0x0000": en un manual eso parece un
+     * error. Con alarma, el codigo en hexadecimal, que es lo que se busca. */
+    if (r->alarm_reason == 0) lv_label_set_text(label, "Ninguna");
+    else lv_label_set_text_fmt(label, "0x%04X", (unsigned)r->alarm_reason);
 }
 
 static void format_inverter_battery_v(lv_obj_t *label, const victron_data_t *data)
@@ -155,12 +165,12 @@ static void format_inverter_power(lv_obj_t *label, const victron_data_t *data)
 }
 
 static const ui_simple_label_descriptor_t INVERTER_LABELS[] = {
-    { "State", format_inverter_state },
-    { "Alarm", format_inverter_alarm },
-    { "Battery V", format_inverter_battery_v },
-    { "AC Voltage", format_inverter_ac_voltage },
-    { "AC Current", format_inverter_ac_current },
-    { "Apparent Power", format_inverter_power },
+    { "Estado", format_inverter_state },
+    { "Alarma", format_inverter_alarm },
+    { "Bateria V", format_inverter_battery_v },
+    { "Tension 230 V", format_inverter_ac_voltage },
+    { "Corriente 230 V", format_inverter_ac_current },
+    { "Potencia aparente", format_inverter_power },
 };
 
 static const ui_simple_view_config_t INVERTER_VIEW_CONFIG = {
@@ -229,15 +239,19 @@ static void format_dcdc_off_reason(lv_obj_t *label, const victron_data_t *data)
         return;
     }
     const victron_record_dcdc_converter_t *r = &data->record.dcdc;
-    lv_label_set_text_fmt(label, "0x%08lX", (unsigned long)r->off_reason);
+    /* 0 = no hay motivo (esta encendido). Antes salia "0x00000000", que en un
+     * manual parece un error; el resto de codigos si se enseñan en hex, que es
+     * lo que hace falta para buscar el fallo. */
+    if (r->off_reason == 0) lv_label_set_text(label, "Ninguno");
+    else lv_label_set_text_fmt(label, "0x%08lX", (unsigned long)r->off_reason);
 }
 
 static const ui_simple_label_descriptor_t DCDC_LABELS[] = {
-    { "State", format_dcdc_state },
-    { "Error", format_dcdc_error },
-    { "Input V", format_dcdc_input_v },
-    { "Output V", format_dcdc_output_v },
-    { "Off Reason", format_dcdc_off_reason },
+    { "Estado", format_dcdc_state },
+    { "Fallo", format_dcdc_error },
+    { "Entrada V", format_dcdc_input_v },
+    { "Salida V", format_dcdc_output_v },
+    { "Motivo de apagado", format_dcdc_off_reason },
 };
 
 static const ui_simple_view_config_t DCDC_VIEW_CONFIG = {
@@ -327,9 +341,9 @@ static void format_lithium_cells_raw(lv_obj_t *label, const victron_data_t *data
 static const ui_simple_label_descriptor_t LITHIUM_LABELS[] = {
     { "BMS Flags", format_lithium_flags },
     { "Error Flags", format_lithium_errors },
-    { "Battery V", format_lithium_batt_v },
+    { "Bateria V", format_lithium_batt_v },
     { "Balancer", format_lithium_balancer },
-    { "Temperature", format_lithium_temp },
+    { "Temperatura", format_lithium_temp },
     { "Cells (raw)", format_lithium_cells_raw },
 };
 
@@ -488,16 +502,16 @@ static void format_ac_charger_ac_current(lv_obj_t *label, const victron_data_t *
 }
 
 static const ui_simple_label_descriptor_t AC_CHARGER_LABELS[] = {
-    { "State", format_ac_charger_state },
-    { "Error", format_ac_charger_error },
+    { "Estado", format_ac_charger_state },
+    { "Fallo", format_ac_charger_error },
     { "Battery 1 V", format_ac_charger_batt1_v },
     { "Battery 1 A", format_ac_charger_batt1_a },
     { "Battery 2 V", format_ac_charger_batt2_v },
     { "Battery 2 A", format_ac_charger_batt2_a },
     { "Battery 3 V", format_ac_charger_batt3_v },
     { "Battery 3 A", format_ac_charger_batt3_a },
-    { "AC Current", format_ac_charger_ac_current },
-    { "Temperature", format_ac_charger_temp },
+    { "Corriente 230 V", format_ac_charger_ac_current },
+    { "Temperatura", format_ac_charger_temp },
 };
 
 static const ui_simple_view_config_t AC_CHARGER_VIEW_CONFIG = {
@@ -594,18 +608,22 @@ static void format_sbp_off_reason(lv_obj_t *label, const victron_data_t *data)
         return;
     }
     const victron_record_smart_battery_protect_t *r = &data->record.sbp;
-    lv_label_set_text_fmt(label, "0x%08lX", (unsigned long)r->off_reason);
+    /* 0 = no hay motivo (esta encendido). Antes salia "0x00000000", que en un
+     * manual parece un error; el resto de codigos si se enseñan en hex, que es
+     * lo que hace falta para buscar el fallo. */
+    if (r->off_reason == 0) lv_label_set_text(label, "Ninguno");
+    else lv_label_set_text_fmt(label, "0x%08lX", (unsigned long)r->off_reason);
 }
 
 static const ui_simple_label_descriptor_t SBP_LABELS[] = {
-    { "State", format_sbp_state },
+    { "Estado", format_sbp_state },
     { "Output", format_sbp_output },
-    { "Error", format_sbp_error },
-    { "Alarm", format_sbp_alarm },
+    { "Fallo", format_sbp_error },
+    { "Alarma", format_sbp_alarm },
     { "Warning", format_sbp_warning },
-    { "Input V", format_sbp_input_v },
-    { "Output V", format_sbp_output_v },
-    { "Off Reason", format_sbp_off_reason },
+    { "Entrada V", format_sbp_input_v },
+    { "Salida V", format_sbp_output_v },
+    { "Motivo de apagado", format_sbp_off_reason },
 };
 
 static const ui_simple_view_config_t SBP_VIEW_CONFIG = {
@@ -732,15 +750,15 @@ static void format_lynx_temp(lv_obj_t *label, const victron_data_t *data)
 }
 
 static const ui_simple_label_descriptor_t LYNX_LABELS[] = {
-    { "Error", format_lynx_error },
+    { "Fallo", format_lynx_error },
     { "Time to Go", format_lynx_ttg },
-    { "Battery V", format_lynx_batt_v },
+    { "Bateria V", format_lynx_batt_v },
     { "Battery Current", format_lynx_batt_current },
     { "SOC", format_lynx_soc },
-    { "Consumed Ah", format_lynx_consumed },
+    { "Ah consumidos", format_lynx_consumed },
     { "Warnings", format_lynx_warnings },
     { "IO Status", format_lynx_io_status },
-    { "Temperature", format_lynx_temp },
+    { "Temperatura", format_lynx_temp },
 };
 
 static const ui_simple_view_config_t LYNX_VIEW_CONFIG = {
@@ -853,9 +871,9 @@ static void format_multi_yield(lv_obj_t *label, const victron_data_t *data)
 }
 
 static const ui_simple_label_descriptor_t MULTI_LABELS[] = {
-    { "State", format_multi_state },
-    { "Error", format_multi_error },
-    { "Battery V", format_multi_batt_v },
+    { "Estado", format_multi_state },
+    { "Fallo", format_multi_error },
+    { "Bateria V", format_multi_batt_v },
     { "Battery Current", format_multi_batt_current },
     { "Active AC In", format_multi_ac_in },
     { "AC In Power", format_multi_ac_in_power },
@@ -982,14 +1000,14 @@ static void format_vebus_soc(lv_obj_t *label, const victron_data_t *data)
 }
 
 static const ui_simple_label_descriptor_t VEBUS_LABELS[] = {
-    { "State", format_vebus_state },
+    { "Estado", format_vebus_state },
     { "VE.Bus Error", format_vebus_error },
-    { "Battery V", format_vebus_batt_v },
+    { "Bateria V", format_vebus_batt_v },
     { "Battery Current", format_vebus_batt_current },
     { "Active AC In", format_vebus_ac_in },
     { "AC In Power", format_vebus_ac_in_power },
     { "AC Out Power", format_vebus_ac_out_power },
-    { "Alarm", format_vebus_alarm },
+    { "Alarma", format_vebus_alarm },
     { "Battery Temp", format_vebus_temp },
     { "SOC", format_vebus_soc },
 };
@@ -1065,10 +1083,10 @@ static void format_dcem_alarm(lv_obj_t *label, const victron_data_t *data)
 
 static const ui_simple_label_descriptor_t DCEM_LABELS[] = {
     { "Monitor Mode", format_dcem_mode },
-    { "Battery V", format_dcem_batt_v },
+    { "Bateria V", format_dcem_batt_v },
     { "Battery Current", format_dcem_batt_current },
     { "Aux", format_dcem_aux },
-    { "Alarm", format_dcem_alarm },
+    { "Alarma", format_dcem_alarm },
 };
 
 static const ui_simple_view_config_t DCEM_VIEW_CONFIG = {
@@ -1157,17 +1175,21 @@ static void format_orion_off_reason(lv_obj_t *label, const victron_data_t *data)
         return;
     }
     const victron_record_orion_xs_t *r = &data->record.orion;
-    lv_label_set_text_fmt(label, "0x%08lX", (unsigned long)r->off_reason);
+    /* 0 = no hay motivo (esta encendido). Antes salia "0x00000000", que en un
+     * manual parece un error; el resto de codigos si se enseñan en hex, que es
+     * lo que hace falta para buscar el fallo. */
+    if (r->off_reason == 0) lv_label_set_text(label, "Ninguno");
+    else lv_label_set_text_fmt(label, "0x%08lX", (unsigned long)r->off_reason);
 }
 
 static const ui_simple_label_descriptor_t ORION_LABELS[] = {
-    { "State", format_orion_state },
-    { "Error", format_orion_error },
-    { "Input V", format_orion_input_v },
+    { "Estado", format_orion_state },
+    { "Fallo", format_orion_error },
+    { "Entrada V", format_orion_input_v },
     { "Input Current", format_orion_input_current },
-    { "Output V", format_orion_output_v },
+    { "Salida V", format_orion_output_v },
     { "Output Current", format_orion_output_current },
-    { "Off Reason", format_orion_off_reason },
+    { "Motivo de apagado", format_orion_off_reason },
 };
 
 static const ui_simple_view_config_t ORION_VIEW_CONFIG = {

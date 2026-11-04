@@ -47,6 +47,11 @@ static lv_obj_t *s_lbl_soloff = NULL;
  * texto en cada vuelta de ui_frigo_panel_update, que corre en cada iteracion
  * de la tarea del frigo (via frigo_update_cb), no de main. min=0xFFFFFFFF fuerza el primer pintado. */
 static lv_obj_t *s_lbl_sol_estado = NULL;
+/* El interruptor del excedente, para poder ponerlo en su sitio desde el
+ * refresco periodico: se dibujaba UNA vez al crear la pestana, asi que si el
+ * modo cambiaba por detras (o si al crearla el cerrojo estaba cogido) se
+ * quedaba mintiendo para siempre. */
+static lv_obj_t *s_sw_solar = NULL;
 static lv_obj_t *s_dot_sol        = NULL;
 static bool      s_sol_est_act    = false;
 static bool      s_sol_est_en     = false;
@@ -298,6 +303,15 @@ static void refresh_sol_estado_label(void)
     bool     act = frigo_solar_get_active();
     bool     en  = frigo_solar_get_enabled();
     uint32_t min = seg / 60u;
+
+    /* El interruptor se pone en su sitio SIEMPRE, antes del atajo de "no ha
+     * cambiado nada": si se dibujo mal al crear la pestana, el atajo lo dejaba
+     * mintiendo para siempre. */
+    if (s_sw_solar) {
+        if (en) lv_obj_add_state(s_sw_solar, LV_STATE_CHECKED);
+        else    lv_obj_clear_state(s_sw_solar, LV_STATE_CHECKED);
+    }
+
     if (act == s_sol_est_act && en == s_sol_est_en && min == s_sol_est_min) return;
     s_sol_est_act = act;
     s_sol_est_en  = en;
@@ -855,6 +869,7 @@ void ui_frigo_panel_init(ui_state_t *ui)
     lv_label_set_text(lbl_solar_sec, LV_SYMBOL_CHARGE "  Aprovechar excedente solar");
 
     lv_obj_t *sw_solar = lv_switch_create(card_solar);
+    s_sw_solar = sw_solar;
     lv_obj_set_style_bg_color(sw_solar, UI_COLOR_GREEN, LV_STATE_CHECKED | LV_PART_INDICATOR);
     if (frigo_solar_get_enabled()) lv_obj_add_state(sw_solar, LV_STATE_CHECKED);
     lv_obj_add_event_cb(sw_solar, sw_solar_cb, LV_EVENT_VALUE_CHANGED, NULL);

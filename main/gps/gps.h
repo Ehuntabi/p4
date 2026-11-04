@@ -79,6 +79,11 @@ uint32_t gps_sincronizaciones(void);
 void gps_sim_inject(bool hay_fix, uint8_t satelites, double lat, double lon,
                     float altitud_m, uint8_t snr_mejor, uint8_t snr_medio);
 
+/* Solo para sim_overview.c: fecha/hora del GPS y tramas en crudo, para que la
+ * pantalla de diagnostico se pueda fotografiar completa (ver gps.c). */
+void gps_sim_hora(const char *fecha, const char *hora);
+void gps_sim_crudo(const char *const *tramas, int n);
+
 #ifdef __cplusplus
 }
 #endif

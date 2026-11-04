@@ -19,11 +19,11 @@ static ui_simple_view_t *simple_view_from_base(ui_device_view_t *base)
 static const char *simple_title_for_type(victron_record_type_t t)
 {
     switch (t) {
-        case VICTRON_BLE_RECORD_INVERTER:             return "Inverter";
-        case VICTRON_BLE_RECORD_DCDC_CONVERTER:       return "DC/DC Converter";
+        case VICTRON_BLE_RECORD_INVERTER:             return "Inversor";
+        case VICTRON_BLE_RECORD_DCDC_CONVERTER:       return "Convertidor DC/DC";
         case VICTRON_BLE_RECORD_SMART_LITHIUM:        return "SmartLithium";
         case VICTRON_BLE_RECORD_INVERTER_RS:          return "Inverter RS";
-        case VICTRON_BLE_RECORD_AC_CHARGER:           return "AC Charger";
+        case VICTRON_BLE_RECORD_AC_CHARGER:           return "Cargador 230 V";
         case VICTRON_BLE_RECORD_SMART_BATTERY_PROTECT:return "Smart Battery Protect";
         case VICTRON_BLE_RECORD_LYNX_SMART_BMS:       return "Lynx Smart BMS";
         case VICTRON_BLE_RECORD_MULTI_RS:             return "Multi RS";

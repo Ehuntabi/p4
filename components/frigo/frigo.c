@@ -909,7 +909,11 @@ void frigo_solar_feed(uint16_t soc_deci, uint16_t pv_w, bool shore, bool fresh)
 
 esp_err_t frigo_solar_set_enabled(bool on)
 {
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    /* Un segundo de plazo y no 100 ms: si el cerrojo esta cogido por una
+     * escritura en NVS o por el escaneo del bus, el interruptor se quedaba
+     * movido en pantalla y el modo sin cambiar (o al reves), y el fallo era
+     * silencioso porque el que llama no mira el resultado. */
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) return ESP_ERR_TIMEOUT;
     s_sol_en = on;
     xSemaphoreGive(s_mutex);
     nvs_save();
@@ -942,9 +946,17 @@ esp_err_t frigo_solar_set_soc_off(uint8_t pct)
 bool frigo_solar_get_enabled(void)
 {
     if (!s_mutex) return false;
-    bool v = false;
+    /* SIN MUTEX SE DEVUELVE EL ULTIMO VALOR BUENO (4-nov-2026). Antes devolvia
+     * false, y eso mentia: si el cerrojo estaba cogido (una escritura en NVS, el
+     * escaneo del bus), la pantalla contestaba "modo apagado" aunque estuviera
+     * encendido. Se vio en el banco: interruptor apagado y debajo "ALIMENTANDO
+     * POR SOLAR" en verde, con las aspas del ventilador en verde. El usuario lo
+     * canto y tenia razon. get_active() ya lo hacia asi. */
+    static bool s_last_en = false;
+    bool v = s_last_en;
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         v = s_sol_en;
+        s_last_en = v;
         xSemaphoreGive(s_mutex);
     }
     return v;

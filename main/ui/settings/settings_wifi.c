@@ -54,16 +54,11 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
                                uint8_t ap_enabled);
 /* Callbacks propios de esta pagina, definidos mas abajo. */
 static void portal_page_cb(lv_event_t *e);
-static void generar_clave_portal_cb(lv_event_t *e);
 static void generar_clave_admin_cb(lv_event_t *e);
 
 /* La etiqueta de la clave de ADMINISTRACION, para refrescarla al generarla. */
 static lv_obj_t *s_c4_adm_lbl;
 
-/* La etiqueta de la clave en la tarjeta de ACCESO, para poder refrescarla en
- * cuanto se genera una nueva (si no, seguiria enseñando la vieja justo cuando
- * mas se mira). */
-static lv_obj_t *s_c4_pass_lbl;
 static void reactivate_portal_cb(lv_event_t *e);
 static void ap_switch_cb(lv_event_t *e);
 static void wifi_pintar_ip_ap(ui_state_t *ui);
@@ -426,72 +421,32 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
 
     lv_obj_t *c4_title = lv_label_create(card4);
     lv_obj_set_style_text_font(c4_title, &lv_font_montserrat_24_es, 0);
-    lv_obj_set_style_text_color(c4_title, UI_COLOR_GREEN, 0);
-    /* El dueno (02-nov-2026): "la P4 solo tiene punto de acceso y otro usuario
-     * y clave para lo demas". Es verdad: en su placa hay UNA pareja. El titulo
-     * anterior ("Acceso a Actualizar y Claves") parecia anunciar una tercera
-     * cosa; ahora dice lo que es: la clave de todo, y la segunda es opcional. */
-    lv_label_set_text(c4_title, LV_SYMBOL_SETTINGS "  Usuario y clave (la de todo)");
-    ui_card_wrap_title(card4, c4_title, UI_COLOR_GREEN);
-
-    lv_obj_t *c4_user = lv_label_create(card4);
-    lv_obj_set_style_text_font(c4_user, &lv_font_montserrat_20_es, 0);
-    lv_label_set_text_fmt(c4_user, "Usuario:  %s",
-                          web_user[0] ? web_user : "p4");
-
-    /* Se guardan para poder ACTUALIZARLAS al generar una clave nueva: si no,
-     * la tarjeta seguiria enseñando la vieja justo despues de cambiarla, que es
-     * cuando mas se mira. */
-    s_c4_pass_lbl = lv_label_create(card4);
-    lv_obj_t *c4_pass = s_c4_pass_lbl;
-    lv_obj_set_style_text_font(c4_pass, &lv_font_montserrat_20_es, 0);
-    lv_label_set_text_fmt(c4_pass, "Clave:  %s",
-                          web_pass[0] ? web_pass : "(sin definir)");
-
-    lv_obj_t *c4_hint = lv_label_create(card4);
-    lv_obj_set_style_text_font(c4_hint, &lv_font_montserrat_20_es, 0);
-    lv_obj_set_style_text_color(c4_hint, UI_COLOR_TEXT_DIM, 0);
-    lv_obj_set_width(c4_hint, lv_pct(100));
-    lv_label_set_long_mode(c4_hint, LV_LABEL_LONG_WRAP);
-    /* Ancho completo de la tarjeta y que envuelva sola: antes el texto llevaba
-     * los saltos de linea escritos a mano y quedaba una columna estrecha con
-     * medio ancho de tarjeta vacio (lo vio el usuario, 22-sep-2026). */
-    lv_obj_set_width(c4_hint, lv_pct(100));
-    lv_label_set_long_mode(c4_hint, LV_LABEL_LONG_WRAP);
-    /* OJO con este texto, que ya ha mentido una vez (auditado el 14-sep-2026).
+    lv_obj_set_style_text_color(c4_title, UI_COLOR_CYAN, 0);
+    /* DOS CLAVES Y NO TRES (4-nov-2026, decision del dueno):
+     *   1) la del PUNTO DE ACCESO, que es tambien la del portal (la que llevan
+     *      la app del movil y la pantalla de cabina para hablar con la P4);
+     *   2) la de ADMINISTRACION, solo para lo que puede dejar la placa
+     *      inservible: grabar firmware (/ota), las claves AES de los Victron
+     *      (/keys) y /save.
+     * Antes habia una tercera pareja (usuario+clave del portal) y era la que se
+     * veia aqui. Ahora la clave del portal ES la del Wi-Fi, y se cambia en la
+     * tarjeta de arriba ("Punto de acceso"), que es donde se ve.
      *
-     * El 2026-08-07 esto eran DOS niveles: la web abierta y solo /ota, /keys y
-     * /save cerrados. Aquel texto decia, con razon entonces, que "la app no
-     * pide nada: basta con el Wi-Fi".
-     *
-     * El 21-ago-2026 el portal volvio a exigir credenciales TAMBIEN en el nivel
-     * abierto (PORTAL_REQUIRE_BASIC_AUTH=1, config_server_auth.c) y ese cartel
-     * se quedo con el texto viejo. Resultado: decia justo lo contrario de lo que
-     * hace el firmware, y es la clase de cartel que se cree -- la app de Android
-     * iba sin credenciales y el portal le contestaba 401 a todo.
-     *
-     * Ahora dice la verdad, y si algun dia se vuelve a abrir el nivel abierto
-     * (poniendo PORTAL_REQUIRE_BASIC_AUTH a 0) hay que cambiar ESTE texto a la
-     * vez: son la misma decision contada en dos sitios. */
-    /* ── CAMBIAR LA CLAVE DEL PORTAL (13-oct-2026) ────────────────────────
-     * Antes estas credenciales NO se podian cambiar desde ningun sitio: se
-     * creaban aleatorias la primera vez y ahi se quedaban. Una filtracion (y ha
-     * habido una: la clave de fabrica de las cabinas estuvo publicada en su
-     * repositorio) era para siempre, porque la unica salida era borrar la NVS
-     * entera, que se lleva el Wi-Fi y las claves AES de los Victron. */
-    /* ── CLAVE DE ADMINISTRACION (13-oct-2026) ────────────────────────────
-     * /ota (escribir firmware), /keys (las claves AES de los Victron) y /save
-     * pedian LA MISMA clave que el resto del portal: la que lleva la app en el
-     * movil y el satelite en su NVS. Cualquier sitio donde viva esa clave daba
-     * acceso TOTAL. Ahora esos tres piden una clave aparte, que se genera aqui;
-     * hasta que se genere, siguen valiendo las de arriba (compatibilidad). */
+     * LAS DESCARGAS VAN CON LA CLAVE DEL PORTAL, no con esta: el dueño lo dejo
+     * claro ("cualquier descarga protegida por la clave del portal"). */
+    lv_label_set_text(c4_title, LV_SYMBOL_SETTINGS "  Clave de administracion");
+    ui_card_wrap_title(card4, c4_title, UI_COLOR_CYAN);
+
     char adm_user[33] = {0}, adm_pass[33] = {0};
     config_server_get_admin_credentials(adm_user, sizeof(adm_user),
                                         adm_pass, sizeof(adm_pass));
     s_c4_adm_lbl = lv_label_create(card4);
     lv_obj_set_style_text_font(s_c4_adm_lbl, &lv_font_montserrat_20_es, 0);
-    lv_label_set_text_fmt(s_c4_adm_lbl, "Administracion (opcional):  %s",
-                          adm_pass[0] ? adm_pass : "no hay: vale la de arriba");
+    /* La clave se ENSEÑA aqui: es el unico sitio donde se puede leer (no esta
+     * en ningun otro lado), y es la que hay que meter para actualizar o
+     * descargar. Mismo criterio que la del Wi-Fi, que se ve con su boton. */
+    lv_label_set_text_fmt(s_c4_adm_lbl, "Clave:  %s",
+                          adm_pass[0] ? adm_pass : "(sin definir)");
 
     lv_obj_t *c4_btn_admin = lv_btn_create(card4);
     lv_obj_set_width(c4_btn_admin, lv_pct(100));
@@ -499,28 +454,9 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_t *c4_lbl_admin = lv_label_create(c4_btn_admin);
     lv_obj_set_style_text_font(c4_lbl_admin, &lv_font_montserrat_20_es, 0);
     lv_obj_set_style_text_color(c4_lbl_admin, UI_COLOR_BG, 0);
-    lv_label_set_text(c4_lbl_admin, LV_SYMBOL_SETTINGS "  Crear clave de administracion (opcional)");
+    lv_label_set_text(c4_lbl_admin, LV_SYMBOL_SETTINGS "  Cambiar la clave");
     lv_obj_center(c4_lbl_admin);
     lv_obj_add_event_cb(c4_btn_admin, generar_clave_admin_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *c4_btn_nueva = lv_btn_create(card4);
-    lv_obj_set_width(c4_btn_nueva, lv_pct(100));
-    lv_obj_set_style_bg_color(c4_btn_nueva, UI_COLOR_GREEN, 0);
-    lv_obj_t *c4_lbl_nueva = lv_label_create(c4_btn_nueva);
-    lv_obj_set_style_text_font(c4_lbl_nueva, &lv_font_montserrat_20_es, 0);
-    lv_obj_set_style_text_color(c4_lbl_nueva, UI_COLOR_BG, 0);
-    lv_label_set_text(c4_lbl_nueva, LV_SYMBOL_REFRESH "  Generar clave nueva");
-    lv_obj_center(c4_lbl_nueva);
-    lv_obj_add_event_cb(c4_btn_nueva, generar_clave_portal_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_label_set_text(c4_hint,
-                      "El usuario y la clave de arriba los pide TODO: la web, la app, "
-                      "las pantallas y tambien Actualizar. La clave de administracion es "
-                      "OPCIONAL: solo hace falta si quieres una llave aparte para las "
-                      "tres cosas que pueden dejar la placa inservible (grabar firmware, "
-                      "las claves de los Victron y /save). Mientras no la crees, vale la "
-                      "de arriba.\n\nOjo: la web va por HTTP sin cifrar, protegida solo "
-                      "por la clave Wi-Fi, no por estas.");
 
     /* Igualar la altura de la card de ACCESO (la que va al lado) a la de "Punto de
      * acceso" (la mas alta) para que ambas queden simetricas lado a lado. */
@@ -536,41 +472,6 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     if (h_ap > lv_obj_get_height(card4)) {
         lv_obj_set_height(card4, h_ap);
     }
-}
-
-/* Genera y APLICA una clave nueva del portal. Se avisa de que hay que
- * cambiarla tambien en el movil y en las pantallas de cabina: en cuanto se
- * aplique, la clave vieja deja de valer y sus apuntes darian 401 (que la cabina
- * ya sabe decir: "CLAVE MAL, AJUSTES"). */
-static void clave_portal_nueva_do(void)
-{
-    /* Alfabeto sin caracteres que se confunden al copiarlos a mano (0/O, 1/l/I),
-     * que esto se lee de la pantalla y se teclea en el movil. */
-    static const char abc[] = "abcdefghijkmnpqrstuvwxyz23456789";
-    char user[33] = {0}, pass[33] = {0}, nueva[17] = {0};
-    config_server_get_web_credentials(user, sizeof(user), pass, sizeof(pass));
-    if (!user[0]) snprintf(user, sizeof(user), "p4");
-    for (int i = 0; i < 12; i++) nueva[i] = abc[esp_random() % (sizeof(abc) - 1)];
-    esp_err_t e = config_server_set_web_credentials(user, nueva);
-    if (e != ESP_OK) {
-        ui_show_info_dialog(LV_SYMBOL_WARNING "  No se ha podido cambiar",
-                            "La clave del portal sigue siendo la de antes.");
-        return;
-    }
-    /* La tarjeta se queda con la clave NUEVA a la vista (es la unica forma de
-     * volver a leerla: no se guarda en ningun sitio legible salvo aqui y en la
-     * NVS de la P4). */
-    if (s_c4_pass_lbl) lv_label_set_text_fmt(s_c4_pass_lbl, "Clave:  %s", nueva);
-    char msg[420];
-    snprintf(msg, sizeof(msg),
-             "Usuario:  %s\nClave nueva:  %s\n\n"
-             "Apunta la clave AHORA: no se puede volver a\n"
-             "leer en ningun otro sitio.\n\n"
-             "Hay que ponerla tambien en el movil y en las\n"
-             "pantallas de cabina (Ajustes -> WiFi); hasta\n"
-             "entonces sus apuntes daran error de clave.",
-             user, nueva);
-    ui_show_info_dialog(LV_SYMBOL_SETTINGS "  Acceso cambiado", msg);
 }
 
 /* Genera y aplica la clave de ADMINISTRACION. A partir de ahi, /ota, /keys y
@@ -610,17 +511,6 @@ static void generar_clave_admin_cb(lv_event_t *e)
         "La app y las pantallas siguen igual: no hay\n"
         "que tocar nada en ellas.",
         "Generar", clave_admin_nueva_do);
-}
-
-static void generar_clave_portal_cb(lv_event_t *e)
-{
-    (void)e;
-    ui_show_confirm_dialog(LV_SYMBOL_WARNING "  Cambiar el acceso",
-        "Se genera una clave NUEVA para la web, la app\n"
-        "y las pantallas de cabina.\n\n"
-        "La de ahora deja de valer en el acto: hay que\n"
-        "poner la nueva en el movil y en las cabinas.",
-        "Generar", clave_portal_nueva_do);
 }
 
 static void reactivate_portal_cb(lv_event_t *e)
@@ -711,6 +601,17 @@ static void wifi_save_cb(lv_event_t *e)
             lv_label_set_text(s_wifi_estado, "No se pudo guardar");
         }
         return;
+    }
+    /* DOS CLAVES Y NO TRES (4-nov-2026, peticion del usuario). La clave del
+     * Wi-Fi es TAMBIEN la del portal (la de la app y las pantallas): se copia en
+     * el acto a las credenciales http, que son las que compara el portal. Si no
+     * se hiciera aqui, el portal seguiria pidiendo la clave vieja hasta el
+     * siguiente reinicio, y el usuario se quedaria fuera con la nueva en la
+     * mano. La segunda clave (administracion: OTA, descargas, claves, /save) no
+     * se toca. */
+    {
+        char usr[33] = "p4";
+        config_server_set_web_credentials(usr, pass);
     }
     ESP_LOGI(TAG_SETTINGS, "Wi-Fi guardado: SSID='%s' -> reaplicando AP", ssid);
     if (s_wifi_estado) {
