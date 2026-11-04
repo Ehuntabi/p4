@@ -1,5 +1,5 @@
 /* ota_pantalla.c — servidor de actualizacion OTA para las DOS pantallas
- * (cabina5 = 5", 35cabina = 3,5") desde la P4.
+ * (cabina5 = 5") desde la P4. La de 3,5" salio del producto el 4-nov-2026.
  *
  * POR QUE ESTA AQUI Y NO EN CADA CABINA: la P4 es la que tiene la tarjeta SD y
  * el portal Wi-Fi del que ya se sirven los .tar y la OTA de la propia P4. Las
@@ -52,9 +52,12 @@ typedef struct {
 
 #define PANTALLA_DIR "/sdcard/firmware"
 
+/* SOLO LA DE 5" (4-nov-2026). La pantalla de 3,5" salio del manual y del
+ * producto, asi que su bloque desaparece de esta pagina: ofrecer una
+ * actualizacion para una pantalla que ya no se monta solo confunde (y el video
+ * del manual la enseñaba). Si algun dia vuelve, se anade otra linea aqui. */
 static const pantalla_modelo_t s_modelos[] = {
     { "cabina5",  PANTALLA_DIR "/cabina5.bin",  "Pantalla de 5\""   },
-    { "35cabina", PANTALLA_DIR "/35cabina.bin", "Pantalla de 3,5\"" },
 };
 #define PANTALLA_NUM_MODELOS (sizeof(s_modelos) / sizeof(s_modelos[0]))
 
@@ -493,7 +496,7 @@ static bool pantalla_leer_info(const pantalla_modelo_t *m, pantalla_fw_info_t *o
  * Servidor LIGERO (80), nivel del PORTAL (REQUIRE_AUTH, como /api/viaje): la
  * cabina solo tiene las credenciales del portal y es quien pregunta.
  *
- * {"cabina5":{"ver":"v1.30","bytes":2214608,"sha256":"<64 hex>"},"35cabina":...}
+ * {"cabina5":{"ver":"v1.66","bytes":2214608,"sha256":"<64 hex>"}}
  * Un modelo sin fichero sale a null. SD sin montar: 200 con los dos a null y
  * aviso en el log (la cabina tiene que poder preguntar sin que el portal finja
  * que hay una actualizacion). */
@@ -577,12 +580,12 @@ static const char PANTALLA_PAGINA_CABECERA[] =
     "formularios. Abajo del todo se explica que fichero es de cada una.</p>";
 
 static const char PANTALLA_PAGINA_PIE[] =
-    "<p style='color:#666;font-size:14px'>La de 5\" usa "
-    "<code>cabina5-vX.Y.bin</code>; la de 3,5\" usa "
-    "<code>35cabina-vX.Y.bin</code>. La clave que pide el navegador es la de "
-    "<b>administracion</b> (la misma que en /ota, no la del portal): se ve en "
-    "la pantalla de la P4, Ajustes -&gt; Wi-Fi, y si no te acuerdas, alli mismo "
-    "el boton <b>Clave de administracion</b> genera una nueva.</p>"
+    "<p style='color:#666;font-size:14px'>El fichero se llama "
+    "<code>cabina5-vX.Y.bin</code>. La clave que pide el navegador es la "
+    "<b>de administracion</b>, la segunda de la P4 (la primera, la del punto de "
+    "acceso, es la del Wi-Fi y no sirve aqui): se ve en la pantalla de la P4, "
+    "Ajustes -&gt; Wi-Fi, y si no te acuerdas, alli mismo el boton "
+    "<b>Cambiar la clave</b> genera una nueva.</p>"
     "<script>"
     "function tam(n){"
     " if(typeof n!=='number'||!isFinite(n))return '?';"
@@ -712,7 +715,7 @@ esp_err_t ota_pantalla_bin(httpd_req_t *req)
     const pantalla_modelo_t *m = pantalla_modelo_de_query(req);
     if (!m)
         return pantalla_error(req, "404 Not Found",
-                              "modelo? (cabina5|35cabina)", false);
+                              "modelo? (cabina5)", false);
 
     if (!datalogger_sd_montada())
         return pantalla_error(req, "404 Not Found",
@@ -853,7 +856,7 @@ esp_err_t ota_pantalla_subir(httpd_req_t *req)
     const pantalla_modelo_t *m = pantalla_modelo_de_query(req);
     if (!m)
         return pantalla_error(req, "400 Bad Request",
-                              "modelo? (cabina5|35cabina)", true);
+                              "modelo? (cabina5)", true);
 
     /* Content-Length OBLIGATORIO: sin el no se puede ni comprobar el tope ni
      * anunciar el tamano, y esp_http_client de la cabina lo manda siempre. */

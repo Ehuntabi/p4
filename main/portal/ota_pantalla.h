@@ -1,5 +1,5 @@
 #pragma once
-/* OTA de las DOS pantallas (la de 5" y la de 3,5") desde la P4.
+/* OTA de la pantalla de cabina de 5" desde la P4.
  *
  * POR QUE EXISTE: la P4 lleva la tarjeta SD y el portal Wi-Fi, y las cabinas
  * solo tienen un enlace HTTP contra ella. Hasta ahora, actualizar una cabina
@@ -25,8 +25,7 @@
  *   impide publicar un fichero que no sea de ese modelo es ademas la validacion
  *   de la cabecera (project_name exacto y version).
  *
- *   Modelos validos: "cabina5" y "35cabina". Los ficheros viven en
- *   /sdcard/firmware/cabina5.bin y /sdcard/firmware/35cabina.bin.
+ *   Modelo valido: "cabina5". El fichero vive en /sdcard/firmware/cabina5.bin.
  *
  * El cliente NO esta en este repo: cualquier cambio de nombres, campos o
  * codigos de estado hay que hablarlo con el repo de las cabinas. El contrato
@@ -44,7 +43,7 @@ extern "C" {
 esp_err_t ota_pantalla_info(httpd_req_t *req);
 
 /* GET /pantallas: pagina HTML (viewport, max-width) con los dos bloques para
- * subir el .bin de la pantalla de 5" y la de 3,5" desde el movil. Reutiliza
+ * subir el .bin de la pantalla de 5" desde el movil. Reutiliza
  * pantalla_leer_info() para mostrar la version que hay ahora en la SD. */
 esp_err_t ota_pantalla_pagina(httpd_req_t *req);
 
