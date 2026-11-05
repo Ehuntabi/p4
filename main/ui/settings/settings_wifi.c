@@ -68,6 +68,7 @@ static void wifi_pintar_ip_ap(ui_state_t *ui);
 static void wifi_save_cb(lv_event_t *e);
 static void wifi_cancel_cb(lv_event_t *e);
 static void campo_cambiado_cb(lv_event_t *e);
+static void adm_ojito_cb(lv_event_t *e);
 static void refresca_botones(void);
 /* Lo que hay GUARDADO, para saber si los campos han cambiado de verdad. */
 static char s_ssid_guardado[33];
@@ -75,6 +76,7 @@ static char s_pass_guardada[65];
 static char s_adm_guardada[33];
 static lv_obj_t *s_fila_botones;     /* fila Guardar/Cancelar (oculta si no hay cambios) */
 static lv_obj_t *s_adm_ta;           /* campo de la clave de administracion */
+static lv_obj_t *s_adm_ojito;        /* boton para leerla escrita */
 static lv_obj_t *s_ssid_ta;          /* campo del nombre de la red */
 static lv_obj_t *s_pass_ta;          /* campo de la clave del punto de acceso */
 static lv_obj_t *s_wifi_estado = NULL;   /* respuesta del boton Guardar */
@@ -281,10 +283,9 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
         snprintf(s_adm_guardada, sizeof(s_adm_guardada), "%s", a);
     }
 
-    /* Boton de guardar, a lo ancho de la card y debajo de los dos campos.
-     * Escribe los DOS y reaplica el AP en caliente
-     * (config_server_request_wifi_apply), asi el nombre nuevo sale sin
-     * reiniciar ni tocar el interruptor del punto de acceso. */
+    /* Boton de guardar, debajo de los campos. Escribe las DOS claves en la NVS;
+     * la de la red entra cuando se reinicie la radio (ver wifi_save_cb: aqui NO
+     * se reaplica el AP en caliente, que dejaba la red muda hasta reiniciar). */
     /* FILA GUARDAR / CANCELAR, OCULTA HASTA QUE HAY UN CAMBIO (5-nov-2026,
      * peticion del dueño): antes el boton estaba siempre ahi, se pulsaba sin
      * haber tocado nada y no se sabia si habia guardado algo o no. Ahora
@@ -513,6 +514,16 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
      * dueño): asi se pone una que se recuerde y, sobre todo, el cambio se
      * puede GUARDAR o CANCELAR como el resto, en vez de aplicarse al instante
      * sin vuelta atras. */
+    /* EL OJITO, para poder LEERLA (5-nov-2026). Antes esta clave se veia escrita
+     * porque era una etiqueta; al convertirla en campo se quedo en puntitos y
+     * ya no habia forma de leerla sin cambiarla. */
+    s_adm_ojito = lv_btn_create(c4_row);
+    lv_obj_set_size(s_adm_ojito, 50, 40);
+    lv_obj_add_event_cb(s_adm_ojito, adm_ojito_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *c4_ojito_lbl = lv_label_create(s_adm_ojito);
+    lv_label_set_text(c4_ojito_lbl, LV_SYMBOL_EYE_OPEN);
+    lv_obj_center(c4_ojito_lbl);
+
     s_adm_ta = lv_textarea_create(c4_row);
     lv_obj_set_flex_grow(s_adm_ta, 1);
     lv_obj_set_height(s_adm_ta, 40);
@@ -564,6 +575,10 @@ static void clave_admin_nueva_do(void)
     for (int i = 0; i < 12; i++) nueva[i] = abc[esp_random() % (sizeof(abc) - 1)];
     lv_textarea_set_password_mode(s_adm_ta, false);
     lv_textarea_set_text(s_adm_ta, nueva);
+    if (s_adm_ojito) {
+        lv_obj_t *lbl = lv_obj_get_child(s_adm_ojito, 0);
+        if (lbl) lv_label_set_text(lbl, LV_SYMBOL_EYE_CLOSE);
+    }
     refresca_botones();
     char msg[520];
     snprintf(msg, sizeof(msg),
@@ -615,14 +630,31 @@ static bool hay_cambios(void)
 static void refresca_botones(void)
 {
     if (!s_fila_botones) return;
-    if (hay_cambios()) lv_obj_clear_flag(s_fila_botones, LV_OBJ_FLAG_HIDDEN);
-    else               lv_obj_add_flag(s_fila_botones, LV_OBJ_FLAG_HIDDEN);
+    bool hay = hay_cambios();
+    if (hay) lv_obj_clear_flag(s_fila_botones, LV_OBJ_FLAG_HIDDEN);
+    else     lv_obj_add_flag(s_fila_botones, LV_OBJ_FLAG_HIDDEN);
+    /* Y que se lea en la linea de estado, no solo por los botones: si dices
+     * "no hay nada que guardar" mientras hay cambios, el mensaje miente. */
+    if (hay && s_wifi_estado) {
+        lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_ORANGE, 0);
+        lv_label_set_text(s_wifi_estado, "Hay cambios sin guardar");
+    }
 }
 
 static void campo_cambiado_cb(lv_event_t *e)
 {
     (void)e;
     refresca_botones();
+}
+
+/* Enseñar/tapar la clave de administracion mientras se mira. No guarda nada. */
+static void adm_ojito_cb(lv_event_t *e)
+{
+    if (!s_adm_ta) return;
+    bool oculto = lv_textarea_get_password_mode(s_adm_ta);
+    lv_textarea_set_password_mode(s_adm_ta, !oculto);
+    lv_obj_t *lbl = lv_obj_get_child(lv_event_get_target(e), 0);
+    if (lbl) lv_label_set_text(lbl, oculto ? LV_SYMBOL_EYE_CLOSE : LV_SYMBOL_EYE_OPEN);
 }
 
 /* Cancelar: los campos vuelven a lo que hay guardado y la fila se esconde. */
@@ -715,6 +747,12 @@ static void wifi_save_cb(lv_event_t *e)
         return;
     }
 
+    /* Si cambia la RED (nombre o clave del punto de acceso) hay que decirlo:
+     * la clave nueva NO entra hasta que la radio se reinicia (ver abajo), y
+     * eso el usuario tiene que saberlo, no descubrirlo. */
+    bool cambia_red = (strcmp(ssid, s_ssid_guardado) != 0 ||
+                       strcmp(pass ? pass : "", s_pass_guardada) != 0);
+
     nvs_handle_t h;
     esp_err_t err = nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) {
@@ -767,12 +805,30 @@ static void wifi_save_cb(lv_event_t *e)
     snprintf(s_pass_guardada, sizeof(s_pass_guardada), "%s", pass ? pass : "");
     refresca_botones();
 
-    ESP_LOGI(TAG_SETTINGS, "Wi-Fi guardado: SSID='%s' -> reaplicando AP", ssid);
+    ESP_LOGI(TAG_SETTINGS, "Wi-Fi guardado: SSID='%s' red_cambiada=%d", ssid, cambia_red);
     if (s_wifi_estado) {
         lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_GREEN, 0);
-        lv_label_set_text_fmt(s_wifi_estado, "Guardado. Reconectando como \"%s\"...", ssid);
+        if (cambia_red) {
+            lv_label_set_text(s_wifi_estado,
+                "Guardado. La red usa la clave nueva cuando la reinicies "
+                "(interruptor del punto de acceso o Reiniciar)");
+        } else {
+            lv_label_set_text(s_wifi_estado, "Guardado.");
+        }
     }
-    config_server_request_wifi_apply();
+    /* SIN REAPLICAR EL AP EN CALIENTE (5-nov-2026). Aqui habia un
+     * config_server_request_wifi_apply(). Medido en la placa: esa funcion, con
+     * la radio YA ENCENDIDA, hace esp_wifi_set_config + esp_wifi_start otra vez
+     * y con esp_hosted (la C6 por SDIO) eso deja el punto de acceso mudo -- se
+     * sigue viendo la red desde el movil, pero la P4 ya no contesta ni a un
+     * ping hasta reiniciar. Reproducido tres veces.
+     *
+     * El interruptor de la cabecera NO pasa por ahi: apaga la radio y la vuelve
+     * a encender (parar y arrancar, que es el camino bueno) y ademas relee la
+     * NVS, asi que es tambien la forma de que entre la clave nueva. Guardar
+     * aqui solo escribe: las DOS claves quedan guardadas y el portal y la clave
+     * de administracion se aplican en el acto (http_auth_init), que es lo que
+     * hace falta para la app, las cabinas y las descargas. */
 }
 
 void password_toggle_btn_event_cb(lv_event_t *e)
