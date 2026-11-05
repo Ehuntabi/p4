@@ -687,7 +687,12 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     lv_obj_t *cards_row = lv_obj_create(grid);
     lv_obj_remove_style_all(cards_row);
     lv_obj_set_width(cards_row, lv_pct(100));
-    lv_obj_set_flex_grow(cards_row, 4);
+    /* EL ALTO QUE TENIAN ANTES, FIJO (05-nov-2026, pedido del dueño: las tres de
+     * arriba con su tamaño de siempre y lo que se gane, para las dos de abajo).
+     * Antes de quitar el relleno de las pestanas la fila medía 298 px; con
+     * flex_grow(4) se repartia el alto ganado y crecia ella tambien. Ahora no
+     * crece: el hueco extra se lo queda la fila de abajo (camper y frigo). */
+    lv_obj_set_height(cards_row, 298);
     lv_obj_set_layout(cards_row, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(cards_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(cards_row, LV_FLEX_ALIGN_CENTER,
@@ -887,7 +892,12 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     ov->camper_bottom = bottom_region;
     lv_obj_remove_style_all(bottom_region);
     lv_obj_set_width(bottom_region, lv_pct(100));
-    lv_obj_set_flex_grow(bottom_region, 2);
+    /* ALTO CALCULADO A MANO (05-nov-2026). Con flex_grow la fila crecia pero las
+     * tarjetas de dentro se centraban y quedaban MAS PEQUEÑAS que antes (lo vio
+     * el dueño). La pantalla es fija -- 600 px, barra de 48, 8 de margenes --,
+     * asi que los altos se ponen aqui y no hay nada que adivinar:
+     *   arriba 298 (el de siempre) + 8 de hueco + 238 abajo = 544. */
+    lv_obj_set_height(bottom_region, 238);
     lv_obj_set_layout(bottom_region, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(bottom_region, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bottom_region, LV_FLEX_ALIGN_SPACE_BETWEEN,
