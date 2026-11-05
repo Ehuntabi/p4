@@ -330,6 +330,12 @@ void ui_init(void) {
     ui->tabview   = lv_tabview_create(lv_scr_act(), LV_DIR_TOP, 60);
     lv_obj_add_flag(ui->tabview, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_clear_flag(ui->tabview, LV_OBJ_FLAG_SCROLLABLE);
+    /* SIN EL RELLENO DEL TEMA (05-nov-2026). El contenedor de las pestanas trae
+     * ~20 px de relleno por el tema, y eso se sumaba al margen de cada vista: la
+     * primera tarjeta de la vista general empezaba en y=24 en vez de y=4. Cada
+     * vista pone su propio margen (ver view_overview.c). */
+    lv_obj_t *tv_content = lv_tabview_get_content(ui->tabview);
+    if (tv_content) lv_obj_set_style_pad_all(tv_content, 0, 0);
 
     /* Tarea de beeps (lanzada antes de instalar el handler) para que el
      * click no bloquee el thread LVGL durante los ~300 ms del jingle. */
@@ -371,6 +377,13 @@ void ui_init(void) {
     ui->tab_settings = lv_tabview_add_tab(ui->tabview, LV_SYMBOL_SETTINGS "  Settings");
     lv_obj_set_style_bg_color(ui->tab_settings, UI_COLOR_BG, 0);
     lv_obj_set_style_bg_opa(ui->tab_settings, LV_OPA_COVER, 0);
+
+    /* SIN EL RELLENO DEL TEMA EN LAS PESTANAS (05-nov-2026). Estas paginas traen
+     * ~20 px de relleno por el tema y se sumaban al margen de cada vista: la
+     * primera tarjeta de la vista general empezaba en y=24 en vez de y=4, y el
+     * dueño lo veia como una banda muerta arriba. Cada vista pone su margen. */
+    lv_obj_set_style_pad_all(ui->tab_live, 0, 0);
+    lv_obj_set_style_pad_all(ui->tab_settings, 0, 0);
 
     ui->tab_settings_index = lv_obj_get_index(ui->tab_settings);
 

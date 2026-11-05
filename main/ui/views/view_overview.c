@@ -654,8 +654,11 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     lv_obj_set_style_bg_opa(ov->base.root, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ov->base.root, 0, 0);
     lv_obj_set_style_pad_all(ov->base.root, 8, 0);
-    /* Aprovechar la pantalla: pad superior e inferior minimos (los laterales
-     * mantienen 8). Asi la rejilla gana alto arriba y abajo. */
+    /* A TODO EL ANCHO Y ARRIBA DEL TODO (05-nov-2026). El margen real que sobraba
+     * venia del contenedor de pestanas (ver ui.c), no de aqui; ahora los
+     * laterales se quedan en 8 px y arriba/abajo en 4, que es lo justo para que
+     * las tarjetas no toquen el borde fisico. */
+    lv_obj_set_style_pad_hor(ov->base.root, 8, 0);
     lv_obj_set_style_pad_top(ov->base.root, 4, 0);
     lv_obj_set_style_pad_bottom(ov->base.root, 4, 0);
     lv_obj_set_style_pad_gap(ov->base.root, 8, 0);
