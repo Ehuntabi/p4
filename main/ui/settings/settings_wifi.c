@@ -66,6 +66,17 @@ static void wifi_pintar_ip_ap(ui_state_t *ui);
 /* Namespace NVS donde vive la configuracion Wi-Fi. */
 #define WIFI_NAMESPACE "wifi"
 static void wifi_save_cb(lv_event_t *e);
+static void wifi_cancel_cb(lv_event_t *e);
+static void campo_cambiado_cb(lv_event_t *e);
+static void refresca_botones(void);
+/* Lo que hay GUARDADO, para saber si los campos han cambiado de verdad. */
+static char s_ssid_guardado[33];
+static char s_pass_guardada[65];
+static char s_adm_guardada[33];
+static lv_obj_t *s_fila_botones;     /* fila Guardar/Cancelar (oculta si no hay cambios) */
+static lv_obj_t *s_adm_ta;           /* campo de la clave de administracion */
+static lv_obj_t *s_ssid_ta;          /* campo del nombre de la red */
+static lv_obj_t *s_pass_ta;          /* campo de la clave del punto de acceso */
 static lv_obj_t *s_wifi_estado = NULL;   /* respuesta del boton Guardar */
 void password_toggle_btn_event_cb(lv_event_t *e);
 
@@ -200,6 +211,7 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_add_event_cb(ui->wifi.ssid, ta_event_cb, LV_EVENT_DEFOCUSED, ui);
     lv_obj_add_event_cb(ui->wifi.ssid, ta_event_cb, LV_EVENT_CANCEL, ui);
     lv_obj_add_event_cb(ui->wifi.ssid, ta_event_cb, LV_EVENT_READY, ui);
+    s_ssid_ta = ui->wifi.ssid;
     /* SIN guardado automatico: lo escribe el boton "Guardar red" de abajo.
      * Guardar al perder el foco fue la mitad de un accidente serio (21-ago-2026):
      * la otra mitad rellenaba esta casilla con un nombre inventado a partir de
@@ -253,21 +265,63 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_add_event_cb(ui->wifi.password, ta_event_cb, LV_EVENT_DEFOCUSED, ui);
     lv_obj_add_event_cb(ui->wifi.password, ta_event_cb, LV_EVENT_CANCEL, ui);
     lv_obj_add_event_cb(ui->wifi.password, ta_event_cb, LV_EVENT_READY, ui);
+    s_pass_ta = ui->wifi.password;
     /* SIN guardado automatico, igual que el SSID: manda el boton de abajo. */
+    /* En cuanto se toca cualquiera de los dos campos, se mira si hay cambios y
+     * se enseña (o se esconde) la fila de Guardar/Cancelar. */
+    lv_obj_add_event_cb(ui->wifi.ssid, campo_cambiado_cb, LV_EVENT_VALUE_CHANGED, ui);
+    lv_obj_add_event_cb(ui->wifi.password, campo_cambiado_cb, LV_EVENT_VALUE_CHANGED, ui);
+    /* Lo guardado, para comparar: el SSID y la clave que han llegado aqui son
+     * los de NVS (los pasa ui.c), asi que son la referencia. */
+    snprintf(s_ssid_guardado, sizeof(s_ssid_guardado), "%s", default_ssid ? default_ssid : "");
+    snprintf(s_pass_guardada, sizeof(s_pass_guardada), "%s", default_pass ? default_pass : "");
+    {   /* y la de administracion, que se lee ahora mismo de NVS */
+        char u[33] = {0}, a[33] = {0};
+        config_server_get_admin_credentials(u, sizeof(u), a, sizeof(a));
+        snprintf(s_adm_guardada, sizeof(s_adm_guardada), "%s", a);
+    }
 
     /* Boton de guardar, a lo ancho de la card y debajo de los dos campos.
      * Escribe los DOS y reaplica el AP en caliente
      * (config_server_request_wifi_apply), asi el nombre nuevo sale sin
      * reiniciar ni tocar el interruptor del punto de acceso. */
-    lv_obj_t *btn_save = lv_btn_create(card1);
-    lv_obj_set_width(btn_save, lv_pct(100));
+    /* FILA GUARDAR / CANCELAR, OCULTA HASTA QUE HAY UN CAMBIO (5-nov-2026,
+     * peticion del dueño): antes el boton estaba siempre ahi, se pulsaba sin
+     * haber tocado nada y no se sabia si habia guardado algo o no. Ahora
+     * aparece en cuanto cambia CUALQUIERA de las tres cosas (nombre de la red,
+     * clave del punto de acceso o clave de administracion) y, si se cancela,
+     * los campos vuelven a lo que hay guardado. */
+    s_fila_botones = lv_obj_create(card1);
+    lv_obj_remove_style_all(s_fila_botones);
+    lv_obj_set_width(s_fila_botones, lv_pct(100));
+    lv_obj_set_height(s_fila_botones, LV_SIZE_CONTENT);
+    lv_obj_set_layout(s_fila_botones, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(s_fila_botones, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_fila_botones, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(s_fila_botones, 8, 0);
+    lv_obj_clear_flag(s_fila_botones, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_fila_botones, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t *btn_save = lv_btn_create(s_fila_botones);
+    lv_obj_set_width(btn_save, lv_pct(62));
     lv_obj_set_height(btn_save, 40);
     lv_obj_set_style_bg_color(btn_save, UI_COLOR_GREEN, 0);
     lv_obj_add_event_cb(btn_save, wifi_save_cb, LV_EVENT_CLICKED, ui);
     lv_obj_t *lbl_save = lv_label_create(btn_save);
     lv_obj_set_style_text_font(lbl_save, &lv_font_montserrat_24_es, 0);
-    lv_label_set_text(lbl_save, "Guardar red");
+    lv_label_set_text(lbl_save, LV_SYMBOL_OK "  Guardar");
     lv_obj_center(lbl_save);
+
+    lv_obj_t *btn_cancel = lv_btn_create(s_fila_botones);
+    lv_obj_set_width(btn_cancel, lv_pct(34));
+    lv_obj_set_height(btn_cancel, 40);
+    lv_obj_set_style_bg_color(btn_cancel, UI_COLOR_CARD_BORDER, 0);
+    lv_obj_add_event_cb(btn_cancel, wifi_cancel_cb, LV_EVENT_CLICKED, ui);
+    lv_obj_t *lbl_cancel = lv_label_create(btn_cancel);
+    lv_obj_set_style_text_font(lbl_cancel, &lv_font_montserrat_24_es, 0);
+    lv_label_set_text(lbl_cancel, LV_SYMBOL_CLOSE "  Cancelar");
+    lv_obj_center(lbl_cancel);
 
     /* Respuesta del boton. Sin esto lo pulsabas, se guardaba, se reiniciaba el
      * AP... y en pantalla no pasaba nada visible: la unica constancia quedaba en
@@ -440,13 +494,37 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     char adm_user[33] = {0}, adm_pass[33] = {0};
     config_server_get_admin_credentials(adm_user, sizeof(adm_user),
                                         adm_pass, sizeof(adm_pass));
-    s_c4_adm_lbl = lv_label_create(card4);
+    lv_obj_t *c4_row = lv_obj_create(card4);
+    lv_obj_remove_style_all(c4_row);
+    lv_obj_set_width(c4_row, lv_pct(100));
+    lv_obj_set_height(c4_row, LV_SIZE_CONTENT);
+    lv_obj_set_layout(c4_row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(c4_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(c4_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(c4_row, 8, 0);
+    lv_obj_clear_flag(c4_row, LV_OBJ_FLAG_SCROLLABLE);
+
+    s_c4_adm_lbl = lv_label_create(c4_row);
     lv_obj_set_style_text_font(s_c4_adm_lbl, &lv_font_montserrat_20_es, 0);
-    /* La clave se ENSEÑA aqui: es el unico sitio donde se puede leer (no esta
-     * en ningun otro lado), y es la que hay que meter para actualizar o
-     * descargar. Mismo criterio que la del Wi-Fi, que se ve con su boton. */
-    lv_label_set_text_fmt(s_c4_adm_lbl, "Clave:  %s",
-                          adm_pass[0] ? adm_pass : "(sin definir)");
+    lv_label_set_text(s_c4_adm_lbl, "Clave:");
+
+    /* LA CLAVE SE PUEDE ESCRIBIR, no solo generar (5-nov-2026, peticion del
+     * dueño): asi se pone una que se recuerde y, sobre todo, el cambio se
+     * puede GUARDAR o CANCELAR como el resto, en vez de aplicarse al instante
+     * sin vuelta atras. */
+    s_adm_ta = lv_textarea_create(c4_row);
+    lv_obj_set_flex_grow(s_adm_ta, 1);
+    lv_obj_set_height(s_adm_ta, 40);
+    lv_textarea_set_one_line(s_adm_ta, true);
+    lv_textarea_set_max_length(s_adm_ta, 32);
+    lv_textarea_set_password_mode(s_adm_ta, true);
+    lv_textarea_set_text(s_adm_ta, adm_pass);
+    lv_obj_set_style_text_font(s_adm_ta, &lv_font_montserrat_20_es, 0);
+    lv_obj_add_event_cb(s_adm_ta, ta_event_cb, LV_EVENT_FOCUSED, ui);
+    lv_obj_add_event_cb(s_adm_ta, ta_event_cb, LV_EVENT_DEFOCUSED, ui);
+    lv_obj_add_event_cb(s_adm_ta, ta_event_cb, LV_EVENT_READY, ui);
+    lv_obj_add_event_cb(s_adm_ta, campo_cambiado_cb, LV_EVENT_VALUE_CHANGED, ui);
 
     lv_obj_t *c4_btn_admin = lv_btn_create(card4);
     lv_obj_set_width(c4_btn_admin, lv_pct(100));
@@ -480,25 +558,22 @@ static void clave_admin_nueva_do(void)
 {
     static const char abc[] = "abcdefghijkmnpqrstuvwxyz23456789";
     char user[33] = {0}, pass[33] = {0}, nueva[17] = {0};
+    if (!s_adm_ta) return;
     config_server_get_admin_credentials(user, sizeof(user), pass, sizeof(pass));
-    if (!user[0]) snprintf(user, sizeof(user), "admin");
+    if (!user[0]) snprintf(user, sizeof(user), "administracion");
     for (int i = 0; i < 12; i++) nueva[i] = abc[esp_random() % (sizeof(abc) - 1)];
-    if (config_server_set_admin_credentials(user, nueva) != ESP_OK) {
-        ui_show_info_dialog(LV_SYMBOL_WARNING "  No se ha podido cambiar",
-                            "La clave de administracion sigue siendo la de antes.");
-        return;
-    }
-    if (s_c4_adm_lbl)
-        lv_label_set_text_fmt(s_c4_adm_lbl, "Administracion (opcional):  %s", nueva);
-    char msg[460];
+    lv_textarea_set_password_mode(s_adm_ta, false);
+    lv_textarea_set_text(s_adm_ta, nueva);
+    refresca_botones();
+    char msg[520];
     snprintf(msg, sizeof(msg),
              "Usuario:  %s\nClave de ADMINISTRACION:  %s\n\n"
-             "A partir de ahora, /ota (grabar firmware),\n"
-             "/keys (claves de los Victron) y /save solo\n"
-             "aceptan esta. El resto del portal (la app y las\n"
-             "pantallas) sigue con la clave de arriba.\n\n"
+             "La clave NUEVA esta escrita en el campo, pero\n"
+             "TODAVIA NO se ha guardado.\n\n"
+             "Pulsa GUARDAR para que empiece a funcionar.\n"
+             "Mientras no guardes, sigue valiendo la de antes.\n\n"
              "Apunta la clave AHORA: se lee solo aqui.", user, nueva);
-    ui_show_info_dialog(LV_SYMBOL_SETTINGS "  Administracion aparte", msg);
+    ui_show_info_dialog(LV_SYMBOL_SETTINGS "  Clave nueva preparada", msg);
 }
 
 static void generar_clave_admin_cb(lv_event_t *e)
@@ -525,6 +600,45 @@ static void reactivate_portal_cb(lv_event_t *e)
 
 /* Guarda SSID y password y reaplica el AP en caliente. Sustituye al guardado
  * automatico al perder el foco, que renombraba el AP sin pedirlo. */
+/* ¿Hay algún cambio sin guardar? Se comparan los TRES campos con lo que hay
+ * guardado: el nombre de la red, la clave del punto de acceso y la clave de
+ * administración. */
+static bool hay_cambios(void)
+{
+    if (s_ssid_ta && strcmp(lv_textarea_get_text(s_ssid_ta), s_ssid_guardado) != 0) return true;
+    if (s_pass_ta && strcmp(lv_textarea_get_text(s_pass_ta), s_pass_guardada) != 0) return true;
+    if (s_adm_ta && strcmp(lv_textarea_get_text(s_adm_ta), s_adm_guardada) != 0) return true;
+    return false;
+}
+
+/* Enseña la fila Guardar/Cancelar SOLO si hay algo cambiado. */
+static void refresca_botones(void)
+{
+    if (!s_fila_botones) return;
+    if (hay_cambios()) lv_obj_clear_flag(s_fila_botones, LV_OBJ_FLAG_HIDDEN);
+    else               lv_obj_add_flag(s_fila_botones, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void campo_cambiado_cb(lv_event_t *e)
+{
+    (void)e;
+    refresca_botones();
+}
+
+/* Cancelar: los campos vuelven a lo que hay guardado y la fila se esconde. */
+static void wifi_cancel_cb(lv_event_t *e)
+{
+    (void)e;
+    if (s_ssid_ta) lv_textarea_set_text(s_ssid_ta, s_ssid_guardado);
+    if (s_pass_ta) lv_textarea_set_text(s_pass_ta, s_pass_guardada);
+    if (s_adm_ta) lv_textarea_set_text(s_adm_ta, s_adm_guardada);
+    if (s_wifi_estado) {
+        lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_TEXT_DIM, 0);
+        lv_label_set_text(s_wifi_estado, "Sin cambios: no se ha guardado nada");
+    }
+    refresca_botones();
+}
+
 static void wifi_save_cb(lv_event_t *e)
 {
     ui_state_t *ui = (ui_state_t *)lv_event_get_user_data(e);
@@ -584,6 +698,23 @@ static void wifi_save_cb(lv_event_t *e)
         return;
     }
 
+    /* LA CLAVE DE ADMINISTRACION SE MIRA ANTES DE ESCRIBIR NADA (5-nov-2026).
+     * Antes se grababa primero la del Wi-Fi y la de administracion se validaba
+     * al final: si esa fallaba, la del Wi-Fi ya estaba en la NVS y la fila
+     * Guardar/Cancelar seguia pidiendo guardar. Con el aviso aqui, un Guardar
+     * o guarda las DOS claves o no guarda ninguna. */
+    const char *adm = s_adm_ta ? lv_textarea_get_text(s_adm_ta) : NULL;
+    bool adm_cambiada = (adm != NULL && strcmp(adm, s_adm_guardada) != 0);
+    if (adm_cambiada && strlen(adm) < 8) {
+        ESP_LOGW(TAG_SETTINGS, "clave de administracion corta: no se guarda");
+        if (s_wifi_estado) {
+            lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_RED, 0);
+            lv_label_set_text(s_wifi_estado,
+                "La clave de administracion necesita al menos 8 caracteres");
+        }
+        return;
+    }
+
     nvs_handle_t h;
     esp_err_t err = nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) {
@@ -613,6 +744,29 @@ static void wifi_save_cb(lv_event_t *e)
         char usr[33] = "p4";
         config_server_set_web_credentials(usr, pass);
     }
+    /* Y LA CLAVE DE ADMINISTRACION, si ha cambiado: es el tercer campo y sin
+     * esto se quedaba escrita en pantalla sin guardarse nunca. La longitud ya
+     * se ha comprobado arriba, antes de tocar la NVS. */
+    if (adm_cambiada) {
+        char u[33] = {0}, a[33] = {0};
+        config_server_get_admin_credentials(u, sizeof(u), a, sizeof(a));
+        if (u[0] == '\0') snprintf(u, sizeof(u), "portal");
+        if (config_server_set_admin_credentials(u, adm) == ESP_OK) {
+            snprintf(s_adm_guardada, sizeof(s_adm_guardada), "%s", adm);
+            ESP_LOGW(TAG_SETTINGS, "clave de administracion cambiada desde la pantalla");
+        } else {
+            if (s_wifi_estado) {
+                lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_RED, 0);
+                lv_label_set_text(s_wifi_estado, "No se pudo guardar la clave de administracion");
+            }
+            return;
+        }
+    }
+    /* Lo guardado pasa a ser la referencia nueva: la fila se esconde sola. */
+    snprintf(s_ssid_guardado, sizeof(s_ssid_guardado), "%s", ssid);
+    snprintf(s_pass_guardada, sizeof(s_pass_guardada), "%s", pass ? pass : "");
+    refresca_botones();
+
     ESP_LOGI(TAG_SETTINGS, "Wi-Fi guardado: SSID='%s' -> reaplicando AP", ssid);
     if (s_wifi_estado) {
         lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_GREEN, 0);
