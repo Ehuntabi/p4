@@ -662,6 +662,7 @@ static void auth_ip_limpia(uint32_t ip, int64_t ahora_us)
  * endpoints abiertos pasaban a pedirla: la app daba 401 en cada pantalla y el
  * satelite no podia mandar apuntes. */
 static esp_err_t auth_comprueba(httpd_req_t *req, const char *esperada_cab,
+                                const char *esperada_cab2,
                                 const char *aviso, bool es_admin, bool prohibido)
 {
     static uint32_t s_fallos = 0;
@@ -757,8 +758,14 @@ static esp_err_t auth_comprueba(httpd_req_t *req, const char *esperada_cab,
      * esa clave es otra y no se toca. */
     const bool es_legado = (!es_admin && s_auth_header_legado[0] != '\0' &&
                             auth_equal_ct(auth, s_auth_header_legado));
+    /* esperada_cab2 (05-nov-2026): /api/viaje con `borrar` necesita que una sola
+     * cabecera pueda ser la del portal O la de administracion. Se comprueba
+     * aqui dentro, y no antes, para pasar por el MISMO chequeo de origen (CSRF)
+     * y el mismo freno por IP. */
+    const bool es_la2 = (esperada_cab2 && esperada_cab2[0] != '\0' &&
+                         auth_equal_ct(auth, esperada_cab2));
     if (err == ESP_OK && esperada && esperada[0] != '\0' &&
-        (auth_equal_ct(auth, esperada) || es_legado)) {
+        (auth_equal_ct(auth, esperada) || es_legado || es_la2)) {
         s_fallos = 0;
         /* Tambien los de ESA IP: si no, seguiria contando fallos viejos y el
          * siguiente desliz la mandaria a 429 sin motivo. */
@@ -846,7 +853,7 @@ static esp_err_t auth_comprueba(httpd_req_t *req, const char *esperada_cab,
 esp_err_t check_basic_auth_strict(httpd_req_t *req)
 {
     return auth_comprueba(req, s_admin_header[0] ? s_admin_header : s_auth_header,
-                          NULL, /*es_admin=*/true, /*prohibido=*/false);
+                          NULL, NULL, /*es_admin=*/true, /*prohibido=*/false);
 }
 
 /* Nivel estricto con un aviso propio en el 401.
@@ -860,7 +867,32 @@ esp_err_t check_basic_auth_strict_aviso(httpd_req_t *req, const char *aviso)
     /* 403: el que pide ya esta autenticado en el nivel abierto, lo que le falta
      * es el permiso. Ver el comentario de auth_comprueba. */
     return auth_comprueba(req, s_admin_header[0] ? s_admin_header : s_auth_header,
-                          aviso, /*es_admin=*/true, /*prohibido=*/true);
+                          NULL, aviso, /*es_admin=*/true, /*prohibido=*/true);
+}
+
+/* NIVEL ABIERTO **O** ADMINISTRACION, en una sola puerta (05-nov-2026).
+ *
+ * Existe por /api/viaje y por BORRAR UN VIAJE: ese handler pide primero la clave
+ * del portal (es el canal de las cabinas) y, para `op=borrar`, ademas la de
+ * administracion. Una peticion HTTP solo lleva UNA cabecera Basic, asi que la app
+ * -- que manda la de administracion para borrar -- se comia un 401 en la primera
+ * puerta y el borrado desde la app no podia funcionar NUNCA. Lo cazo la
+ * auditoria del 05-nov-2026.
+ *
+ * Acepta cualquiera de las dos sin mandar nada; si no vale ninguna, delega en
+ * check_basic_auth() para que salga el 401/403 de siempre (con su freno por IP y
+ * su aviso en el log). El `borrar` sigue exigiendo la de administracion despues. */
+esp_err_t check_basic_auth_portal_o_admin(httpd_req_t *req)
+{
+    /* Sin auth en este portal (PORTAL_REQUIRE_BASIC_AUTH=0), como el resto. */
+    if (!PORTAL_REQUIRE_BASIC_AUTH) return check_basic_auth(req);
+    /* Y por el MISMO camino que las otras dos puertas: el chequeo de origen
+     * (CSRF), el freno por IP, el log del 401 y el "no drenar". Escribir aqui
+     * una comparacion de cabeceras aparte se saltaba todo eso -- lo cazo la
+     * auditoria del 05-nov-2026. Si ninguna de las dos vale, el 401 sale con el
+     * mensaje de siempre. */
+    return auth_comprueba(req, s_auth_header, s_admin_header,
+                          NULL, /*es_admin=*/false, /*prohibido=*/false);
 }
 
 /* Nivel abierto: basta con estar dentro del Wi-Fi (ver el bloque de arriba).
@@ -877,6 +909,6 @@ esp_err_t check_basic_auth(httpd_req_t *req)
 #else
     /* NIVEL ABIERTO: la clave del PORTAL (la de la app y las pantallas), NO la
      * de administracion. Ver el comentario de check_basic_auth_strict(). */
-    return auth_comprueba(req, s_auth_header, NULL, /*es_admin=*/false, /*prohibido=*/false);
+    return auth_comprueba(req, s_auth_header, NULL, NULL, /*es_admin=*/false, /*prohibido=*/false);
 #endif
 }

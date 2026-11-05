@@ -4986,8 +4986,15 @@ esp_err_t handle_api_viaje(httpd_req_t *req)
      * Sigue exigiendo credenciales (PORTAL_REQUIRE_BASIC_AUTH esta a 1); lo que
      * NO pide es la clave de administracion, que es para lo que de verdad puede
      * dejar el cacharro inservible: escribir firmware (/ota), leer o cambiar las
-     * claves AES de los Victron (/keys, /save) y las capturas de pantalla. */
-    REQUIRE_AUTH(req);
+     * claves AES de los Victron (/keys, /save) y las capturas de pantalla.
+     *
+     * PERO TAMBIEN VALE LA DE ADMINISTRACION (05-nov-2026, auditoria). `borrar`
+     * pide mas abajo la clave de administracion, y la app la manda como unica
+     * cabecera: si esta primera puerta solo admitiera la del portal, el borrado
+     * desde la app no podria funcionar NUNCA (401 en la primera puerta). Una
+     * peticion solo lleva una cabecera Basic, asi que aqui se admite cualquiera
+     * de las dos y el `borrar` sigue exigiendo la de administracion. */
+    if (check_basic_auth_portal_o_admin(req) != ESP_OK) return ESP_OK;
 
     /* 1 KB (VIAJE_BODY_MAX, definida arriba). El comentario de antes decia
      * "unos 90 bytes, cuatro numeros": eso era la fase 1. Hoy el cuerpo mas

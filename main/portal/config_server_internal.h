@@ -8,6 +8,9 @@
 
 /* Definidas en config_server_auth.c. */
 esp_err_t check_basic_auth(httpd_req_t *req);
+/* Nivel abierto O administracion: /api/viaje, que la app usa con la de
+ * administracion cuando borra. Ver el comentario en config_server_auth.c. */
+esp_err_t check_basic_auth_portal_o_admin(httpd_req_t *req);
 esp_err_t check_basic_auth_strict(httpd_req_t *req);
 
 /* Compara dos cadenas en tiempo CONSTANTE (no strcmp, que sale en la primera
