@@ -666,7 +666,10 @@ lv_obj_t *ui_tank_create(lv_obj_t *parent, lv_coord_t width, lv_coord_t height,
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(box, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_pad_all(box, 0, 0);
-    lv_obj_set_style_pad_gap(box, 4, 0);
+    /* EL TITULO, SEPARADO DEL DIBUJO (05-nov-2026, pedido del dueño: "que el
+     * texto aguas limpias se quede separado en vertical del grafico"). Con 4 px
+     * el rotulo casi tocaba el marco del deposito. */
+    lv_obj_set_style_pad_gap(box, 10, 0);
     lv_obj_set_user_data(box, (void *)(intptr_t)kind);
 
     /* Etiqueta arriba (altura content), color claro accent para destacar */

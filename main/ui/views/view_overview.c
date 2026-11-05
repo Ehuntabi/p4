@@ -936,7 +936,15 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
      * la escala. */
     ov->tank_s1 = ui_tank_create(camper_card, LV_SIZE_CONTENT, 1,
                                  "Agua limpia", UI_COLOR_CYAN, UI_TANK_CLEAN_H);
-    lv_obj_set_height(ov->tank_s1, lv_pct(100));
+    /* UN POCO MAS BAJO (05-nov-2026, pedido del dueño: "el grafico y los textos
+     * 1/4..4/4, un poco mas pequeño en vertical"). Con pct(100) el deposito se
+     * comia todo el alto de la tarjeta (215 px con el nuevo reparto); a 190 deja
+     * aire arriba y abajo y la escala se lee igual. */
+    lv_obj_set_height(ov->tank_s1, 190);
+    /* Y UN POCO MAS ARRIBA (05-nov-2026, pedido del dueño): la tarjeta centra sus
+     * columnas en vertical, asi que el rotulo "Agua limpia" quedaba a media altura.
+     * Se sube el bloque 10 px sin tocar su tamaño. */
+    lv_obj_set_style_translate_y(ov->tank_s1, -10, 0);
     lv_obj_set_width(ov->tank_s1, LV_SIZE_CONTENT);
     lv_obj_add_flag(ov->tank_s1, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(ov->tank_s1, alarm_mute_s1_cb, LV_EVENT_CLICKED, ov);
@@ -1050,6 +1058,10 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(top_group, 20, 0);
     lv_obj_clear_flag(top_group, LV_OBJ_FLAG_SCROLLABLE);
+    /* LOS DOS DE ARRIBA, 8 px MAS ALTOS, sin cambiarles el tamaño (05-nov-2026,
+     * pedido del dueño). Se desplaza el grupo, no las pildoras: asi los dos se
+     * mueven juntos y la separacion entre ellos sigue igual. */
+    lv_obj_set_style_translate_y(top_group, -8, 0);
 
     /* Icono bombilla FA5 (0xF0EB) en UTF-8 = "\xEF\x83\xAB" */
     /* Los tres son el pictograma del panel fisico, con el LED en su borde:
