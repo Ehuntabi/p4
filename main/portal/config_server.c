@@ -834,7 +834,12 @@ static esp_err_t handle_settime(httpd_req_t *req)
  * por compartir bus con el C6). SI pide auth (REQUIRE_AUTH, nivel abierto):
  * ni el AP local ni que solo devuelva capturas lo dejan publico. */
 static esp_err_t handle_captura(httpd_req_t *req) {
-    REQUIRE_AUTH(req);   /* navega la pantalla fisica (ui_tour_goto_screen): exige auth */
+    /* CON DOS CLAVES, UNA PETICION NO PUEDE TRAER LAS DOS (5-nov-2026). Antes
+     * esto pedia SIEMPRE la clave del portal (nivel abierto) y ademas, para las
+     * pantallas sensibles, la de administracion -> esas dos pantallas no se
+     * podian fotografiar de ninguna manera (401 siempre). Ahora se pide la que
+     * toca: la de administracion para "wifi" y "victron_keys", la del portal
+     * para el resto. */
     int n = -1;
     char query[48];
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
@@ -854,7 +859,11 @@ static esp_err_t handle_captura(httpd_req_t *req) {
      * navegar a esas paginas antes de exigir las credenciales estrictas
      * (si fallan, el 401 ya va enviado y no se navega). */
     if (ui_tour_screen_needs_strict_auth(n)) {
+        /* Pantalla sensible: basta la clave de ADMINISTRACION. */
         REQUIRE_AUTH_STRICT(req);
+    } else {
+        /* El resto: la del portal (la del punto de acceso). */
+        REQUIRE_AUTH(req);   /* navega la pantalla fisica (ui_tour_goto_screen) */
     }
     const char *name = ui_tour_goto_screen(n);
     if (!name) {
