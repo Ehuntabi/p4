@@ -911,6 +911,10 @@ void config_server_ensure_ap_password(void)
 
 esp_err_t wifi_ap_init(void)
 {
+    /* Cierto mientras la radio la hemos arrancado NOSOTROS y sigue encendida.
+     * Sirve para pararla antes de reconfigurarla (ver mas abajo): con la radio
+     * en marcha, set_config+start deja el AP mudo en esp_hosted. */
+    static bool s_radio_arrancada = false;
     static bool subsystems_inited = false;
     static bool wifi_drv_inited  = false;   /* esp_wifi_init separado: reintentable si falla el C6 */
     esp_err_t err;
@@ -1004,6 +1008,7 @@ esp_err_t wifi_ap_init(void)
         err = esp_wifi_stop();
         if (err == ESP_OK || err == ESP_ERR_WIFI_NOT_STARTED) {
             ESP_LOGI(TAG, "Soft-AP stopped");
+            s_radio_arrancada = false;
             return ESP_OK;
         }
         ESP_LOGE(TAG, "esp_wifi_stop() failed: %s", esp_err_to_name(err));
@@ -1011,6 +1016,26 @@ esp_err_t wifi_ap_init(void)
     }
 
     // 4) Start or restart Soft-AP
+    /* SI YA ESTA ENCENDIDA, SE PARA PRIMERO (5-nov-2026, auditoria).
+     *
+     * Aqui abajo se hace esp_wifi_set_config + esp_wifi_start. Con la radio YA
+     * ARRANCADA, con esp_hosted (la C6 por SDIO) esa pareja deja el punto de
+     * acceso mudo: la red se sigue viendo desde el movil, pero la P4 no
+     * contesta ni a un ping hasta reiniciar. Reproducido en el banco tres
+     * veces, y es lo que le pasaba al vigilante del DHCP (que pide reaplicar
+     * con la radio encendida) y a Guardar antes de quitarle el reaplicado.
+     *
+     * Parar y arrancar es el camino bueno, el mismo del interruptor de Ajustes
+     * (off -> esp_wifi_stop, on -> esta funcion). Si no estaba arrancada
+     * (arranque normal de la placa) no se para nada y todo sigue igual. */
+    if (s_radio_arrancada) {
+        ESP_LOGI(TAG, "la radio ya estaba encendida: parando antes de reconfigurar");
+        esp_err_t serr = esp_wifi_stop();
+        if (serr != ESP_OK && serr != ESP_ERR_WIFI_NOT_STARTED) {
+            ESP_LOGW(TAG, "esp_wifi_stop() antes de reconfigurar: %s", esp_err_to_name(serr));
+        }
+        s_radio_arrancada = false;
+    }
     ESP_LOGI(TAG, "Starting Soft-AP, SSID='%s'", ssid);
 
     /* WORKAROUND bug esp_hosted: cuando se usa Wi-Fi via esp_hosted (C6 como
@@ -1111,6 +1136,7 @@ esp_err_t wifi_ap_init(void)
         ESP_LOGE(TAG, "esp_wifi_start fallo: %s -> sigo SIN WiFi", esp_err_to_name(ws));
         return ws;
     }
+    s_radio_arrancada = true;
 
     /* Esperar hasta 2 s a que el handler async termine el action_start
      * (netif añadido + DHCP server up). Sin esto, dhcp_set_captiveportal_url

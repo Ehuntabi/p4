@@ -75,6 +75,11 @@ static char s_ssid_guardado[33];
 static char s_pass_guardada[65];
 static char s_adm_guardada[33];
 static lv_obj_t *s_fila_botones;     /* fila Guardar/Cancelar (oculta si no hay cambios) */
+/* Las dos tarjetas de arriba (punto de acceso y clave de administracion). Se
+ * guardan para igualar su alto: al salir la fila, la primera crece y, si no se
+ * toca la otra, quedan desalineadas. */
+static lv_obj_t *s_card1;
+static lv_obj_t *s_card4;
 static lv_obj_t *s_adm_ta;           /* campo de la clave de administracion */
 static lv_obj_t *s_adm_ojito;        /* boton para leerla escrita */
 static lv_obj_t *s_ssid_ta;          /* campo del nombre de la red */
@@ -534,6 +539,7 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_set_style_text_font(s_adm_ta, &lv_font_montserrat_20_es, 0);
     lv_obj_add_event_cb(s_adm_ta, ta_event_cb, LV_EVENT_FOCUSED, ui);
     lv_obj_add_event_cb(s_adm_ta, ta_event_cb, LV_EVENT_DEFOCUSED, ui);
+    lv_obj_add_event_cb(s_adm_ta, ta_event_cb, LV_EVENT_CANCEL, ui);
     lv_obj_add_event_cb(s_adm_ta, ta_event_cb, LV_EVENT_READY, ui);
     lv_obj_add_event_cb(s_adm_ta, campo_cambiado_cb, LV_EVENT_VALUE_CHANGED, ui);
 
@@ -557,6 +563,8 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_move_to_index(card4, 1);
 
     lv_obj_update_layout(cont);
+    s_card1 = card1;
+    s_card4 = card4;
     lv_coord_t h_ap = lv_obj_get_height(card1);
     if (h_ap > lv_obj_get_height(card4)) {
         lv_obj_set_height(card4, h_ap);
@@ -634,10 +642,25 @@ static void refresca_botones(void)
     if (hay) lv_obj_clear_flag(s_fila_botones, LV_OBJ_FLAG_HIDDEN);
     else     lv_obj_add_flag(s_fila_botones, LV_OBJ_FLAG_HIDDEN);
     /* Y que se lea en la linea de estado, no solo por los botones: si dices
-     * "no hay nada que guardar" mientras hay cambios, el mensaje miente. */
-    if (hay && s_wifi_estado) {
-        lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_ORANGE, 0);
-        lv_label_set_text(s_wifi_estado, "Hay cambios sin guardar");
+     * "no hay nada que guardar" mientras hay cambios, el mensaje miente. Y al
+     * reves: si el aviso se queda puesto cuando ya no hay cambios (teclear una
+     * letra y borrarla), tambien miente. Por eso solo se toca ese texto: los
+     * mensajes de "Guardado." o de error se respetan. */
+    /* Las dos tarjetas de arriba, a la misma altura: al salir la fila la
+     * primera crece unos 40 px y la segunda se quedaba corta. */
+    if (s_card1 && s_card4) {
+        lv_obj_update_layout(s_card1);
+        lv_obj_set_height(s_card4, lv_obj_get_height(s_card1));
+    }
+    if (s_wifi_estado) {
+        const char *aviso = "Hay cambios sin guardar";
+        if (hay) {
+            lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_ORANGE, 0);
+            lv_label_set_text(s_wifi_estado, aviso);
+        } else if (strcmp(lv_label_get_text(s_wifi_estado), aviso) == 0) {
+            lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_TEXT_DIM, 0);
+            lv_label_set_text(s_wifi_estado, "");
+        }
     }
 }
 
@@ -664,6 +687,14 @@ static void wifi_cancel_cb(lv_event_t *e)
     if (s_ssid_ta) lv_textarea_set_text(s_ssid_ta, s_ssid_guardado);
     if (s_pass_ta) lv_textarea_set_text(s_pass_ta, s_pass_guardada);
     if (s_adm_ta) lv_textarea_set_text(s_adm_ta, s_adm_guardada);
+    /* Y TAPADA OTRA VEZ (5-nov-2026, auditoria): "Cambiar la clave" la deja a
+     * la vista (y pone el ojo en "cerrar"); al cancelar se quedaba escrita en
+     * la pantalla, que es justo lo que no puede pasar con esta clave. */
+    if (s_adm_ta) lv_textarea_set_password_mode(s_adm_ta, true);
+    if (s_adm_ojito) {
+        lv_obj_t *lbl = lv_obj_get_child(s_adm_ojito, 0);
+        if (lbl) lv_label_set_text(lbl, LV_SYMBOL_EYE_OPEN);
+    }
     if (s_wifi_estado) {
         lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_TEXT_DIM, 0);
         lv_label_set_text(s_wifi_estado, "Sin cambios: no se ha guardado nada");
@@ -719,13 +750,20 @@ static void wifi_save_cb(lv_event_t *e)
         }
         return;
     }
-    /* Tope WPA2-PSK (63 caracteres), mismo motivo que el del SSID de arriba:
-     * validacion de verdad, no solo el max_length del textarea. */
-    if (pass_len > 63) {
-        ESP_LOGW(TAG_SETTINGS, "clave WPA2 de %u caracteres: no se guarda (max 63)", (unsigned)pass_len);
+    /* TOPE 32, NO 63 (5-nov-2026, auditoria). WPA2 admite 63, pero esta clave es
+     * TAMBIEN la del portal abierto (usuario + clave) y ahi los buffers son de
+     * 33: http_auth_init() lee "http_pass" en pass[33] (config_server_auth.c) y
+     * config_server_set_web_credentials() rechaza mas de 32. Con una clave de
+     * 33-63 el guardado decia "Guardado", el portal seguia con la vieja y, al
+     * reiniciar, http_pass no cabia -> el portal entero contestaba 401. Mejor
+     * no dejarla entrar desde aqui y decirlo claro. */
+    if (pass_len > 32) {
+        ESP_LOGW(TAG_SETTINGS, "clave del AP de %u caracteres: no se guarda (max 32)", (unsigned)pass_len);
         if (s_wifi_estado) {
             lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_RED, 0);
-            lv_label_set_text(s_wifi_estado, "La clave Wi-Fi no puede pasar de 63 caracteres (WPA2)");
+            lv_label_set_text(s_wifi_estado,
+                "La clave del punto de acceso no puede pasar de 32 caracteres "
+                "(la web y la app no admiten mas)");
         }
         return;
     }
@@ -749,69 +787,74 @@ static void wifi_save_cb(lv_event_t *e)
 
     /* Si cambia la RED (nombre o clave del punto de acceso) hay que decirlo:
      * la clave nueva NO entra hasta que la radio se reinicia (ver abajo), y
-     * eso el usuario tiene que saberlo, no descubrirlo. */
-    bool cambia_red = (strcmp(ssid, s_ssid_guardado) != 0 ||
-                       strcmp(pass ? pass : "", s_pass_guardada) != 0);
+     * eso el usuario tiene que saberlo, no descubrirlo. Se mira por separado
+     * porque el aviso de "clave nueva" no vale cuando solo cambia el nombre. */
+    bool cambia_ssid  = (strcmp(ssid, s_ssid_guardado) != 0);
+    bool cambia_clave = (strcmp(pass ? pass : "", s_pass_guardada) != 0);
+    bool cambia_red   = cambia_ssid || cambia_clave;
+
+    /* TODO EN UNA SOLA TRANSACCION (5-nov-2026, auditoria). Antes se grababa en
+     * tres tandas: primero ssid/password, luego las credenciales del portal y
+     * luego la de administracion. Si una de las dos ultimas fallaba, la de la
+     * red ya estaba dentro: la fila seguia pidiendo guardar, Cancelar decia
+     * "no se ha guardado nada" y al reiniciar aparecia la clave que el usuario
+     * creia haber cancelado. Ahora se escriben TODAS las claves en el mismo
+     * handle y hay UN commit: o entra todo o no entra nada. */
+    char adm_user[33] = {0}, adm_actual[33] = {0};
+    config_server_get_admin_credentials(adm_user, sizeof(adm_user),
+                                        adm_actual, sizeof(adm_actual));
+    if (adm_user[0] == '\0') snprintf(adm_user, sizeof(adm_user), "portal");
 
     nvs_handle_t h;
     esp_err_t err = nvs_open(WIFI_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) {
         ESP_LOGE(TAG_SETTINGS, "nvs_open failed: %s", esp_err_to_name(err));
+        if (s_wifi_estado) {
+            lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_RED, 0);
+            lv_label_set_text(s_wifi_estado, "No se pudo guardar: la memoria interna no responde");
+        }
         return;
     }
+    /* La clave del punto de acceso es TAMBIEN la del portal abierto (la de la
+     * app y la cabina, con usuario "p4"): se graba en la misma transaccion. */
     err = nvs_set_str(h, "ssid", ssid);
     if (err == ESP_OK) err = nvs_set_str(h, "password", pass ? pass : "");
+    if (err == ESP_OK) err = nvs_set_str(h, "http_user", "p4");
+    if (err == ESP_OK) err = nvs_set_str(h, "http_pass", pass ? pass : "");
+    if (adm_cambiada && err == ESP_OK) {
+        err = nvs_set_str(h, "adm_user", adm_user);
+        if (err == ESP_OK) err = nvs_set_str(h, "adm_pass", adm);
+    }
     if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     if (err != ESP_OK) {
-        ESP_LOGW(TAG_SETTINGS, "Wi-Fi config no persistio: %s", esp_err_to_name(err));
+        ESP_LOGW(TAG_SETTINGS, "no he podido guardar las claves: %s", esp_err_to_name(err));
         if (s_wifi_estado) {
             lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_RED, 0);
-            lv_label_set_text(s_wifi_estado, "No se pudo guardar");
+            lv_label_set_text(s_wifi_estado, "No se pudo guardar: no ha cambiado nada");
         }
         return;
     }
-    /* DOS CLAVES Y NO TRES (4-nov-2026, peticion del usuario). La clave del
-     * Wi-Fi es TAMBIEN la del portal (la de la app y las pantallas): se copia en
-     * el acto a las credenciales http, que son las que compara el portal. Si no
-     * se hiciera aqui, el portal seguiria pidiendo la clave vieja hasta el
-     * siguiente reinicio, y el usuario se quedaria fuera con la nueva en la
-     * mano. La segunda clave (administracion: OTA, descargas, claves, /save) no
-     * se toca. */
-    {
-        char usr[33] = "p4";
-        config_server_set_web_credentials(usr, pass);
-    }
-    /* Y LA CLAVE DE ADMINISTRACION, si ha cambiado: es el tercer campo y sin
-     * esto se quedaba escrita en pantalla sin guardarse nunca. La longitud ya
-     * se ha comprobado arriba, antes de tocar la NVS. */
-    if (adm_cambiada) {
-        char u[33] = {0}, a[33] = {0};
-        config_server_get_admin_credentials(u, sizeof(u), a, sizeof(a));
-        if (u[0] == '\0') snprintf(u, sizeof(u), "portal");
-        if (config_server_set_admin_credentials(u, adm) == ESP_OK) {
-            snprintf(s_adm_guardada, sizeof(s_adm_guardada), "%s", adm);
-            ESP_LOGW(TAG_SETTINGS, "clave de administracion cambiada desde la pantalla");
-        } else {
-            if (s_wifi_estado) {
-                lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_RED, 0);
-                lv_label_set_text(s_wifi_estado, "No se pudo guardar la clave de administracion");
-            }
-            return;
-        }
-    }
+    /* Y con lo grabado se rehacen las DOS cabeceras Basic de una vez. */
+    http_auth_init();
+
     /* Lo guardado pasa a ser la referencia nueva: la fila se esconde sola. */
     snprintf(s_ssid_guardado, sizeof(s_ssid_guardado), "%s", ssid);
     snprintf(s_pass_guardada, sizeof(s_pass_guardada), "%s", pass ? pass : "");
+    if (adm_cambiada) {
+        snprintf(s_adm_guardada, sizeof(s_adm_guardada), "%s", adm);
+        ESP_LOGW(TAG_SETTINGS, "clave de administracion cambiada desde la pantalla");
+    }
     refresca_botones();
 
-    ESP_LOGI(TAG_SETTINGS, "Wi-Fi guardado: SSID='%s' red_cambiada=%d", ssid, cambia_red);
+    ESP_LOGI(TAG_SETTINGS, "Claves guardadas: SSID='%s' cambia_ssid=%d cambia_clave=%d adm=%d",
+             ssid, cambia_ssid, cambia_clave, (int)adm_cambiada);
     if (s_wifi_estado) {
         lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_GREEN, 0);
         if (cambia_red) {
             lv_label_set_text(s_wifi_estado,
-                "Guardado. La red usa la clave nueva cuando la reinicies "
-                "(interruptor del punto de acceso o Reiniciar)");
+                "Guardado. La web, la app y la cabina ya piden la clave nueva; "
+                "para entrar en el Wi-Fi, reinicia la red (interruptor o Reiniciar)");
         } else {
             lv_label_set_text(s_wifi_estado, "Guardado.");
         }
