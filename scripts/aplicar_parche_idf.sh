@@ -26,32 +26,44 @@
 set -euo pipefail
 
 AQUI="$(cd "$(dirname "$0")/.." && pwd)"
-PARCHE="$AQUI/patches/idf-5.5.5-spi-null-memcpy.patch"
 
 if [ -z "${IDF_PATH:-}" ]; then
     echo "ERROR: IDF_PATH no esta definido. Fuentea el export.sh del IDF antes." >&2
     exit 1
 fi
 
-if [ ! -f "$PARCHE" ]; then
+# TODOS los parches de patches/, de uno en uno y sin listas a mano (05-nov-2026):
+# antes solo se aplicaba el del SPI, asi que añadir otro obligaba a tocar este
+# script. Cada parche se detecta por si mismo:
+#   - si el arbol YA lo lleva (apply --check --reverse pasa), se salta;
+#   - si aplica, se aplica;
+#   - si ni una cosa ni la otra, es que el IDF ha cambiado: error.
+shopt -s nullglob
+PARCHES=( "$AQUI"/patches/*.patch )
+if [ ${#PARCHES[@]} -eq 0 ]; then
     echo "[i] no hay parches en $AQUI/patches: nada que hacer"
     exit 0
 fi
 
-# El arreglo toca spi_master.c; esta linea es la firma de que YA esta aplicado.
-SPI_MASTER="$IDF_PATH/components/esp_driver_spi/src/gpspi/spi_master.c"
-if grep -q 'buffer_to_rcv && trans_buf->buffer_to_rcv' "$SPI_MASTER" 2>/dev/null; then
-    echo "[ok] el IDF ya lleva el arreglo del memcpy con NULL (no hay que parchear)"
-    exit 0
-fi
+fallo=0
+for PARCHE in "${PARCHES[@]}"; do
+    nombre="$(basename "$PARCHE")"
+    if git -C "$IDF_PATH" apply --check --reverse "$PARCHE" 2>/dev/null; then
+        echo "[ok] el IDF ya lleva $nombre"
+        continue
+    fi
+    if git -C "$IDF_PATH" apply --check "$PARCHE" 2>/dev/null; then
+        git -C "$IDF_PATH" apply "$PARCHE"
+        echo "[ok] parche aplicado al IDF: $nombre"
+        continue
+    fi
+    echo "ERROR: $nombre no aplica al IDF (ni esta ya puesto)." >&2
+    fallo=1
+done
 
-if git -C "$IDF_PATH" apply --check "$PARCHE" 2>/dev/null; then
-    git -C "$IDF_PATH" apply "$PARCHE"
-    echo "[ok] parche aplicado al IDF: $(basename "$PARCHE")"
-    exit 0
+if [ "$fallo" -ne 0 ]; then
+    echo "       IDF_PATH=$IDF_PATH" >&2
+    echo "       Revisa patches/ y el estado del arbol del IDF (git -C \"\$IDF_PATH\" status)." >&2
+    exit 1
 fi
-
-echo "ERROR: el IDF no lleva el arreglo del memcpy con NULL y el parche no aplica." >&2
-echo "       IDF_PATH=$IDF_PATH" >&2
-echo "       Revisa $PARCHE y el estado del arbol del IDF (git -C \"\$IDF_PATH\" status)." >&2
-exit 1
+exit 0
