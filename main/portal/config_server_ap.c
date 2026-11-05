@@ -255,7 +255,19 @@ static void cfg_lifecycle_task(void *arg)
                  * ANTES, igual que en la rama de apagado (auditoria 05-nov-2026). */
                 cfg_http_stop();
                 cfg_dns_stop();
-                if (wifi_ap_init() == ESP_OK) config_server_start();
+                esp_err_t werr = wifi_ap_init();
+                if (werr == ESP_OK) {
+                    config_server_start();
+                } else {
+                    /* SI NO SE PUDO REINICIAR LA RADIO, EL PORTAL VUELVE A
+                     * ARRIBA igual: el AP puede seguir vivo con la config de
+                     * antes, y dejarlo sin HTTP ni DNS es peor (la web y la app
+                     * se quedan fuera hasta reiniciar). */
+                    ESP_LOGW(TAG, "wifi_ap_init fallo (%s): rearranco el portal como estaba",
+                             esp_err_to_name(werr));
+                    config_server_start();
+                    cfg_dns_start();
+                }
             }
             break;
         }
@@ -1050,8 +1062,17 @@ esp_err_t wifi_ap_init(void)
             return serr;
         }
         s_radio_arrancada = false;
-        /* Un respiro para que el C6 procese la parada antes del set_config. */
-        vTaskDelay(pdMS_TO_TICKS(50));
+        /* ESPERAR A QUE EL AP ESTE PARADO DE VERDAD (auditoria 05-nov-2026). Un
+         * retardo fijo era una apuesta: si el evento AP_STOP llega despues del
+         * set_config nuevo, el handler idempotente se cree que el AP sigue
+         * arriba e ignora el AP_START -> el AP se queda mudo igual. Se espera
+         * aqui a que el handler haya bajado el testigo, con tope de 500 ms. */
+        for (int i = 0; i < 50 && s_ap_started; i++) {
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (s_ap_started) {
+            ESP_LOGW(TAG, "el AP no confirma la parada en 500 ms: sigo igual");
+        }
     }
     ESP_LOGI(TAG, "Starting Soft-AP, SSID='%s'", ssid);
 

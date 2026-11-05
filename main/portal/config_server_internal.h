@@ -33,6 +33,7 @@ void ap_off_timer_kick(void);
  * estaticos directamente. */
 void cfg_http_stop(void);
 void cfg_dns_stop(void);
+void cfg_dns_start(void);   /* idempotente: arranca el DNS del portal si no esta */
 
 /* Segunda instancia httpd, SOLO para lo que puede tardar segundos y dejar
  * el server principal mudo mientras dura (.tar completos, OTA, galeria de

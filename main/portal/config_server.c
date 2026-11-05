@@ -95,6 +95,17 @@ void cfg_dns_stop(void)
     s_dns = NULL;
 }
 
+/* Y para arrancarlo otra vez (05-nov-2026). Lo usa el ciclo de vida del AP
+ * cuando el reaplicado en caliente falla: si se cerro el DNS para reconfigurar
+ * la radio y la radio no se pudo levantar, el portal se queda arriba pero sin
+ * DNS de portal cautivo, y el movil no abre la pagina solo. */
+void cfg_dns_start(void)
+{
+    if (s_dns) return;   /* ya esta: esto es idempotente */
+    dns_server_config_t dns_cfg = DNS_SERVER_CONFIG_SINGLE("*", "WIFI_AP_DEF");
+    s_dns = start_dns_server(&dns_cfg);
+}
+
 /* Envoltorios de la actualizacion por Wi-Fi: exigen contrasena y delegan en
  * ota_update.c. Nivel ESTRICTO: escribe el firmware entero. */
 static esp_err_t handle_ota_page(httpd_req_t *req) {

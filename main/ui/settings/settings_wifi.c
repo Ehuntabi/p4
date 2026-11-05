@@ -803,9 +803,9 @@ static void wifi_save_cb(lv_event_t *e)
      * "no se ha guardado nada" y al reiniciar aparecia la clave que el usuario
      * creia haber cancelado. Ahora se escriben TODAS las claves en el mismo
      * handle y hay UN commit: o entra todo o no entra nada. */
-    char adm_user[33] = {0}, adm_actual[33] = {0};
+    char adm_user[33] = {0}, adm_ver[33] = {0};
     config_server_get_admin_credentials(adm_user, sizeof(adm_user),
-                                        adm_actual, sizeof(adm_actual));
+                                        adm_ver, sizeof(adm_ver));   /* el usuario manda; la clave se reescribe */
     if (adm_user[0] == '\0') snprintf(adm_user, sizeof(adm_user), "portal");
 
     nvs_handle_t h;
@@ -854,7 +854,11 @@ static void wifi_save_cb(lv_event_t *e)
              ssid, cambia_ssid, cambia_clave, (int)adm_cambiada);
     if (s_wifi_estado) {
         lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_GREEN, 0);
-        if (cambia_clave) {
+        if (cambia_clave && cambia_ssid) {
+            lv_label_set_text(s_wifi_estado,
+                "Guardado el nombre y la clave. La web, la app y la cabina ya piden "
+                "la clave nueva; para entrar en el Wi-Fi, reinicia la red");
+        } else if (cambia_clave) {
             lv_label_set_text(s_wifi_estado,
                 "Guardado. La web, la app y la cabina ya piden la clave nueva; "
                 "para entrar en el Wi-Fi, reinicia la red (interruptor o Reiniciar)");
