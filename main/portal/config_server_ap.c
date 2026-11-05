@@ -249,6 +249,12 @@ static void cfg_lifecycle_task(void *arg)
                 wifi_ap_init();         /* con enabled=0 hace esp_wifi_stop() */
             } else {
                 ESP_LOGI(TAG, "Wi-Fi ON en caliente: levantando radio y portal");
+                /* SI HAY QUE BAJAR LA RADIO PARA RECONFIGURARLA (wifi_ap_init
+                 * para antes de aplicar el cambio), el portal se queda con
+                 * sockets de un netif que se va: se cierran los servicios de red
+                 * ANTES, igual que en la rama de apagado (auditoria 05-nov-2026). */
+                cfg_http_stop();
+                cfg_dns_stop();
                 if (wifi_ap_init() == ESP_OK) config_server_start();
             }
             break;
@@ -1030,11 +1036,22 @@ esp_err_t wifi_ap_init(void)
      * (arranque normal de la placa) no se para nada y todo sigue igual. */
     if (s_radio_arrancada) {
         ESP_LOGI(TAG, "la radio ya estaba encendida: parando antes de reconfigurar");
+        /* El evento de "AP arrancado" es de la vez anterior: si no se limpia,
+         * la espera de abajo puede darse por buena con el start VIEJO (los
+         * eventos de esp_hosted llegan duplicados y desordenados). */
+        if (s_ap_evt) xEventGroupClearBits(s_ap_evt, AP_EVT_STARTED);
         esp_err_t serr = esp_wifi_stop();
         if (serr != ESP_OK && serr != ESP_ERR_WIFI_NOT_STARTED) {
-            ESP_LOGW(TAG, "esp_wifi_stop() antes de reconfigurar: %s", esp_err_to_name(serr));
+            /* SI NO SE PUEDE PARAR, NO SE TOCA: reconfigurar con la radio en
+             * marcha es justo lo que deja el AP mudo (auditoria 05-nov-2026).
+             * Se deja como esta y que lo intente el siguiente intento. */
+            ESP_LOGE(TAG, "esp_wifi_stop() antes de reconfigurar: %s -> no reconfiguro",
+                     esp_err_to_name(serr));
+            return serr;
         }
         s_radio_arrancada = false;
+        /* Un respiro para que el C6 procese la parada antes del set_config. */
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
     ESP_LOGI(TAG, "Starting Soft-AP, SSID='%s'", ssid);
 
@@ -1131,12 +1148,16 @@ esp_err_t wifi_ap_init(void)
     /* Crear EventGroup ANTES de esp_wifi_start para no perder el evento
      * AP_START (que llega async). xEventGroupCreate solo la primera vez. */
     if (!s_ap_evt) s_ap_evt = xEventGroupCreate();
+    /* Pesimista a proposito: si el start falla a medias, la radio puede haberse
+     * quedado encendida; con la bandera puesta, el siguiente intento la parara
+     * antes de reconfigurar (que es el camino bueno) en vez de saltarse la
+     * parada. Se quita en cuanto un stop confirma que esta parada. */
+    s_radio_arrancada = true;
     esp_err_t ws = esp_wifi_start();
     if (ws != ESP_OK) {
         ESP_LOGE(TAG, "esp_wifi_start fallo: %s -> sigo SIN WiFi", esp_err_to_name(ws));
         return ws;
     }
-    s_radio_arrancada = true;
 
     /* Esperar hasta 2 s a que el handler async termine el action_start
      * (netif añadido + DHCP server up). Sin esto, dhcp_set_captiveportal_url

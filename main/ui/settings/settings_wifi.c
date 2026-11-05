@@ -266,7 +266,10 @@ void create_wifi_settings_page(ui_state_t *ui, lv_obj_t *page_wifi,
     lv_obj_set_width(ui->wifi.password, 280);
     /* Tope WPA2-PSK: clave max 63 caracteres. Mismo motivo que el del SSID
      * de arriba. */
-    lv_textarea_set_max_length(ui->wifi.password, 63);
+    /* 32, no 63 (05-nov-2026): esta clave es tambien la del portal abierto y
+     * ahi los buffers son de 33. Dejarla teclear y rechazarla al guardar es
+     * pedirle al usuario que se equivoque. */
+    lv_textarea_set_max_length(ui->wifi.password, 32);
     lv_textarea_set_text(ui->wifi.password, ap_password);
     lv_obj_add_event_cb(ui->wifi.password, ta_event_cb, LV_EVENT_FOCUSED, ui);
     lv_obj_add_event_cb(ui->wifi.password, ta_event_cb, LV_EVENT_DEFOCUSED, ui);
@@ -579,7 +582,7 @@ static void clave_admin_nueva_do(void)
     char user[33] = {0}, pass[33] = {0}, nueva[17] = {0};
     if (!s_adm_ta) return;
     config_server_get_admin_credentials(user, sizeof(user), pass, sizeof(pass));
-    if (!user[0]) snprintf(user, sizeof(user), "administracion");
+    if (!user[0]) snprintf(user, sizeof(user), "portal");
     for (int i = 0; i < 12; i++) nueva[i] = abc[esp_random() % (sizeof(abc) - 1)];
     lv_textarea_set_password_mode(s_adm_ta, false);
     lv_textarea_set_text(s_adm_ta, nueva);
@@ -851,10 +854,14 @@ static void wifi_save_cb(lv_event_t *e)
              ssid, cambia_ssid, cambia_clave, (int)adm_cambiada);
     if (s_wifi_estado) {
         lv_obj_set_style_text_color(s_wifi_estado, UI_COLOR_GREEN, 0);
-        if (cambia_red) {
+        if (cambia_clave) {
             lv_label_set_text(s_wifi_estado,
                 "Guardado. La web, la app y la cabina ya piden la clave nueva; "
                 "para entrar en el Wi-Fi, reinicia la red (interruptor o Reiniciar)");
+        } else if (cambia_ssid) {
+            lv_label_set_text(s_wifi_estado,
+                "Guardado. El nombre nuevo de la red sale al reiniciarla "
+                "(interruptor o Reiniciar)");
         } else {
             lv_label_set_text(s_wifi_estado, "Guardado.");
         }
