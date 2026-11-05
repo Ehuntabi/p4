@@ -6,3 +6,7 @@ sdkconfig
 sdkconfig.old
 __pycache__/
 *.pyc
+
+# Claves del puente (NO se versionan): export PUENTE_AP_CLAVE / PUENTE_PORTAL_CLAVE
+# o este fichero con esas dos variables.
+puente_claves.env
