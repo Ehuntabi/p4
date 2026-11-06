@@ -108,6 +108,15 @@ lv_obj_t *ui_battery_soc_create(lv_obj_t *parent,
 void      ui_battery_soc_set(lv_obj_t *bat_box,
                              uint16_t soc_deci, uint16_t voltage_centi);
 
+/* ── Aro de estado de carga (prueba del 6-nov-2026) ──────────────────────
+ * Sustituye al dibujo de batería de coche en la tarjeta Batería del Overview.
+ * El dueño dijo que el dibujo no le convencía: aquí el estado de carga se ve
+ * de un vistazo por el ARCO (0..100 %, con el color de siempre: verde/ámbar/
+ * rojo) y por el NÚMERO grande del centro ("67.4" + "%"), con la tensión
+ * debajo. El aro ocupa un cuadrado de `size` px. */
+lv_obj_t *ui_battery_ring_create(lv_obj_t *parent, lv_coord_t size);
+void      ui_battery_ring_set(lv_obj_t *ring, uint16_t soc_deci);
+
 /* ── Tanque visual estilo "depósito" para niveles de agua ──────── */
 /* Widget rectangular grande con relleno que sube de abajo arriba.
  * El nivel se da en sondas 0..3 (sumatorio del bitmask del NE185).

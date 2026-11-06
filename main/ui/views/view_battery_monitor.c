@@ -189,15 +189,12 @@ static void battery_view_update(ui_device_view_t *view, const victron_data_t *da
     char buf[24];
 
     /* Tensión */
-    snprintf(buf, sizeof(buf), "%u.%02u",
-             b->battery_voltage_centi / 100, b->battery_voltage_centi % 100);
+    ui_fmt_dec1(buf, sizeof(buf), (long)b->battery_voltage_centi);
     ui_metric_set(bat->m_voltage, buf, "V", UI_COLOR_TEXT);
 
     /* Corriente — signo y color por carga/descarga */
     int current_centi = ui_round_div_signed((int)b->battery_current_milli, 10);
-    int abs_c = current_centi < 0 ? -current_centi : current_centi;
-    snprintf(buf, sizeof(buf), "%c%d.%02d",
-             current_centi >= 0 ? '+' : '-', abs_c / 100, abs_c % 100);
+    ui_fmt_dec1_signo(buf, sizeof(buf), current_centi);
     ui_metric_set(bat->m_current, buf, "A",
                   ui_color_for_current((int32_t)b->battery_current_milli));
 
@@ -217,7 +214,7 @@ static void battery_view_update(ui_device_view_t *view, const victron_data_t *da
         ui_pill_set(bat->pill_state, pill_buf, UI_COLOR_RED);
         goto skip_state_pill;
     }
-    int abs_a_pill = abs_c;  /* en centiamperios */
+    int abs_a_pill = current_centi < 0 ? -current_centi : current_centi;  /* centiamperios */
     if (b->battery_current_milli > 50) {
         snprintf(pill_buf, sizeof(pill_buf), "Cargando %d.%d A",
                  abs_a_pill / 100, (abs_a_pill / 10) % 10);

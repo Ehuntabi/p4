@@ -245,16 +245,16 @@ static void sol_actualizar_totales(void)
     /* Los dos primeros son la LEYENDA (se pueden apagar); los otros dos, info. */
     if (s_totales[0]) {
         if (s_modo_dias) {
-            lv_label_set_text_fmt(s_totales[0], "Producido %.2f kWh/dia",
+            lv_label_set_text_fmt(s_totales[0], "Producido %.1f kWh/dia",
                                   (double)solar_daily_avg(30));
         } else {
-            lv_label_set_text_fmt(s_totales[0], "Panel: hoy %.2f kWh",
+            lv_label_set_text_fmt(s_totales[0], "Panel: hoy %.1f kWh",
                                   (double)hoy.kwh);
         }
     }
     if (s_totales[1]) {
         if (s_modo_dias) {
-            lv_label_set_text_fmt(s_totales[1], "Consumido %.2f kWh/dia",
+            lv_label_set_text_fmt(s_totales[1], "Consumido %.1f kWh/dia",
                                   (double)solar_daily_avg_consumo(30));
         } else {
             lv_label_set_text(s_totales[1], "A bateria");
@@ -265,7 +265,7 @@ static void sol_actualizar_totales(void)
                               (int)hoy.pico_w, (double)hoy.horas);
     }
     if (s_totales[3]) {
-        lv_label_set_text_fmt(s_totales[3], "Viaje %.2f kWh",
+        lv_label_set_text_fmt(s_totales[3], "Viaje %.1f kWh",
                               viaje.wh_solar / 1000.0);
     }
     /* Respetar el gris de las que estan apagadas. */

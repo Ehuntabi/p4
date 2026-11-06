@@ -21,6 +21,8 @@
  * ------------------------------------------------------------------------- */
 
 #include <lvgl.h>
+#include <stdio.h>
+#include <stddef.h>
 #include "fonts/fonts_es.h"   /* Inter con acentos: la unica familia permitida */
 
 #ifdef __cplusplus
@@ -31,6 +33,11 @@ extern "C" {
 #define UI_COLOR_BG           lv_color_hex(0x0A0D13)  /* fondo de pagina (22-sep-2026: antes
                                                         * 0x06080C, se confundia con la tarjeta) */
 #define UI_COLOR_CARD         lv_color_hex(0x1B2230)  /* superficie de tarjeta (antes 0x141821) */
+/* Los dos extremos del degradado suave de la tarjeta (06-nov-2026): la
+ * superficie no es plana, tiene una luz muy leve arriba. UI_COLOR_CARD es el
+ * tono de referencia (el del centro). */
+#define UI_COLOR_CARD_HI      lv_color_hex(0x242D3D)  /* alto (más claro) */
+#define UI_COLOR_CARD_LO      lv_color_hex(0x171D27)  /* bajo (más oscuro) */
 #define UI_COLOR_CARD_BORDER  lv_color_hex(0x39424F)
 #define UI_COLOR_TEXT         lv_color_hex(0xFFFFFF)  /* dato principal */
 #define UI_COLOR_TEXT_SOFT    lv_color_hex(0xE4E9F0)  /* texto descriptivo (rotulos, subtitulos) */
@@ -87,6 +94,29 @@ extern "C" {
                                        * reservan lo mismo (antes 50 en vistas y 62
                                        * en ajustes, y por eso el contenido de las
                                        * dos pestanas no empezaba/terminaba igual) */
+
+/* ── 4. CIFRAS: UN SOLO DECIMAL EN TODA LA PANTALLA ──────────────────────────
+ * Pedido del dueño el 6-nov-2026: "un decimal para cualquier valor que se
+ * presente en cualquier lugar de la p4 y cabina". Todas las cifras con
+ * decimales de la interfaz pasan por aquí para que no haya dos formatos en la
+ * misma pantalla. Se entra en CENTÉSIMAS, que es como las guardan Victron y el
+ * state-store (13.42 V = 1342), y se REDONDEA, no se trunca: 1342 -> "13.4",
+ * 1346 -> "13.5". */
+static inline void ui_fmt_dec1(char *out, size_t n, long centi)
+{
+    long c = centi < 0 ? -centi : centi;
+    c = (c + 5) / 10;
+    snprintf(out, n, "%s%ld.%ld", centi < 0 ? "-" : "", c / 10, c % 10);
+}
+
+/* La misma cifra pero con el signo DELANTE siempre (+/-), que es como se
+ * enseñan las corrientes: "+1.2 A" cargando, "-3.4 A" descargando. */
+static inline void ui_fmt_dec1_signo(char *out, size_t n, long centi)
+{
+    long c = centi < 0 ? -centi : centi;
+    c = (c + 5) / 10;
+    snprintf(out, n, "%c%ld.%ld", centi < 0 ? '-' : '+', c / 10, c % 10);
+}
 
 #ifdef __cplusplus
 }

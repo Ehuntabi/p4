@@ -71,6 +71,7 @@ typedef struct {
     lv_obj_t *pill_shore_lbl;    /* texto interno del pill (ON/OFF) */
     /* ── Widgets frigo (DS18B20 + ventilador PWM) ─────────────── */
     lv_obj_t *lbl_freezer_temp;  /* T_Congelador valor numerico (fuente grande) */
+    lv_obj_t *ln_freezer_trend;  /* flecha de tendencia (dibujada con líneas) */
     lv_obj_t *lbl_freezer_unit;  /* unidad "C" en fuente _es (tiene glifo grado) */
     lv_obj_t *img_fan;           /* icono ventilador (animado, debajo 230V) */
     lv_obj_t *arc_fan;           /* aro-gauge del PWM 0..100 % alrededor del ventilador */
@@ -289,6 +290,122 @@ static lv_obj_t *ov_make_state_pill(lv_obj_t *card)
     return pill;
 }
 
+/* ── ESTÉTICA DE TARJETA CON DATO (banco de pruebas, 06-nov-2026) ───────────
+ *
+ * El dueño pidió a la tarjeta Solar una vuelta "profesional" sin mover nada de
+ * sitio, y al verla quiso lo mismo en la del DC/DC. Esto es lo que se aplica,
+ * en un solo sitio para que las dos (y las que vengan) sean idénticas:
+ *
+ *   FONDO Y MARCO
+ *     - superficie un punto más clara que el fondo (UI_COLOR_CARD_HI) para que
+ *       la tarjeta se despegue sin necesidad de un marco gordo. Se probó un
+ *       degradado suave y la pantalla, que es de 16 bits, lo sacaba a bandas:
+ *       descartado por verse como un defecto.
+ *     - marco de 1 px (antes 2) al 80 %: el color de la tarjeta sigue viéndose
+ *       en el filo, pero deja de competir con el icono y con la cifra.
+ *     - esquina 12 en vez de 16: menos "burbuja", más instrumento.
+ *     - sombra algo más abierta y desplazada, para dar profundidad.
+ *   CABECERA
+ *     - el título deja de ser un titular de 28 px del color de la tarjeta y
+ *       pasa a etiqueta pequeña, en mayúsculas, gris y espaciada: el color se
+ *       queda en el icono y en el filo.
+ *   DATOS
+ *     - rótulo a la izquierda, gris y a 20; cifra a la derecha a 46; unidad
+ *       pequeña y gris, al ras de la cifra; un filete de 1 px entre los dos
+ *       datos.
+ *     - la cifra y la unidad llevan ANCHO FIJO a propósito: con ancho
+ *       automático, cuando el texto crece (de "--" a "12.4") la caja del padre
+ *       no se re-mide y el número sale recortado por la izquierda. Con ancho
+ *       fijo las dos cifras acaban en la misma vertical aunque cambie el largo.
+ */
+#define OV_CIFRA_W   96     /* ancho fijo de la cifra (aguanta "12.4") */
+#define OV_UNIDAD_W  42     /* ancho fijo de la unidad ("kWh" mide 37) */
+
+static void ov_estilo_marco(lv_obj_t *card)
+{
+    if (!card) return;
+    lv_obj_set_style_bg_color(card, UI_COLOR_CARD_HI, 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_border_opa(card, LV_OPA_80, 0);
+    lv_obj_set_style_radius(card, 12, 0);
+    lv_obj_set_style_shadow_width(card, 14, 0);
+    lv_obj_set_style_shadow_opa(card, LV_OPA_60, 0);
+    lv_obj_set_style_shadow_ofs_y(card, 4, 0);
+}
+
+static void ov_estilo_cabecera(lv_obj_t *card, const char *titulo)
+{
+    if (!card) return;
+    lv_obj_t *header = lv_obj_get_child(card, 0);
+    lv_obj_t *left   = header ? lv_obj_get_child(header, 0) : NULL;
+    lv_obj_t *tit    = left ? lv_obj_get_child(left, 1) : NULL;
+    if (tit) {
+        if (titulo) lv_label_set_text(tit, titulo);
+        lv_obj_set_style_text_font(tit, UI_FONT_TEXT, 0);
+        /* BLANCO, que destaque (06-nov-2026, pedido del dueño): antes iba en
+         * gris como el resto de rótulos y el título de la tarjeta se perdía. */
+        lv_obj_set_style_text_color(tit, UI_COLOR_TEXT, 0);
+        lv_obj_set_style_text_letter_space(tit, 2, 0);
+    }
+    if (header) lv_obj_set_style_border_width(header, 1, 0);
+}
+
+static void ov_estilo_tarjeta(lv_obj_t *card, const char *titulo,
+                              lv_obj_t *m1, lv_obj_t *m2)
+{
+    if (!card) return;
+    ov_estilo_marco(card);
+    ov_estilo_cabecera(card, titulo);
+
+    lv_obj_t *mets[2] = { m1, m2 };
+    for (int i = 0; i < 2; i++) {
+        lv_obj_t *box = mets[i];
+        if (!box) continue;
+        /* La caja medía lo que su contenido: sin ancho completo no hay
+         * "izquierda/derecha" que repartir. */
+        lv_obj_set_width(box, lv_pct(100));
+        lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(box, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                              LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+        /* Poco aire arriba/abajo del dato: con mucho, el bloque empujaba la
+         * pastilla de estado contra el filo de abajo de la tarjeta. */
+        lv_obj_set_style_pad_ver(box, 6, 0);
+        lv_obj_t *lab = lv_obj_get_child(box, 0);
+        lv_obj_t *row = lv_obj_get_child(box, 1);
+        lv_obj_t *val = row ? lv_obj_get_child(row, 0) : NULL;
+        lv_obj_t *uni = row ? lv_obj_get_child(row, 1) : NULL;
+        if (lab) {
+            lv_obj_set_style_text_font(lab, UI_FONT_TEXT, 0);
+            lv_obj_set_style_text_color(lab, UI_COLOR_TEXT_DIM, 0);
+            /* Alinear abajo pone los dos textos al ras por el borde de su caja,
+             * no por la línea base: el rótulo queda alto. Este relleno lo baja
+             * a la altura de la cifra. */
+            lv_obj_set_style_pad_bottom(lab, 9, 0);
+        }
+        if (val) {
+            lv_obj_set_style_text_font(val, UI_FONT_DISPLAY, 0);
+            lv_obj_set_width(val, OV_CIFRA_W);
+            lv_obj_set_style_text_align(val, LV_TEXT_ALIGN_RIGHT, 0);
+        }
+        if (uni) {
+            lv_obj_set_style_text_font(uni, UI_FONT_TEXT, 0);
+            lv_obj_set_style_text_color(uni, UI_COLOR_TEXT_DIM, 0);
+            lv_obj_set_style_pad_bottom(uni, 9, 0);
+            lv_obj_set_width(uni, OV_UNIDAD_W);
+            lv_obj_set_style_text_align(uni, LV_TEXT_ALIGN_LEFT, 0);
+            /* Con ancho fijo "kWh" partiría en dos líneas: que recorte antes
+             * que partir. */
+            lv_label_set_long_mode(uni, LV_LABEL_LONG_CLIP);
+        }
+        if (i == 0) {   /* filete entre los dos datos */
+            lv_obj_set_style_border_color(box, UI_COLOR_CARD_BORDER, 0);
+            lv_obj_set_style_border_side(box, LV_BORDER_SIDE_BOTTOM, 0);
+            lv_obj_set_style_border_width(box, 1, 0);
+            lv_obj_set_style_border_opa(box, LV_OPA_20, 0);
+        }
+    }
+}
+
 static lv_obj_t *create_node_card(lv_obj_t *parent, const lv_img_dsc_t *img,
                                   const char *title, lv_color_t accent,
                                   lv_obj_t **out_metric)
@@ -475,11 +592,29 @@ static void overview_fan_rotate_cb(lv_timer_t *t)
 static void camper_led_paint(lv_obj_t *led, bool on)
 {
     if (!led) return;
+    /* Si el dedo está encima, manda el toque (ver camper_led_touch). */
+    if (lv_obj_get_user_data(led)) return;
     lv_obj_set_style_bg_color(led, on ? UI_COLOR_GREEN : UI_COLOR_CARD_BORDER, 0);
     lv_obj_set_style_shadow_width(led, on ? 10 : 0, 0);
     lv_obj_set_style_shadow_color(led, UI_COLOR_GREEN, 0);
     lv_obj_set_style_shadow_opa(led, on ? LV_OPA_80 : LV_OPA_TRANSP, 0);
     lv_obj_set_style_shadow_spread(led, on ? 2 : 0, 0);
+}
+
+/* Acuse del TOQUE en el LED: mientras el dedo está sobre el botón, el LED se
+ * enciende en verde; al soltar vuelve a pintarse con el ESTADO de verdad (lo
+ * hace el refresco). Pedido del dueño el 6-nov-2026: "el LED no está verde"
+ * al pulsar. */
+static void camper_led_touch(lv_obj_t *led, bool tocando)
+{
+    if (!led) return;
+    lv_obj_set_user_data(led, (void *)(intptr_t)(tocando ? 1 : 0));
+    if (!tocando) return;   /* al soltar lo repinta el refresco con el estado */
+    lv_obj_set_style_bg_color(led, UI_COLOR_GREEN, 0);
+    lv_obj_set_style_shadow_width(led, 10, 0);
+    lv_obj_set_style_shadow_color(led, UI_COLOR_GREEN, 0);
+    lv_obj_set_style_shadow_opa(led, LV_OPA_80, 0);
+    lv_obj_set_style_shadow_spread(led, 2, 0);
 }
 
 static void camper_btn_event_cb(lv_event_t *e)
@@ -570,69 +705,108 @@ static lv_obj_t *camper_make_bulb_icon(lv_obj_t *parent, lv_color_t color)
  * asomando por el borde. El LED queda accesible via lv_obj_get_user_data(btn).
  * `text` puede ser NULL (la Bomba va sin rotulo). El LED de estado va DENTRO
  * del oval, a la IZQUIERDA, en los tres botones (6-oct-2026). */
+/* ── BOTÓN DEL PANEL CAMPER (06-nov-2026) ──────────────────────────────────
+ *
+ * El óvalo se dibuja con DOS objetos y no con `border_width`:
+ *   - el botón, relleno ENTERO del color de la función (es el FILO: 2 px);
+ *   - dentro, un "cuerpo" 4 px más pequeño con el color oscuro de pulsador.
+ * Con border_width el filo se perdía por arriba y por abajo (en las curvas y
+ * en el tramo recto, según el estado) y el óvalo quedaba abierto; con dos
+ * óvalos concéntricos el aro sale igual de grueso en toda la vuelta.
+ *
+ * Dentro del cuerpo, las tres piezas van colocadas a mano para que los tres
+ * botones repartan igual: LED a la izquierda, dibujo en el centro exacto y
+ * rótulo a la derecha (la Bomba no lleva).
+ *
+ * Al pulsar, el CUERPO se aclara (como un pulsador de verdad); el filo y el
+ * dibujo no cambian, y el LED no se toca: el LED es el estado de la luz o de
+ * la bomba, no el toque. */
+#define CAMPER_BTN_W      200
+#define CAMPER_BTN_H       85
+#define CAMPER_BTN_FILO     2
+
+static void camper_btn_press_cb(lv_event_t *e)
+{
+    lv_obj_t *btn = (lv_obj_t *)lv_event_get_user_data(e);
+    if (!btn) return;
+    lv_obj_t *cuerpo = lv_obj_get_child(btn, 0);
+    lv_obj_t *led    = (lv_obj_t *)lv_obj_get_user_data(btn);
+    lv_event_code_t code = lv_event_get_code(e);
+    bool pulsado = (code == LV_EVENT_PRESSED);
+    if (cuerpo) {
+        lv_obj_set_style_bg_color(cuerpo,
+            pulsado ? UI_COLOR_CARD_HI : UI_COLOR_CARD_LO, 0);
+    }
+    camper_led_touch(led, pulsado);
+}
+
 static lv_obj_t *camper_make_button(lv_obj_t *parent, const char *text,
                                     char cmd_char, lv_color_t accent,
                                     camper_icon_t dibujo)
 {
     lv_obj_t *btn = lv_btn_create(parent);
-    lv_obj_set_size(btn, 200, 85);
-    lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);                 /* óvalo: radius = h/2 */
-    /* Oval del panel: sin relleno, sin sombra y con el contorno de la funcion */
-    lv_obj_set_style_bg_opa(btn, LV_OPA_TRANSP, 0);
+    lv_obj_set_size(btn, CAMPER_BTN_W, CAMPER_BTN_H);
+    lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
+    /* El botón ES el filo: relleno entero del color de la función. */
+    lv_obj_set_style_bg_color(btn, accent, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(btn, 0, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
-    lv_obj_set_style_text_color(btn, UI_COLOR_TEXT, 0);
-    lv_obj_set_style_border_color(btn, accent, 0);
-    lv_obj_set_style_border_width(btn, 2, 0);
+    lv_obj_set_style_pad_all(btn, 0, 0);
+    lv_obj_clear_flag(btn, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Contenedor horizontal con icono (fuente regular para los glyphs FA)
-     * + texto (SemiBold para mejor contraste sin oscurecer el fondo). */
-    lv_obj_t *row = lv_obj_create(btn);
-    lv_obj_remove_style_all(row);
-    /* El row (lv_obj_create) sale CLICKABLE por defecto en LVGL v8 y cubre
-     * el centro del boton, robandole el click (los eventos no burbujean sin
-     * EVENT_BUBBLE). Sin esto, pulsar el boton NO dispara camper_btn_event_cb
-     * -> los botones Luz INT/EXT/Bomba parecian muertos. Igual que el led. */
-    lv_obj_clear_flag(row, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
-    lv_obj_set_layout(row, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER,
-                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_gap(row, 8, 0);
-    lv_obj_center(row);
+    /* Cuerpo: 2 px por dentro en todo el perímetro. */
+    lv_obj_t *cuerpo = lv_obj_create(btn);
+    lv_obj_remove_style_all(cuerpo);
+    lv_obj_set_size(cuerpo, CAMPER_BTN_W - 2 * CAMPER_BTN_FILO,
+                            CAMPER_BTN_H - 2 * CAMPER_BTN_FILO);
+    lv_obj_center(cuerpo);
+    lv_obj_set_style_radius(cuerpo, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(cuerpo, UI_COLOR_CARD_LO, 0);
+    lv_obj_set_style_bg_opa(cuerpo, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(cuerpo, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(cuerpo, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(btn, camper_btn_press_cb, LV_EVENT_PRESSED,     btn);
+    lv_obj_add_event_cb(btn, camper_btn_press_cb, LV_EVENT_RELEASED,    btn);
+    lv_obj_add_event_cb(btn, camper_btn_press_cb, LV_EVENT_PRESS_LOST,  btn);
+    lv_obj_add_event_cb(btn, camper_btn_press_cb, LV_EVENT_CLICKED,     btn);
 
-    if (dibujo == CAMPER_ICON_TAP) {
-        lv_obj_t *l_tap = lv_label_create(row);
-        lv_obj_set_style_text_font(l_tap, &mdi_faucet_64, 0);
-        lv_obj_set_style_text_color(l_tap, accent, 0);
-        lv_label_set_text(l_tap, "\xF3\xB1\xAC\xA9");   /* U+F1B29 = mdi-faucet */
-    } else {
-        camper_make_bulb_icon(row, accent);
-    }
-
-    /* Rotulo corto ("INT"/"EXT"); la Bomba va SIN texto (el grifo ya lo dice). */
-    if (text && text[0]) {
-        lv_obj_t *l_text = lv_label_create(row);
-        lv_obj_set_style_text_font(l_text, &lv_font_montserrat_28_es, 0);
-        lv_obj_set_style_text_color(l_text, accent, 0);
-        lv_label_set_text(l_text, text);
-    }
-
-    /* LED redondo de estado (Off gris oscuro; on verde + halo, lo pinta
-     * camper_led_paint en el refresh general). Va DENTRO del oval, mas grande y
-     * a la IZQUIERDA en los tres botones (6-oct-2026). La alineacion es de
-     * estilo, asi que se reaplica si el boton cambia de tamaño; el 4 de
-     * desplazamiento es lo que lo separa del borde (el area de contenido del
-     * boton empieza ~13 px dentro por el relleno del tema, medido en captura). */
-    lv_obj_t *led = lv_obj_create(btn);
+    /* LED de estado: a la izquierda del cuerpo. */
+    lv_obj_t *led = lv_obj_create(cuerpo);
     lv_obj_remove_style_all(led);
     lv_obj_set_size(led, 20, 20);
     lv_obj_set_style_radius(led, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(led, UI_COLOR_CARD_BORDER, 0);
     lv_obj_set_style_bg_opa(led, LV_OPA_COVER, 0);
-    lv_obj_align(led, LV_ALIGN_LEFT_MID, 4, 0);
     lv_obj_clear_flag(led, LV_OBJ_FLAG_CLICKABLE);
+    /* LED 20 px más a la derecha (06-nov-2026, pedido del dueño): a 6 px del
+     * filo quedaba pegado a la curva. */
+    lv_obj_align(led, LV_ALIGN_LEFT_MID, 26, 0);
     lv_obj_set_user_data(btn, led);
+
+    /* Dibujo de la función, en el centro exacto. */
+    if (dibujo == CAMPER_ICON_TAP) {
+        lv_obj_t *l_tap = lv_label_create(cuerpo);
+        lv_obj_set_style_text_font(l_tap, &mdi_faucet_64, 0);
+        lv_obj_set_style_text_color(l_tap, accent, 0);
+        lv_label_set_text(l_tap, "\xF3\xB1\xAC\xA9");   /* U+F1B29 = mdi-faucet */
+        lv_obj_align(l_tap, LV_ALIGN_CENTER, 0, 0);
+    } else {
+        lv_obj_t *bulb = camper_make_bulb_icon(cuerpo, accent);
+        lv_obj_align(bulb, LV_ALIGN_CENTER, 0, 0);
+    }
+
+    /* Rótulo corto ("INT"/"EXT") pegado a la derecha. */
+    if (text && text[0]) {
+        lv_obj_t *l_text = lv_label_create(cuerpo);
+        /* 24 en vez de 28 (06-nov-2026, pedido del dueño): el rótulo pesaba
+         * más que el dibujo. Va alineado a la derecha, así que al encoger solo
+         * se mueve su propio borde izquierdo: nada más cambia de sitio. */
+        lv_obj_set_style_text_font(l_text, &lv_font_montserrat_24_es, 0);
+        lv_obj_set_style_text_color(l_text, UI_COLOR_TEXT_SOFT, 0);
+        lv_label_set_text(l_text, text);
+        lv_obj_align(l_text, LV_ALIGN_RIGHT_MID, -8, 0);
+    }
 
     lv_obj_add_event_cb(btn, camper_btn_event_cb, LV_EVENT_CLICKED,
                         (void *)(intptr_t)cmd_char);
@@ -711,6 +885,11 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_left, 8, 0);
     lv_obj_clear_flag(col_left, LV_OBJ_FLAG_SCROLLABLE);
+    /* 1 px de menos por abajo (06-nov-2026): la tarjeta quedaba 1 px más alta
+     * que la zona visible de la pestaña, así que el filo inferior caía fuera y
+     * con el marco nuevo de 1 px la tarjeta se veía CORTADA por abajo. Con el
+     * margen, el filo entra en pantalla y coincide con el de las vecinas. */
+    lv_obj_set_style_pad_bottom(col_left, 1, 0);
 
     ov->card_solar = create_node_card(col_left, &icon_solar,
                                       "Solar", UI_COLOR_GREEN, &ov->m_solar_w);
@@ -731,10 +910,9 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     ui_metric_set(ov->m_solar_w, "--", "A", UI_COLOR_TEXT);
     ov->m_solar_kwh = ui_metric_create_compact(ov->card_solar, "Hoy");
     ui_metric_set(ov->m_solar_kwh, "--", "kWh", UI_COLOR_TEXT_DIM);
-    /* Valores a 28 (no 46) para dejar sitio a la pastilla de estado del fondo
-     * sin que se corte ningun dato. Pastilla pulsable al final de la card. */
-    ui_metric_set_value_font(ov->m_solar_w,   &lv_font_montserrat_28_es);
-    ui_metric_set_value_font(ov->m_solar_kwh, &lv_font_montserrat_28_es);
+    /* La tarjeta Solar estrena el acabado (ver ov_estilo_tarjeta). */
+    ov_estilo_tarjeta(ov->card_solar, "SOLAR", ov->m_solar_w, ov->m_solar_kwh);
+
     ov->pill_solar_state = ov_make_state_pill(ov->card_solar);
     lv_obj_add_event_cb(ov->pill_solar_state, ov_solar_state_pill_cb,
                         LV_EVENT_CLICKED, ov);
@@ -755,6 +933,10 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_center, 8, 0);
     lv_obj_clear_flag(col_center, LV_OBJ_FLAG_SCROLLABLE);
+    /* 1 px de menos por abajo, igual que las otras dos columnas: con el marco
+     * nuevo de 1 px, el filo inferior caía fuera de la zona visible de la
+     * pestaña y la tarjeta se veía sin línea abajo. */
+    lv_obj_set_style_pad_bottom(col_center, 1, 0);
 
     ov->card_bat = ui_card_create(col_center, UI_COLOR_ORANGE);
     lv_obj_set_width(ov->card_bat, lv_pct(100));
@@ -768,12 +950,19 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
      * a UI_PAD_CARD-10 y aumentamos pad_bottom a UI_PAD_CARD+10 para no
      * tocar el tamano externo de la card. */
     lv_obj_set_style_pad_top(ov->card_bat, UI_PAD_CARD - 10, 0);
-    lv_obj_set_style_pad_bottom(ov->card_bat, UI_PAD_CARD + 10, 0);
+    /* Relleno de abajo 26 -> 14 (06-nov-2026): el aro grande (200 px) no
+     * cabía en el alto que quedaba y se cortaba por arriba; con 12 px más de
+     * fila entra entero. El contenido baja con él, que es justo lo que se
+     * buscaba. */
+    lv_obj_set_style_pad_bottom(ov->card_bat, UI_PAD_CARD - 2, 0);
     ui_card_set_title_img(ov->card_bat, &icon_battery,
                           "Batería", UI_COLOR_ORANGE);
     /* Click en la card de bateria silencia la alarma de SOC */
     lv_obj_add_flag(ov->card_bat, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(ov->card_bat, alarm_mute_soc_cb, LV_EVENT_CLICKED, ov);
+    /* Mismo acabado que Solar y DC/DC. */
+    ov_estilo_marco(ov->card_bat);
+    ov_estilo_cabecera(ov->card_bat, "BATERÍA");
     /* Cuerpo de card_bat: fila horizontal con [Corriente · Arc SoC · Autonomía].
      * Aprovecha el ancho disponible en lugar del alto para que con la card
      * a 8:3 (igual altura que Solar/DC/DC) las métricas no se recorten. */
@@ -787,10 +976,12 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_clear_flag(bat_row, LV_OBJ_FLAG_SCROLLABLE);
     ov->m_bat_current = ui_metric_create_compact(bat_row, "Corriente");
-    ov->arc_soc       = ui_battery_soc_create(bat_row, 150, 148);
-    /* Subir el widget de bateria visual (arc SoC) un poco respecto al
-     * baseline del flex row para que quede mas alineado con el titulo. */
-    lv_obj_set_style_translate_y(ov->arc_soc, -25, 0);
+    /* El dibujo de batería de coche se cambia por un ARO de estado de carga
+     * (6-nov-2026): el dueño dijo que el dibujo no le convencía. En el aro el
+     * estado se lee de dos maneras a la vez, la visual (cuánto arco está
+     * pintado, y de qué color) y la numérica (67.4 % grande en el centro, con
+     * la tensión debajo). Ocupa el mismo hueco que el dibujo: 150x150. */
+    ov->arc_soc       = ui_battery_ring_create(bat_row, 200);
     ov->m_ttg         = ui_metric_create_compact(bat_row, "Autonomía");
     /* Las dos metricas laterales con ancho base 0 + flex_grow=1: se reparten
      * por igual el espacio a los lados del arc SoC (150 px fijo), asi su ancho
@@ -808,7 +999,10 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
         for (size_t i = 0; i < sizeof(metrics) / sizeof(metrics[0]); ++i) {
             lv_obj_t *title = lv_obj_get_child(metrics[i], 0);
             lv_obj_t *row   = lv_obj_get_child(metrics[i], 1);
-            if (title) lv_obj_set_style_text_font(title, &lv_font_montserrat_20_es, 0);
+            if (title) {
+                lv_obj_set_style_text_font(title, UI_FONT_TEXT, 0);
+                lv_obj_set_style_text_color(title, UI_COLOR_TEXT_DIM, 0);
+            }
             if (row) {
                 lv_obj_t *value = lv_obj_get_child(row, 0);
                 lv_obj_t *unit  = lv_obj_get_child(row, 1);
@@ -816,10 +1010,18 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                  * porque "12h 30m" no cabia). Con 32 y 24 juntas, las dos
                  * cifras y sus rotulos quedaban a distinta altura y la fila
                  * parecia torcida (visto en la captura del 22-sep-2026). */
+                /* 24 y no 28: es el tamaño en el que ENTRAN los valores
+                 * reales más largos sin recortarse ni mover nada:
+                 *   Corriente  "-199.9 A" = 103 px   (hueco: 108)
+                 *   Autonomía  "23h 59m"  =  75 px
+                 * A 28 el de corriente medía 119 y se metía debajo del aro. */
                 if (value) lv_obj_set_style_text_font(value, &lv_font_montserrat_24_es, 0);
                 if (unit)  lv_obj_set_style_text_font(unit,  &lv_font_montserrat_20_es, 0);
             }
-            lv_obj_set_style_translate_y(metrics[i], 56, 0);
+            /* Bajadas 12 px más (44 -> 56) para dejar sitio al aro grande:
+             * el disco manda en el centro y las dos cifras se alinean a su
+             * altura baja, como en un cuadro de mandos. */
+            lv_obj_set_style_translate_y(metrics[i], 68, 0);
         }
     }
     /* La caja de bateria mas ancha deja menos sitio a los lados: bajar la
@@ -845,6 +1047,10 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_right, 8, 0);
     lv_obj_clear_flag(col_right, LV_OBJ_FLAG_SCROLLABLE);
+    /* 1 px de menos por abajo, igual que la columna izquierda: con el marco
+     * nuevo de 1 px, el filo inferior se salía de la zona visible y la tarjeta
+     * se veía cortada por abajo. */
+    lv_obj_set_style_pad_bottom(col_right, 1, 0);
 
     ov->card_loads = create_node_card(col_right, &icon_dcdc,
                                       "DC/DC", UI_COLOR_CYAN, &ov->m_loads_w);
@@ -860,10 +1066,10 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     ui_metric_set(ov->m_loads_w, "--", "V", UI_COLOR_TEXT);
     ov->m_loads_kwh = ui_metric_create_compact(ov->card_loads, "Servicio");
     ui_metric_set(ov->m_loads_kwh, "--", "V", UI_COLOR_TEXT_DIM);
-    /* Valores a 28 (no 46) para dejar sitio a la pastilla del fondo sin que se
-     * corte ningun dato. Pastilla pulsable al final de la card. */
-    ui_metric_set_value_font(ov->m_loads_w,   &lv_font_montserrat_28_es);
-    ui_metric_set_value_font(ov->m_loads_kwh, &lv_font_montserrat_28_es);
+    /* El mismo acabado que la tarjeta Solar: la cifra pasa a 46 (la pone
+     * ov_estilo_tarjeta) y no a 28, que era lo que había antes para dejar sitio
+     * a la pastilla. Pastilla pulsable al final de la card. */
+    ov_estilo_tarjeta(ov->card_loads, "DC/DC", ov->m_loads_w, ov->m_loads_kwh);
     ov->pill_dcdc_state = ov_make_state_pill(ov->card_loads);
     lv_obj_add_event_cb(ov->pill_dcdc_state, ov_dcdc_state_pill_cb,
                         LV_EVENT_CLICKED, ov);
@@ -916,11 +1122,12 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     lv_obj_remove_style_all(camper_card);
     lv_obj_set_flex_grow(camper_card, 1);
     lv_obj_set_height(camper_card, lv_pct(100));
-    lv_obj_set_style_bg_color(camper_card, UI_COLOR_CARD, 0);
-    lv_obj_set_style_bg_opa(camper_card, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(camper_card, UI_COLOR_VIOLET, 0);
-    lv_obj_set_style_border_width(camper_card, 2, 0);
-    lv_obj_set_style_radius(camper_card, UI_RADIUS_CARD, 0);
+    /* Mismo acabado que la fila de arriba (06-nov-2026): superficie un punto
+     * más clara que el fondo, filo de 1 px y sombra abierta. La cambiamos de
+     * paso al helper compartido para que las cinco tarjetas sean iguales. */
+    ov_estilo_marco(camper_card);
+    lv_obj_set_style_bg_opa(camper_card, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(camper_card, 8, 0);
     lv_obj_set_style_pad_gap(camper_card, 12, 0);
     lv_obj_set_layout(camper_card, LV_LAYOUT_FLEX);
@@ -946,6 +1153,32 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
      * Se sube el bloque 10 px sin tocar su tamaño. */
     lv_obj_set_style_translate_y(ov->tank_s1, -10, 0);
     lv_obj_set_width(ov->tank_s1, LV_SIZE_CONTENT);
+    /* El DIBUJO del depósito, 20 px más abajo (06-nov-2026, pedido del dueño):
+     * se desplazan todos los hijos menos el rótulo, así baja el contorno, la
+     * boca de llenado y el agua, y el título se queda donde estaba. */
+    {
+        lv_obj_t *cuerpo = lv_obj_get_child(ov->tank_s1, 1);
+        if (cuerpo) lv_obj_set_style_translate_y(cuerpo, 20, 0);
+    }
+    /* OJO: sólo el cuerpo. El tapón y la onda se recolocan solos en cada
+     * refresco tomando las coordenadas del cuerpo (ui_tank_set), así que
+     * desplazarlos también los movía dos veces. */
+    /* El dibujo (ya desplazado) sale 20 px por debajo de la caja del widget:
+     * sin esto, el widget recortaba justo esa parte y el "1/4" se veía a
+     * medias. Con OVERFLOW_VISIBLE sólo recorta la tarjeta, y ahí cabe. */
+    lv_obj_add_flag(ov->tank_s1, LV_OBJ_FLAG_OVERFLOW_VISIBLE);
+    /* Los rótulos de los depósitos, como los títulos de tarjeta: mayúsculas
+     * grises y espaciadas (06-nov-2026). El del depósito es el hijo 0 del
+     * widget (ver ui_tank_create). */
+    {
+        lv_obj_t *t = lv_obj_get_child(ov->tank_s1, 0);
+        if (t) {
+            lv_label_set_text(t, "AGUA LIMPIA");
+            lv_obj_set_style_text_font(t, UI_FONT_TEXT, 0);
+            lv_obj_set_style_text_color(t, UI_COLOR_TEXT, 0);   /* blanco */
+            lv_obj_set_style_text_letter_space(t, 2, 0);
+        }
+    }
     lv_obj_add_flag(ov->tank_s1, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(ov->tank_s1, alarm_mute_s1_cb, LV_EVENT_CLICKED, ov);
 
@@ -967,9 +1200,13 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
         lv_obj_remove_style_all(pill);
         lv_obj_set_size(pill, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_radius(pill, 16, 0);
-        lv_obj_set_style_border_width(pill, 2, 0);
+        /* Chip fino (06-nov-2026): filo de 1 px y fondo oscuro cuando NO hay
+         * 230 V. Antes era un bloque gris claro de 2 px que pesaba más que
+         * cualquier otro elemento de la tarjeta. El verde de "hay 230 V" lo
+         * sigue poniendo el refresco. */
+        lv_obj_set_style_border_width(pill, 1, 0);
         lv_obj_set_style_border_color(pill, UI_COLOR_CARD_BORDER, 0);
-        lv_obj_set_style_bg_color(pill, UI_COLOR_TEXT_DIM, 0);
+        lv_obj_set_style_bg_color(pill, UI_COLOR_CARD_LO, 0);
         lv_obj_set_style_bg_opa(pill, LV_OPA_COVER, 0);
         lv_obj_set_style_pad_hor(pill, 12, 0);
         lv_obj_set_style_pad_ver(pill, 8, 0);
@@ -985,18 +1222,25 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
         lv_obj_set_style_pad_gap(pill, 4, 0);
 
         ov->pill_shore_lbl = lv_label_create(pill);
-        lv_obj_set_style_text_font(ov->pill_shore_lbl, &lv_font_montserrat_24_es, 0);
-        lv_obj_set_style_text_color(ov->pill_shore_lbl, UI_COLOR_TEXT, 0);
+        lv_obj_set_style_text_font(ov->pill_shore_lbl, UI_FONT_TEXT, 0);
+        lv_obj_set_style_text_color(ov->pill_shore_lbl, UI_COLOR_TEXT_SOFT, 0);
         lv_label_set_text(ov->pill_shore_lbl, "230 V");
 
         /* Simbolito de onda (corriente alterna) pegado al texto, como se
          * escribe "230 V ~". NO lleva LED redondo: la propia pastilla ya se pone
          * verde cuando hay 230 V, asi que el redondo sobraba (6-oct-2026). */
+        /* ONDA SENOIDAL de verdad (06-nov-2026, pedido del dueño: "el símbolo
+         * del 230 V no es el de alterna, es triangular"). Antes eran 5 puntos
+         * en zigzag y se veía un pico; ahora 17 puntos de una senoide de dos
+         * ciclos, que dibujada con línea de 2 px y extremos redondeados se lee
+         * como el "~" de corriente alterna. */
         static const lv_point_t onda_ac[] = {
-            {0, 3}, {4, 0}, {8, 3}, {12, 0}, {16, 3}
+            {0, 5}, {1, 4}, {2, 3}, {3, 2}, {4, 1}, {5, 1}, {6, 1},
+            {7, 2}, {8, 3}, {9, 4}, {10, 5}, {11, 6}, {12, 7}, {13, 8},
+            {14, 9}, {15, 9}, {16, 9}, {17, 8}, {18, 7}, {19, 6}, {20, 5}
         };
         lv_obj_t *ac = lv_line_create(pill);
-        lv_line_set_points(ac, onda_ac, 5);
+        lv_line_set_points(ac, onda_ac, 21);
         lv_obj_set_style_line_width(ac, 2, 0);
         lv_obj_set_style_line_color(ac, UI_COLOR_TEXT, 0);
         lv_obj_set_style_line_rounded(ac, true, 0);
@@ -1018,6 +1262,15 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
      * que se vio el 4-oct-2026 en la pantalla principal. No volver a forzar el
      * alto por separado. */
     lv_obj_set_width(ov->tank_r1, LV_SIZE_CONTENT);
+    {
+        lv_obj_t *t = lv_obj_get_child(ov->tank_r1, 0);
+        if (t) {
+            lv_label_set_text(t, "AGUAS GRISES");
+            lv_obj_set_style_text_font(t, UI_FONT_TEXT, 0);
+            lv_obj_set_style_text_color(t, UI_COLOR_TEXT, 0);   /* blanco */
+            lv_obj_set_style_text_letter_space(t, 2, 0);
+        }
+    }
     lv_obj_add_flag(ov->tank_r1, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(ov->tank_r1, alarm_mute_r1_cb, LV_EVENT_CLICKED, ov);
 
@@ -1079,14 +1332,20 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     {
         lv_obj_t *card_fridge = lv_obj_create(bottom_region);
         lv_obj_remove_style_all(card_fridge);
-        lv_obj_set_width(card_fridge, LV_SIZE_CONTENT);
+        /* ANCHO FIJO (06-nov-2026). Estaba a LV_SIZE_CONTENT y la tarjeta
+         * medía lo que midiera su contenido: al cambiar la cifra de la
+         * temperatura ("-9.5" es más estrecho que "-16.7") la tarjeta se
+         * hacía más ancha o más estrecha y EMPUJABA a la tarjeta Camper. Con
+         * 192 px fijos, la temperatura cambia dentro y las tarjetas no se
+         * mueven. */
+        lv_obj_set_width(card_fridge, 192);
         lv_obj_set_height(card_fridge, lv_pct(100));
-        lv_obj_set_style_bg_color(card_fridge, UI_COLOR_CARD, 0);
-        lv_obj_set_style_bg_opa(card_fridge, LV_OPA_COVER, 0);
         lv_obj_set_style_border_color(card_fridge, UI_COLOR_ICE, 0);
-        lv_obj_set_style_border_width(card_fridge, 2, 0);
-        lv_obj_set_style_radius(card_fridge, UI_RADIUS_CARD, 0);
-        lv_obj_set_style_pad_hor(card_fridge, 16, 0);
+        /* Mismo marco que el resto (el interior de esta tarjeta se revisa
+         * aparte): si no, al lado de la Camper cantaba la diferencia. */
+        ov_estilo_marco(card_fridge);
+        lv_obj_set_style_bg_opa(card_fridge, LV_OPA_COVER, 0);
+        lv_obj_set_style_pad_hor(card_fridge, 12, 0);
         /* Arriba 12 y abajo 24 (abajo no 6: el aro del ventilador de 92 px quedaba
          * pegado al borde inferior, visto el 22-sep). El grupo y el ventilador
          * van en el MISMO flex centrado, asi que estos rellenos mueven a los dos:
@@ -1097,7 +1356,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
          * se toca, mirar la pantalla. */
         lv_obj_set_style_pad_top(card_fridge, 12, 0);
         lv_obj_set_style_pad_bottom(card_fridge, 24, 0);
-        lv_obj_set_style_pad_gap(card_fridge, 16, 0);
+        lv_obj_set_style_pad_gap(card_fridge, 12, 0);
         lv_obj_set_layout(card_fridge, LV_LAYOUT_FLEX);
         /* Disposicion vertical: Congelador (icono+texto+temp) arriba y el
          * ventilador debajo, ambos centrados. */
@@ -1131,18 +1390,17 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                               LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_gap(t_row, 4, 0);
 
-        static lv_font_t s_font_thermo_no_fb;
-        s_font_thermo_no_fb = lv_font_thermometer;
-        s_font_thermo_no_fb.fallback = NULL;
-        lv_obj_t *t_icon = lv_label_create(t_row);
-        lv_obj_set_style_text_font(t_icon, &s_font_thermo_no_fb, 0);
-        lv_obj_set_style_text_color(t_icon, UI_COLOR_CYAN, 0);
-        lv_label_set_text(t_icon, "\xef\x8b\x89");
-
+        /* Rótulo como los títulos de tarjeta: mayúsculas, gris y espaciado
+         * (06-nov-2026). El cian se queda en el termómetro y en el filo. */
         lv_obj_t *t_lbl = lv_label_create(t_row);
-        lv_obj_set_style_text_font(t_lbl, &lv_font_montserrat_24_es, 0);
-        lv_obj_set_style_text_color(t_lbl, UI_COLOR_CYAN, 0);
-        lv_label_set_text(t_lbl, "Congelador");
+        /* SIN termómetro y el rótulo a 20 (06-nov-2026, pedido del dueño): al
+         * quitar el icono cabe. "CONGELADOR" a 20 mide 150 px y con 1 px de
+         * espaciado 159, que entra en los 164 libres al dejar el relleno
+         * lateral de la tarjeta en 12. */
+        lv_obj_set_style_text_font(t_lbl, UI_FONT_TEXT, 0);
+        lv_obj_set_style_text_color(t_lbl, UI_COLOR_TEXT, 0);   /* blanco */
+        lv_obj_set_style_text_letter_space(t_lbl, 1, 0);
+        lv_label_set_text(t_lbl, "CONGELADOR");
         /* Valor + unidad en una fila: el numero va grande (46, solo digitos
          * que esa fuente si tiene) y la unidad "C" en 28_es, que incluye el
          * glifo grado (la 46 no lo lleva). Alineados por abajo. */
@@ -1161,25 +1419,44 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
         lv_label_set_text(ov->lbl_freezer_temp, " --");
 
         ov->lbl_freezer_unit = lv_label_create(temp_row);
-        lv_obj_set_style_text_font(ov->lbl_freezer_unit, &lv_font_montserrat_28_es, 0);
-        lv_obj_set_style_text_color(ov->lbl_freezer_unit, UI_COLOR_TEXT, 0);
+        lv_obj_set_style_text_font(ov->lbl_freezer_unit, UI_FONT_TEXT, 0);
+        lv_obj_set_style_text_color(ov->lbl_freezer_unit, UI_COLOR_TEXT_DIM, 0);
+        lv_obj_set_style_pad_bottom(ov->lbl_freezer_unit, 9, 0);   /* al ras de la cifra */
         lv_label_set_text(ov->lbl_freezer_unit, "\xc2\xb0""C");
         /* Pequeno margen inferior para que la unidad case con la base del
          * numero grande en vez de pegarse al fondo del row. */
         lv_obj_set_style_pad_bottom(ov->lbl_freezer_unit, 8, 0);
+
+        /* TENDENCIA (06-nov-2026): una flecha al lado de la cifra que dice si
+         * la temperatura del congelador está subiendo o bajando en el último
+         * cuarto de hora. Azul = enfriando (bien), naranja = subiendo (ojo).
+         * La flecha va DIBUJADA con líneas (un "∧" o un "∨"): los glifos de
+         * flecha de FontAwesome no están en la fuente _es y el fallback no los
+         * saca, así que se dibuja y siempre se ve. Sin tendencia no se
+         * enseña. */
+        ov->ln_freezer_trend = lv_line_create(temp_row);
+        lv_obj_set_size(ov->ln_freezer_trend, 14, 9);
+        lv_obj_set_style_line_width(ov->ln_freezer_trend, 2, 0);
+        lv_obj_set_style_line_rounded(ov->ln_freezer_trend, true, 0);
+        lv_obj_set_style_line_color(ov->ln_freezer_trend, UI_COLOR_TEXT_DIM, 0);
+        lv_obj_set_style_pad_bottom(ov->ln_freezer_trend, 13, 0);
+        lv_obj_add_flag(ov->ln_freezer_trend, LV_OBJ_FLAG_HIDDEN);
 
         /* Ventilador (debajo dentro de la card): aro-gauge del PWM 0..100 %
          * con el ventilador girando en el centro. El nivel (0 gris ->
          * 50 naranja -> 100 rojo) lo lleva el aro; la aspa queda neutra. */
         lv_obj_t *fan_wrap = lv_obj_create(card_fridge);
         lv_obj_remove_style_all(fan_wrap);
-        lv_obj_set_size(fan_wrap, 92, 92);
+        /* Ventilador más grande (06-nov-2026, pedido del dueño): 92 -> 108. El
+         * hueco entre título/ventilador/temperatura baja de 16 a 12 para que
+         * todo siga entrando en el alto de la tarjeta. */
+        lv_obj_set_size(fan_wrap, 108, 108);
         lv_obj_clear_flag(fan_wrap, LV_OBJ_FLAG_SCROLLABLE);
 
         /* Aro: gauge de 270 grados abierto por abajo (hueco centrado en las
          * 6 en punto), se llena en sentido horario desde abajo-izquierda. */
         ov->arc_fan = lv_arc_create(fan_wrap);
-        lv_obj_set_size(ov->arc_fan, 92, 92);
+        lv_obj_set_size(ov->arc_fan, 108, 108);
         lv_obj_center(ov->arc_fan);
         lv_arc_set_bg_angles(ov->arc_fan, 135, 45);
         lv_arc_set_range(ov->arc_fan, 0, 100);
@@ -1187,8 +1464,9 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
         /* Es un medidor, no un control: sin knob y sin interaccion tactil. */
         lv_obj_clear_flag(ov->arc_fan, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_style(ov->arc_fan, NULL, LV_PART_KNOB);
-        lv_obj_set_style_arc_width(ov->arc_fan, 6, LV_PART_MAIN);
-        lv_obj_set_style_arc_width(ov->arc_fan, 6, LV_PART_INDICATOR);
+        /* Aro más ancho (6 -> 9): se lee mejor el % de un vistazo. */
+        lv_obj_set_style_arc_width(ov->arc_fan, 9, LV_PART_MAIN);
+        lv_obj_set_style_arc_width(ov->arc_fan, 9, LV_PART_INDICATOR);
         lv_obj_set_style_arc_color(ov->arc_fan, UI_COLOR_TEXT_DIM, LV_PART_MAIN);
         lv_obj_set_style_arc_opa(ov->arc_fan, LV_OPA_30, LV_PART_MAIN);
         lv_obj_set_style_arc_color(ov->arc_fan, UI_COLOR_TEXT_DIM, LV_PART_INDICATOR);
@@ -1197,10 +1475,19 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
         ov->img_fan = lv_img_create(fan_wrap);
         lv_img_set_src(ov->img_fan, &icon_fan);
         lv_img_set_pivot(ov->img_fan, 40, 40);
+        /* La imagen mide 80 px: se escala para llenar el hueco del aro nuevo. */
+        lv_img_set_zoom(ov->img_fan, 268);
         lv_obj_center(ov->img_fan);
         lv_obj_set_style_img_recolor(ov->img_fan, UI_COLOR_TEXT_DIM, 0);
         lv_obj_set_style_img_recolor_opa(ov->img_fan, LV_OPA_COVER, 0);
         ov->fan_angle_deci = 0;
+
+        /* INTERCAMBIO (06-nov-2026, pedido del dueño): el VENTILADOR arriba y
+         * la TEMPERATURA abajo, con el mismo tamaño y el mismo estilo. La
+         * temperatura cuelga de la tarjeta (no de la columna del título) para
+         * poder ponerla detrás del ventilador en el orden del flex. */
+        lv_obj_set_parent(temp_row, card_fridge);
+        lv_obj_move_to_index(temp_row, lv_obj_get_child_cnt(card_fridge) - 1);
 
         /* Toda la card del frigo es un atajo a los logs (grafica Temperaturas):
          * un toque en cualquier parte -congelador, ventilador o hueco- silencia
@@ -1351,8 +1638,12 @@ static void overview_render(ui_overview_view_t *ov)
                         (long)ov->solar.voltage_centi;
     }
     if (solar_centi_a >= 0) {
-        snprintf(buf, sizeof(buf), "%ld.%02ld",
-                 solar_centi_a / 100, solar_centi_a % 100);
+        /* UN DECIMAL (06-nov-2026, pedido del dueño). Antes se enseñaban dos
+         * ("12.40") y el segundo decimal no aporta nada al que mira: el MPPT
+         * no tiene esa precision y en la tarjeta solo servia para apretar la
+         * cifra contra la etiqueta. Se redondea, no se trunca. */
+        long ca = (solar_centi_a + 5);
+        snprintf(buf, sizeof(buf), "%ld.%ld", ca / 100, (ca / 10) % 10);
         ui_metric_set(ov->m_solar_w, buf, "A",
                       solar_centi_a > 0 ? UI_COLOR_GREEN : UI_COLOR_TEXT_DIM);
     } else {
@@ -1370,14 +1661,13 @@ static void overview_render(ui_overview_view_t *ov)
 
     /* ── Batería: SOC + corriente ──────────────────────────────── */
     if (bat_fresh) {
-        ui_battery_soc_set(ov->arc_soc, ov->bat.soc_deci, ov->bat.voltage_centi);
+        ui_battery_ring_set(ov->arc_soc, ov->bat.soc_deci);
         int32_t mi = ov->bat.current_milli;
-        int abs_a_centi = mi < 0 ? -mi/10 : mi/10;
-        snprintf(buf, sizeof(buf), "%c%d.%02d",
-                 mi >= 0 ? '+' : '-', abs_a_centi/100, abs_a_centi%100);
+        /* un decimal y redondeando: 12.55 A -> "12.6" */
+        ui_fmt_dec1_signo(buf, sizeof(buf), mi >= 0 ? (mi + 5) / 10 : (mi - 5) / 10);
         ui_metric_set(ov->m_bat_current, buf, "A", ui_color_for_current(mi));
     } else {
-        ui_battery_soc_set(ov->arc_soc, 0xFFFF, 0);
+        ui_battery_ring_set(ov->arc_soc, 0xFFFF);
         ui_metric_set(ov->m_bat_current, "--", "", UI_COLOR_TEXT_DIM);
     }
 
@@ -1386,15 +1676,13 @@ static void overview_render(ui_overview_view_t *ov)
                       (now - ov->dcdc.last_update_ms) < DCDC_TIMEOUT_MS;
     if (dcdc_fresh) {
         /* V_in (batería motor) — métrica principal grande */
-        snprintf(buf, sizeof(buf), "%u.%02u",
-                 ov->dcdc.vin_centi / 100, ov->dcdc.vin_centi % 100);
+        ui_fmt_dec1(buf, sizeof(buf), (long)ov->dcdc.vin_centi);
         bool active = ov->dcdc.state != 0;
         ui_metric_set(ov->m_loads_w, buf, "V",
                       active ? UI_COLOR_GREEN : UI_COLOR_TEXT_DIM);
         /* V_out (batería servicio). Si esta a 0 V no ponemos "APAGADO": la
          * pastilla de estado ya indica que el convertidor esta apagado. */
-        snprintf(buf, sizeof(buf), "%u.%02u",
-                 ov->dcdc.vout_centi / 100, ov->dcdc.vout_centi % 100);
+        ui_fmt_dec1(buf, sizeof(buf), (long)ov->dcdc.vout_centi);
         ui_metric_set(ov->m_loads_kwh, buf, "V",
                       active ? UI_COLOR_GREEN : UI_COLOR_TEXT_DIM);
     } else {
@@ -1495,7 +1783,7 @@ static void overview_render(ui_overview_view_t *ov)
          * (5-oct-2026: "230 V con LED a la derecha"). */
         if (ov->pill_shore) {
             lv_obj_set_style_bg_color(ov->pill_shore,
-                cd.fresh && cd.shore ? UI_COLOR_GREEN : UI_COLOR_TEXT_DIM, 0);
+                cd.fresh && cd.shore ? UI_COLOR_GREEN : UI_COLOR_CARD_LO, 0);
         }
         /* El texto "230 V" se mantiene fijo; solo cambia el color del pill */
         /* Estetica del boton se mantiene igual ON/OFF (bg gris, texto
@@ -1518,6 +1806,26 @@ static void overview_render(ui_overview_view_t *ov)
         frigo_state_t fs_copy;
         frigo_get_state_copy(&fs_copy);
         const frigo_state_t *fs = &fs_copy;
+        /* Historial corto para la flecha de tendencia: una muestra por
+         * minuto, 15 minutos. Vive aquí (RAM), no en la SD: la tarjeta se
+         * refresca dos veces por segundo y leer el CSV tarda segundos. */
+        #define OV_TREND_N 15
+        static float  s_tc_hist[OV_TREND_N];
+        static int    s_tc_n;
+        static uint32_t s_tc_next_ms;
+        if (fs && fs->T_Congelador > -120.0f) {
+            uint32_t tnow = now_ms();
+            if (s_tc_next_ms == 0 || tnow >= s_tc_next_ms) {
+                s_tc_next_ms = tnow + 60000;
+                if (s_tc_n < OV_TREND_N) {
+                    s_tc_hist[s_tc_n++] = fs->T_Congelador;
+                } else {
+                    memmove(s_tc_hist, s_tc_hist + 1,
+                            sizeof(float) * (OV_TREND_N - 1));
+                    s_tc_hist[OV_TREND_N - 1] = fs->T_Congelador;
+                }
+            }
+        }
         if (fs && ov->lbl_freezer_temp) {
             char fbuf[16];
             bool over = alarma_activa(ALARMA_CONGELADOR);
@@ -1553,6 +1861,28 @@ static void overview_render(ui_overview_view_t *ov)
             if (ov->lbl_freezer_unit) {
                 lv_obj_set_style_text_color(ov->lbl_freezer_unit, col, 0);
                 lv_obj_set_style_text_opa(ov->lbl_freezer_unit, opa, 0);
+            }
+            if (ov->ln_freezer_trend) {
+                /* Diferencia entre la muestra más reciente y la más vieja del
+                 * historial (15 min como mucho). 0.15 °C de histéresis para
+                 * que no parpadee con el ruido del sensor. */
+                static const lv_point_t s_arriba[] = { {0, 8}, {6, 0}, {12, 8} };
+                static const lv_point_t s_abajo[]  = { {0, 0}, {6, 8}, {12, 0} };
+                float d = 0.0f;
+                if (s_tc_n >= 2) d = s_tc_hist[s_tc_n - 1] - s_tc_hist[0];
+                if (d <= -0.15f) {
+                    lv_line_set_points(ov->ln_freezer_trend, s_abajo, 3);
+                    lv_obj_set_style_line_color(ov->ln_freezer_trend,
+                                                UI_COLOR_CYAN, 0);
+                    lv_obj_clear_flag(ov->ln_freezer_trend, LV_OBJ_FLAG_HIDDEN);
+                } else if (d >= 0.15f) {
+                    lv_line_set_points(ov->ln_freezer_trend, s_arriba, 3);
+                    lv_obj_set_style_line_color(ov->ln_freezer_trend,
+                                                UI_COLOR_ORANGE, 0);
+                    lv_obj_clear_flag(ov->ln_freezer_trend, LV_OBJ_FLAG_HIDDEN);
+                } else {
+                    lv_obj_add_flag(ov->ln_freezer_trend, LV_OBJ_FLAG_HIDDEN);
+                }
             }
         }
         if (fs && ov->arc_fan) {
@@ -1594,7 +1924,7 @@ static void overview_render(ui_overview_view_t *ov)
         char ebuf[16];
         if (ov->m_solar_kwh) {
             if (pv > 0.0f || fresh_today) {
-                snprintf(ebuf, sizeof(ebuf), "%.2f", pv);
+                snprintf(ebuf, sizeof(ebuf), "%.1f", pv);   /* un decimal (06-nov) */
                 ui_metric_set(ov->m_solar_kwh, ebuf, "kWh",
                               pv > 0.0f ? UI_COLOR_GREEN : UI_COLOR_TEXT_DIM);
             } else {

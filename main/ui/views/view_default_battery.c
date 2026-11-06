@@ -345,9 +345,8 @@ static void update_display_elements(ui_default_battery_view_t *bv)
             ui_metric_set(bv->m_ttg, "--", "", UI_COLOR_TEXT);
         }
         int32_t mi = bv->battery_state.battery_current_milli;
-        int abs_a_centi = mi < 0 ? -mi/10 : mi/10;
-        snprintf(buf, sizeof(buf), "%c%d.%02d",
-                 mi >= 0 ? '+' : '-', abs_a_centi/100, abs_a_centi%100);
+        /* un decimal y redondeando: 12.55 A -> "12.6" */
+        ui_fmt_dec1_signo(buf, sizeof(buf), mi >= 0 ? (mi + 5) / 10 : (mi - 5) / 10);
         ui_metric_set(bv->m_current, buf, "A", ui_color_for_current(mi));
         if (bv->bar_current) {
             int amps_int = (int)(mi / 1000);
@@ -379,7 +378,7 @@ static void update_display_elements(ui_default_battery_view_t *bv)
              * 12 V → ≥13.3 V indica carga; 24 V → ≥26.6 V. */
             bool alt_on = (vin >= 2660) ||
                           (vin >= 1330 && vin < 1800);
-            snprintf(buf, sizeof(buf), "%u.%02u", vin / 100, vin % 100);
+            ui_fmt_dec1(buf, sizeof(buf), (long)vin);
             ui_metric_set(bv->m_dc_in_v, buf, "V",
                           alt_on ? UI_COLOR_GREEN : UI_COLOR_TEXT);
             ui_metric_set_label(bv->m_dc_in_v,
@@ -394,9 +393,8 @@ static void update_display_elements(ui_default_battery_view_t *bv)
         }
         if (bv->dcdc_state.output_voltage_centi > 0 &&
             bv->dcdc_state.device_state != VIC_STATE_OFF) {
-            snprintf(buf, sizeof(buf), "%u.%02u",
-                     bv->dcdc_state.output_voltage_centi / 100,
-                     bv->dcdc_state.output_voltage_centi % 100);
+            ui_fmt_dec1(buf, sizeof(buf),
+                        (long)bv->dcdc_state.output_voltage_centi);
             ui_metric_set(bv->m_dc_out_v, buf, "V", UI_COLOR_TEXT);
         } else {
             ui_metric_set(bv->m_dc_out_v, "--", "", UI_COLOR_TEXT);

@@ -287,8 +287,17 @@ void ui_metric_set(lv_obj_t *metric, const char *value_str,
          * tarjeta entera aunque no hubiera cambiado ni un numero. Comparando
          * contra lo que ya tiene el widget (el texto y el color resuelto), un
          * tick sin cambios no invalida nada. */
-        if (strcmp(lv_label_get_text(value), txt) != 0)
+        if (strcmp(lv_label_get_text(value), txt) != 0) {
             lv_label_set_text(value, txt);
+            /* EL ANCHO NO SE RECALCULA SOLO (06-nov-2026). Las cajas de la
+             * metrica son LV_SIZE_CONTENT: cuando la cifra crece (de "--" a
+             * "12.4") la etiqueta se mide bien pero el padre se queda con el
+             * ancho viejo y RECORTA la cifra por la izquierda. Se veia en la
+             * tarjeta Solar al llegar el primer dato de verdad. Marcando el
+             * arbol para re-layout se vuelve a medir (solo cuando el texto
+             * cambia, no en cada refresco). */
+            lv_obj_mark_layout_as_dirty(lv_obj_get_parent(metric));
+        }
         if (lv_obj_get_style_text_color(value, 0).full != value_color.full)
             lv_obj_set_style_text_color(value, value_color, 0);
     }
@@ -424,8 +433,8 @@ void ui_arc_soc_set(lv_obj_t *arc_box, uint16_t soc_deci, uint16_t voltage_centi
         if (voltage_centi == 0) {
             lv_label_set_text(volt_lbl, "--");
         } else {
-            snprintf(buf, sizeof(buf), "%u.%02u V",
-                     voltage_centi / 100, voltage_centi % 100);
+            { char v1[12]; ui_fmt_dec1(v1, sizeof v1, voltage_centi);
+              snprintf(buf, sizeof(buf), "%s V", v1); }
             lv_label_set_text(volt_lbl, buf);
         }
     }
@@ -597,6 +606,97 @@ lv_obj_t *ui_battery_soc_create(lv_obj_t *parent,
     return box;
 }
 
+/* ── Aro de estado de carga (6-nov-2026) ────────────────────────────────────
+ * Ver la explicación en ui_card.h. Estructura:
+ *   ring
+ *     child 0 = lv_arc (270º, de abajo-izquierda a abajo-derecha)
+ *     child 1 = columna central: [67.4 %] y debajo [13.4 V]
+ * El arco se rellena en sentido horario y su color es el de siempre
+ * (verde >= 70 %, ámbar >= 30 %, rojo por debajo). */
+lv_obj_t *ui_battery_ring_create(lv_obj_t *parent, lv_coord_t size)
+{
+    lv_obj_t *ring = lv_obj_create(parent);
+    lv_obj_remove_style_all(ring);
+    lv_obj_set_size(ring, size, size);
+    lv_obj_clear_flag(ring, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *arc = lv_arc_create(ring);
+    /* 16 px menos que la caja: el trazo del arco se dibuja centrado en su
+     * propio radio, así que si el arco va a ras de su caja la mitad exterior
+     * del trazo se recorta y el aro se veía cortado por arriba y por los
+     * lados. Con 8 px de aire alrededor no se recorta nada. */
+    lv_obj_set_size(arc, size - 16, size - 16);
+    lv_obj_center(arc);
+    lv_arc_set_rotation(arc, 135);       /* el hueco queda abajo */
+    lv_arc_set_bg_angles(arc, 0, 270);
+    lv_arc_set_range(arc, 0, 1000);      /* deci-por ciento */
+    lv_arc_set_value(arc, 0);
+    lv_obj_remove_style(arc, NULL, LV_PART_KNOB);
+    lv_obj_clear_flag(arc, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_bg_opa(arc, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(arc, 0, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(arc, 0, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(arc, 14, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(arc, 14, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_color(arc, UI_COLOR_CARD_BORDER, LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(arc, LV_OPA_50, LV_PART_MAIN);
+    lv_obj_set_style_arc_color(arc, UI_COLOR_TEXT_DIM, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
+
+    /* Cifra + unidad, como en el resto de tarjetas, colgadas del aro y
+     * alineadas a mano respecto a su centro: con una columna intermedia
+     * centrada por flex, el bloque se quedaba bajo (la columna crecía después
+     * de centrarla). */
+    lv_obj_t *row = lv_obj_create(ring);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_layout(row, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+    lv_obj_set_style_pad_gap(row, 4, 0);
+    lv_obj_t *val = lv_label_create(row);
+    lv_obj_set_style_text_font(val, UI_FONT_DISPLAY, 0);
+    lv_obj_set_style_text_color(val, UI_COLOR_TEXT_DIM, 0);
+    lv_label_set_text(val, "--");
+    lv_obj_t *uni = lv_label_create(row);
+    lv_obj_set_style_text_font(uni, UI_FONT_TEXT, 0);
+    lv_obj_set_style_text_color(uni, UI_COLOR_TEXT_DIM, 0);
+    lv_obj_set_style_pad_bottom(uni, 9, 0);   /* al ras de la cifra */
+    lv_label_set_text(uni, "%");
+
+    /* La cifra va EXACTAMENTE en el centro del aro. No se pone la tensión
+     * debajo: ya sale en la tarjeta DC/DC ("Servicio"), y repetirla aquí sólo
+     * metía ruido dentro del aro (lo dijo el dueño el 6-nov-2026). */
+    lv_obj_align(row, LV_ALIGN_CENTER, 0, 0);
+    return ring;
+}
+
+void ui_battery_ring_set(lv_obj_t *ring, uint16_t soc_deci)
+{
+    if (!ring) return;
+    lv_obj_t *arc = lv_obj_get_child(ring, 0);
+    lv_obj_t *row = lv_obj_get_child(ring, 1);
+    lv_obj_t *val = row ? lv_obj_get_child(row, 0) : NULL;
+    bool hay = (soc_deci != 0xFFFF);
+    char b[16];
+
+    if (arc) {
+        lv_arc_set_value(arc, hay ? (int32_t)soc_deci : 0);
+        lv_obj_set_style_arc_color(arc,
+            hay ? ui_color_for_soc(soc_deci) : UI_COLOR_TEXT_DIM,
+            LV_PART_INDICATOR);
+    }
+    if (val) {
+        if (hay) snprintf(b, sizeof(b), "%u.%u", soc_deci / 10, soc_deci % 10);
+        else     snprintf(b, sizeof(b), "--");
+        if (strcmp(lv_label_get_text(val), b) != 0)
+            lv_label_set_text(val, b);
+        lv_obj_set_style_text_color(val,
+            hay ? UI_COLOR_TEXT : UI_COLOR_TEXT_DIM, 0);
+    }
+}
+
 void ui_battery_soc_set(lv_obj_t *bat_box,
                         uint16_t soc_deci, uint16_t voltage_centi)
 {
@@ -637,8 +737,8 @@ void ui_battery_soc_set(lv_obj_t *bat_box,
     if (voltage_centi == 0) {
         lv_label_set_text(volt_lbl, "--");
     } else {
-        snprintf(buf, sizeof(buf), "%u.%02u V",
-                 voltage_centi / 100, voltage_centi % 100);
+        { char v1[12]; ui_fmt_dec1(v1, sizeof v1, voltage_centi);
+          snprintf(buf, sizeof(buf), "%s V", v1); }
         lv_label_set_text(volt_lbl, buf);
     }
 }

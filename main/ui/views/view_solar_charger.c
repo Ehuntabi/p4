@@ -146,9 +146,7 @@ static void solar_view_update(ui_device_view_t *view, const victron_data_t *data
     }
 
     /* Card Salida: tensión batería */
-    snprintf(buf, sizeof(buf), "%u.%02u",
-             s->battery_voltage_centi / 100,
-             s->battery_voltage_centi % 100);
+    ui_fmt_dec1(buf, sizeof(buf), (long)s->battery_voltage_centi);
     ui_metric_set(solar->m_voltage, buf, "V", UI_COLOR_TEXT);
 
     /* Corriente — verde si carga */
