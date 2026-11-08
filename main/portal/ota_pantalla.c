@@ -270,6 +270,60 @@ static const pantalla_modelo_t *pantalla_modelo_de_query(httpd_req_t *req)
     return pantalla_modelo(modelo);
 }
 
+/* LA VERSION QUE DICE LLEVAR LA PANTALLA (?ver=vX.Y), 08-nov-2026.
+ *
+ * La cabina la manda al preguntar por /api/pantalla/info, y con eso la P4 sabe
+ * si el .bin que guarda es mas VIEJO que lo que la pantalla tiene puesto. Si no
+ * viene (una cabina con firmware anterior), no se comprueba nada y todo sigue
+ * como siempre. */
+static bool pantalla_query_ver(httpd_req_t *req, char *out, size_t n)
+{
+    char query[96] = {0};
+    if (!out || n < 2) return false;
+    out[0] = '\0';
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) != ESP_OK)
+        return false;
+    if (httpd_query_key_value(query, "ver", out, n) != ESP_OK)
+        return false;
+    /* FORMATO ESTRICTO (08-nov-2026, arbitro): "v" seguida de digitos y puntos.
+     * Sin esto, un cliente con la clave del portal podia mandar "?ver=2" (o
+     * cualquier numero mayor) y hacer que la P4 BORRARA su .bin bueno: la
+     * comparacion numerica lo da por "mas viejo" y la invariante de abajo lo
+     * tira. Una version que no empieza por 'v' no es una version del contrato y
+     * se ignora (se responde como si no hubiera venido). */
+    if (out[0] != 'v' && out[0] != 'V') { out[0] = '\0'; return false; }
+    for (const char *q = out + 1; *q; q++)
+        if (!((*q >= '0' && *q <= '9') || *q == '.')) { out[0] = '\0'; return false; }
+    return out[1] != '\0';
+}
+
+/* Compara dos versiones "vX.Y[.Z]" NUMERO a numero (08-nov-2026).
+ *
+ * Como CADENA no vale: "v1.81" < "v1.9" letra a letra, y eso dejaria pasar una
+ * version vieja por nueva (y al reves). Los tramos que falten valen 0, asi que
+ * "v1.8" == "v1.8.0". No es la comparacion del resto del sistema (esa esta en
+ * ota_rx.c, del lado de la cabina): es la unica que hace falta aqui, para
+ * decidir si un .bin es anterior a otro.
+ *
+ * Funcion PURA (solo mira caracteres), para que el test de host la pueda
+ * extraer y compilar con gcc igual que pantalla_fw_valido.
+ * Devuelve <0 si 'a' es MAS VIEJA, 0 si son la misma, >0 si 'a' es mas nueva. */
+static int pantalla_ver_cmp(const char *a, const char *b)
+{
+    if (!a || !b) return 0;
+    for (int tramo = 0; tramo < 3; tramo++) {
+        while (*a && (*a < '0' || *a > '9')) a++;   /* salta 'v', puntos, etc. */
+        while (*b && (*b < '0' || *b > '9')) b++;
+        unsigned long va = 0, vb = 0;
+        for (int d = 0; d < 6 && *a >= '0' && *a <= '9'; d++)
+            va = va * 10 + (unsigned long)(*a++ - '0');
+        for (int d = 0; d < 6 && *b >= '0' && *b <= '9'; d++)
+            vb = vb * 10 + (unsigned long)(*b++ - '0');
+        if (va != vb) return (va < vb) ? -1 : 1;
+    }
+    return 0;
+}
+
 /* Respuesta de error corta. 'cerrar' se pone cuando queda cuerpo de la peticion
  * sin leer: sin cerrar la sesion, el httpd intentaria interpretar esos megabytes
  * como la siguiente peticion y el cliente veria un 400 sin sentido (o el
@@ -514,12 +568,60 @@ esp_err_t ota_pantalla_info(httpd_req_t *req)
         for (size_t i = 0; i < PANTALLA_NUM_MODELOS; i++)
             cJSON_AddNullToObject(raiz, s_modelos[i].nombre);
     } else {
+        /* Lo que dice llevar la pantalla que pregunta, si lo dice. */
+        char ver_pantalla[PANTALLA_VER_N] = {0};
+        const bool pide_ver = pantalla_query_ver(req, ver_pantalla, sizeof ver_pantalla);
+
         for (size_t i = 0; i < PANTALLA_NUM_MODELOS; i++) {
             pantalla_fw_info_t info;
             if (!pantalla_leer_info(&s_modelos[i], &info)) {
                 cJSON_AddNullToObject(raiz, s_modelos[i].nombre);
                 continue;
             }
+
+            /* INVARIANTE (08-nov-2026): LA P4 NO PUEDE TENER UN FIRMWARE MAS
+             * VIEJO QUE EL QUE LA PANTALLA LLEVA PUESTO. Paso de verdad: la
+             * cabina se grabo por USB con la v1.81 y la P4 se quedo con su
+             * cabina5.bin de hacia semanas (v1.67), anunciandolo como
+             * actualizacion -- que en realidad era un retroceso. Aqui, si la
+             * pantalla dice llevar algo mas nuevo, el fichero viejo se BORRA
+             * (no solo se deja de anunciar: deja de existir) y se contesta
+             * null. */
+            if (pide_ver && pantalla_ver_cmp(info.ver, ver_pantalla) < 0) {
+                /* REVALIDAR ANTES DE BORRAR (08-nov-2026, arbitro): leer el .bin
+                 * y hashearlo tarda segundos; en ese rato puede haber entrado
+                 * una subida nueva. Sin esto, la foto vieja borraba el fichero
+                 * RECIEN subido. */
+                pantalla_fw_info_t otra;
+                const bool cambio = !pantalla_leer_info(&s_modelos[i], &otra) ||
+                                    strcmp(otra.ver, info.ver) != 0 ||
+                                    otra.bytes != info.bytes;
+                if (cambio) {
+                    ESP_LOGW(TAG, "%s: el .bin cambio mientras lo miraba; NO lo "
+                                  "borro (otra subida entro por medio)",
+                             s_modelos[i].nombre);
+                    info = otra;
+                    if (!info.ver[0]) {
+                        cJSON_AddNullToObject(raiz, s_modelos[i].nombre);
+                        continue;
+                    }
+                } else {
+                    ESP_LOGW(TAG, "%s: el .bin de la P4 (%s) es MAS VIEJO que el "
+                                  "instalado en la pantalla (%s): lo borro y no lo "
+                                  "anuncio", s_modelos[i].nombre, info.ver,
+                             ver_pantalla);
+                    pantalla_borrar(s_modelos[i].ruta);
+                    const size_t k = (size_t)(&s_modelos[i] - s_modelos);
+                    if (k < PANTALLA_NUM_MODELOS) {
+                        portENTER_CRITICAL(&s_cache_mux);
+                        s_cache[k].hay = false;
+                        portEXIT_CRITICAL(&s_cache_mux);
+                    }
+                    cJSON_AddNullToObject(raiz, s_modelos[i].nombre);
+                    continue;
+                }
+            }
+
             cJSON *obj = cJSON_CreateObject();
             if (!obj ||
                 !cJSON_AddStringToObject(obj, "ver", info.ver) ||
@@ -1034,6 +1136,36 @@ esp_err_t ota_pantalla_subir(httpd_req_t *req)
         return pantalla_error(req, "400 Bad Request",
             "no es un firmware valido para ese modelo (magic, proyecto o version)",
             false);
+    }
+
+    /* NUNCA UNA VERSION MAS VIEJA QUE LA QUE YA HAY (08-nov-2026).
+     *
+     * Por aqui entra tambien el navegador de /pantallas: sin esta puerta, subir
+     * un .bin viejo (el de una release anterior que quedaba en el movil) dejaba
+     * a la P4 anunciando un retroceso. Se compara con lo que ya hay guardado y,
+     * si el que sube dice la version que lleva puesta la pantalla (?ver=),
+     * tambien con esa. Un EMPATE si se acepta: regrabar la misma version es
+     * legitimo (reparar una subida a medias) y el sha256 nuevo sale solo. */
+    {
+        pantalla_fw_info_t prev;
+        char ver_instalada[PANTALLA_VER_N] = {0};
+        const bool hay_prev = pantalla_leer_info(m, &prev) && prev.ver[0];
+        const bool sabe_instalada =
+            pantalla_query_ver(req, ver_instalada, sizeof ver_instalada);
+        const char *ref_vieja = NULL;
+        if (hay_prev && pantalla_ver_cmp(ver, prev.ver) < 0)
+            ref_vieja = prev.ver;
+        else if (sabe_instalada && pantalla_ver_cmp(ver, ver_instalada) < 0)
+            ref_vieja = ver_instalada;
+        if (ref_vieja) {
+            pantalla_borrar(ruta_tmp);
+            char msg[192];
+            snprintf(msg, sizeof(msg),
+                     "esa version (%s) es MAS VIEJA que la que ya hay (%s): no la pongo",
+                     ver, ref_vieja);
+            ESP_LOGW(TAG, "subida %s rechazada: %s < %s", m->nombre, ver, ref_vieja);
+            return pantalla_error(req, "409 Conflict", msg, false);
+        }
     }
 
     /* Respuesta preparada ANTES de publicar: si falta memoria, mejor enterarse
