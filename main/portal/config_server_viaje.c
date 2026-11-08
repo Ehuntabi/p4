@@ -794,7 +794,25 @@ static bool pide_otra_pantalla(const cJSON *j, uint32_t id, bool admite_forzar)
 
     char dueno[24];
     dev_abierto(dueno, sizeof(dueno));
-    if (!dueno[0]) return false;
+    if (!dueno[0]) {
+        /* SIN DUEÑO APUNTADO (08-nov-2026). Pasa con una cabina de firmware
+         * viejo (no manda 'dev' al abrir el viaje) o con un viaje empezado antes
+         * de que se apuntara el dueño. Antes esto contestaba "no es ajena" y los
+         * apuntes de las DOS pantallas entraban en la misma carpeta y sumaban en
+         * el mismo resumen, con un 200 en la segunda (que los borraba de su
+         * cola). El byte alto del id sigue diciendo de que pantalla es: si se
+         * conoce el id del inicio abierto, se compara con el -- mismo criterio
+         * que id_rezagado() --. */
+        /* El id de cierre de la WEB (0xFFFFFF01) no es de ninguna pantalla: su
+         * byte alto 0xFF es legitimo de una MAC y daria un 409 falso. Ya se
+         * excluye en id_rezagado(); aqui faltaba (lo canto el arbitro). */
+        if (id == ID_CIERRE_WEB) return false;
+        const uint32_t ini = viaje_ini_id();
+        const int pant_ini = byte_de_id(ini);
+        const int pant_id  = byte_de_id(id);
+        if (pant_ini >= 0 && pant_id >= 0) return pant_id != pant_ini;
+        return false;
+    }
 
     char pide[24] = {0};
     const cJSON *jdev = cJSON_GetObjectItemCaseSensitive(j, "dev");
@@ -1004,6 +1022,31 @@ void viaje_reparar_al_arrancar(void)
 
     struct stat st;
     if (stat(carpeta, &st) == 0 && S_ISDIR(st.st_mode)) {
+        /* ¿EL VIAJE YA ESTA CERRADO DE HECHO? (08-nov-2026)
+         *
+         * El cierre escribe resumen.txt en la tarjeta y DESPUES limpia la NVS.
+         * Si la NVS falla justo ahi, op_fin contesta 200 (el resumen esta: el
+         * viaje esta cerrado) pero la P4 sigue creyendolo abierto; entonces
+         * estado_de() lo enseña "En curso: finalizalo en la cabina", un viaje
+         * nuevo da 409 y borrarlo tambien, y REINICIAR NO LO ARREGLABA porque
+         * esta rama solo miraba si la carpeta existia, y existe. Con resumen.txt
+         * dentro, el viaje esta cerrado: se limpia el estado aqui. */
+        char res[sizeof(VIAJES_DIR) + 256 + 32];
+        snprintf(res, sizeof(res), "%s/resumen.txt", carpeta);
+        struct stat st_res;
+        if (stat(res, &st_res) == 0) {
+            ESP_LOGW(TAG, "viaje abierto en NVS (%s) pero con resumen.txt: se "
+                          "cerro y la NVS no llego a olvidarlo. Limpio el estado",
+                     carpeta);
+            if (estado_set(NULL, 0) != ESP_OK)
+                ESP_LOGE(TAG, "NO he podido limpiar el viaje abierto de la NVS: "
+                              "sigue con %s abierto (el resumen SI esta)", carpeta);
+            /* Y el trip computer, AHORA: su init es mas tarde y volveria a
+             * cargar active=true -> viaje fantasma (08-nov-2026, arbitro). */
+            trip_computer_olvidar();
+            marcar_huerfanas(NULL);
+            return;
+        }
         marcar_huerfanas(carpeta);
         return;                      /* todo en su sitio */
     }
@@ -1059,6 +1102,7 @@ void viaje_reparar_al_arrancar(void)
         ESP_LOGE(TAG, "NO he podido limpiar el viaje abierto de la NVS: la P4 "
                       "sigue con %s abierto y sin carpeta. Habra que "
                       "reintentarlo en el proximo arranque", carpeta);
+    trip_computer_olvidar();   /* ver el comentario del otro camino */
     /* Ya no hay viaje abierto: las demas carpetas sin cierre que haya en ESTA
      * tarjeta tampoco se podran cerrar nunca, asi que se marcan ahora (antes
      * esta rama se volvia sin mirarlas y se quedaban "En curso" hasta el
@@ -3458,13 +3502,11 @@ int viaje_borrar_carpeta(const char *nombre, char *motivo, size_t n)
         return 400;
     }
     char abierto[CARPETA_MAX];
+    bool es_el_abierto = false;
     if (viaje_abierto(abierto, sizeof(abierto))) {
         const char *base = strrchr(abierto, '/');
         base = base ? base + 1 : abierto;
-        if (!strcmp(base, nombre)) {
-            snprintf(motivo, n, "ese viaje esta en curso: cierralo antes de borrarlo");
-            return 409;
-        }
+        es_el_abierto = (strcmp(base, nombre) == 0);
     }
     char ruta[RUTA_MAX + 64];
     int k = snprintf(ruta, sizeof(ruta), VIAJES_DIR "/%s", nombre);
@@ -3482,12 +3524,43 @@ int viaje_borrar_carpeta(const char *nombre, char *motivo, size_t n)
         snprintf(motivo, n, "ese viaje no esta en la tarjeta");
         return 404;
     }
+    if (es_el_abierto) {
+        /* YA CERRADO EN LA TARJETA (08-nov-2026): si tiene resumen.txt, el viaje
+         * esta terminado y lo unico que no entro fue el olvido en la NVS. Antes
+         * esto contestaba 409 ("cerralo antes") sobre un viaje que ya no se
+         * puede cerrar: sin salida. El stat va DENTRO del cerrojo de la SD,
+         * como todo lo demas de este fichero (lo canto el arbitro). */
+        char res[sizeof(VIAJES_DIR) + 256 + 32];
+        snprintf(res, sizeof(res), VIAJES_DIR "/%s/resumen.txt", nombre);
+        struct stat st_res;
+        if (stat(res, &st_res) != 0) {
+            camera_sd_bus_unlock();
+            snprintf(motivo, n, "ese viaje esta en curso: cierralo antes de borrarlo");
+            return 409;
+        }
+        ESP_LOGW(TAG, "borrar '%s': la NVS lo cree abierto pero tiene resumen.txt "
+                      "(cerrado); lo borro", nombre);
+    }
     const int fallos = borrar_arbol(ruta, 0);
     camera_sd_bus_unlock();
     if (fallos) {
         ESP_LOGW(TAG, "borrar viaje '%s': %d fallo(s)", nombre, fallos);
         snprintf(motivo, n, "no se pudo borrar todo (tarjeta ocupada?)");
         return 500;
+    }
+    /* Y SI ERA EL ABIERTO, SE OLVIDA EN LA NVS (08-nov-2026): sin esto, la NVS
+     * seguia apuntando a una carpeta que ya no existe y el siguiente apunte
+     * daba 507 (la cola de la cabina atascada) hasta reiniciar o abrir otro
+     * viaje. Lo canto el arbitro. */
+    if (es_el_abierto) {
+        if (estado_set(NULL, 0) != ESP_OK)
+            ESP_LOGE(TAG, "borrado el viaje abierto '%s' pero la NVS no lo "
+                          "olvida: el siguiente apunte dara 507", nombre);
+        else
+            ESP_LOGW(TAG, "el viaje abierto '%s' se ha borrado: estado limpio", nombre);
+        /* Y el motor de arranque, igual que hace el fin: si no, /api/state
+         * seguiria publicando el viaje borrado como "en curso" (arbitro). */
+        trip_computer_end();
     }
     ESP_LOGW(TAG, "VIAJE BORRADO: %s", nombre);
     if (motivo && n) motivo[0] = 0;
