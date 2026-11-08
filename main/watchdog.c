@@ -138,10 +138,18 @@ static bool wd_suspendida(void);
 /* Devuelve el indice de la primera tarea que lleva muda mas de SU umbral, o
  * -1. Ignora tareas que aun no han latido (s_last_beat == 0).
  *
- * WD_TASK_LVGL se salta mientras watchdog_suspend(true) este activo (OTA
- * borrando flash, etc): es el equivalente al "!s_suspended" que ya tenia
- * el trylock que sustituye este mecanismo -- SOLO afecta a LVGL, las demas
- * tareas se siguen vigilando igual durante una OTA. */
+ * MIENTRAS LA OTA ESCRIBE FLASH NO SE VIGILA NINGUNA TAREA (08-nov-2026). El
+ * borrado/escritura de flash apaga la cache y NINGUNA tarea que corra desde
+ * flash puede ejecutarse, asi que dejar de latir no es un cuelgue: es lo
+ * normal. Con la regla de antes (que solo saltaba LVGL), un OTA de la P4 se
+ * quedo a medias porque este monitor reinicio la placa a los 6 s:
+ *   "WD: Tarea 'udp_tx (telemetria)' sin latido — reset controlado"
+ * La OTA termina en reinicio de todas formas y tiene sus propios plazos
+ * (PANTALLA_PLAZO_US / el del httpd), asi que aqui no se pierde red de
+ * seguridad de nada: se quita un falso positivo que impedía actualizar.
+ *
+ * El carrusel de capturas NO goza de esto: suspende con dueno=false y las
+ * demas tareas se le siguen vigilando igual. */
 static int wd_stalled_task(int64_t now)
 {
     int stalled = -1;
@@ -150,9 +158,11 @@ static int wd_stalled_task(int64_t now)
      * critica (interrupciones apagadas). Se consulta una vez por vuelta, que es
      * lo mismo que hacia el `s_suspended` de antes. */
     bool lvgl_suspendida = wd_suspendida();
+    const bool ota_escribiendo = lvgl_suspendida && s_suspend_dueno;
     portENTER_CRITICAL(&s_beat_mux);
     for (int i = 0; i < WD_TASK_COUNT; i++) {
         if (i == WD_TASK_LVGL && lvgl_suspendida) continue;
+        if (ota_escribiendo) continue;
         if (s_last_beat[i] != 0 && (now - s_last_beat[i]) > WD_TASK_TIMEOUT_US_TABLE[i]) {
             stalled = i;
             break;
@@ -488,7 +498,21 @@ void watchdog_suspend_ex(bool suspend, bool dueno)
                           "(dueno=%d, pide=%d): lo ignoro", (int)s_suspend_dueno, (int)dueno);
             return;
         }
+        /* SOLO SI HABIA SUSPENSION (08-nov-2026, arbitro): refrescar los
+         * latidos cuando nadie habia suspendido nada taparia un cuelgue real
+         * hasta el umbral de cada tarea. */
+        const bool estaba = s_suspendido;
         s_suspendido = false;
+        if (!estaba) return;
+        /* LOS LATIDOS VIEJOS NO CUENTAN AL REANUDAR: si la suspension duro mas
+         * que un umbral (una OTA tarda), la primera vuelta del monitor daria un
+         * falso "tarea sin latido" y reiniciaria la placa justo al terminar de
+         * grabar. Se ponen todos a "ahora". */
+        portENTER_CRITICAL(&s_beat_mux);
+        const int64_t ahora = esp_timer_get_time();
+        for (int i = 0; i < WD_TASK_COUNT; i++)
+            if (s_last_beat[i] != 0) s_last_beat[i] = ahora;
+        portEXIT_CRITICAL(&s_beat_mux);
         return;
     }
     s_suspendido = true;
