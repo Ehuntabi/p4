@@ -990,7 +990,14 @@ bool frigo_solar_get_active(void)
     static bool s_last_active = false;
     bool v = false;
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
-        v = s_sol_sm.active;
+        /* ACTIVO = LA MAQUINA Y EL INTERRUPTOR (08-nov-2026). La maquina solo
+         * apaga `active` en su siguiente vuelta (1-3 s, y mas si el bus esta
+         * escaneando), asi que al quitar el interruptor la pantalla seguia
+         * enseñando las aspas VERDES y "ALIMENTANDO POR SOLAR" un rato -- y si
+         * la tarea estaba atascada, mucho mas. El usuario lo volvio a ver hoy:
+         * "el ventilador en verde sin estar el switch activo". Con el AND, en
+         * cuanto el interruptor esta fuera, esto es false SIEMPRE. */
+        v = s_sol_sm.active && s_sol_en;
         s_last_active = v;                  /* ultimo valor bueno */
         xSemaphoreGive(s_mutex);
     } else {

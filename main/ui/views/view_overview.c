@@ -1910,8 +1910,11 @@ static void overview_render(ui_overview_view_t *ov)
              * ventilador esta tirando AHORA del sol que sobra, y gris apagado
              * cuando no (la espera de excedente ya la dice el cartel ambar de
              * la tarjeta). Antes las aspas eran siempre grises. */
+            /* Y ADEMAS DEL INTERRUPTOR (08-nov-2026): verde solo si el modo
+             * esta puesto Y esta tirando del sol AHORA. Con el interruptor
+             * fuera, gris, aunque la maquina tarde una vuelta en enterarse. */
             lv_obj_set_style_img_recolor(ov->img_fan,
-                frigo_solar_get_active()
+                (frigo_solar_get_enabled() && frigo_solar_get_active())
                     ? UI_COLOR_GREEN
                     : UI_COLOR_TEXT_DIM, 0);
         }

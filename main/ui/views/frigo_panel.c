@@ -300,8 +300,11 @@ static void refresh_sol_estado_label(void)
 {
     if (!s_lbl_sol_estado) return;
     uint32_t seg = frigo_solar_get_seg_hoy();
-    bool     act = frigo_solar_get_active();
     bool     en  = frigo_solar_get_enabled();
+    /* El verde exige las DOS cosas (08-nov-2026): la maquina puede tardar una
+     * vuelta en apagar su bandera al quitar el interruptor, y la pantalla no
+     * puede decir "alimentando por solar" con el modo apagado. */
+    bool     act = en && frigo_solar_get_active();
     uint32_t min = seg / 60u;
 
     /* El interruptor se pone en su sitio SIEMPRE, antes del atajo de "no ha
