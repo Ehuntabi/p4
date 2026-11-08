@@ -85,6 +85,10 @@ void trip_computer_iniciar(void);
  * (/api/state los publicaba como si siguiera). Ver el comentario del .c. */
 void trip_computer_end(void);
 
+/* Igual que end() pero SIN init: borra el viaje de la NVS (ver el comentario
+ * en trip_computer.c). La usa la reparacion de arranque. */
+void trip_computer_olvidar(void);
+
 /* Copia el snapshot actual a out. Thread-safe (mutex interno). */
 void trip_computer_get(trip_computer_t *out);
 

@@ -439,6 +439,19 @@ void trip_computer_iniciar(void)
     ESP_LOGI(TAG, "Viaje en curso (contadores a cero)");
 }
 
+/* OLVIDAR EL VIAJE EN LA NVS SIN NECESITAR init (08-nov-2026, arbitro).
+ *
+ * La usa viaje_reparar_al_arrancar(), que corre ANTES de trip_computer_init():
+ * alli se limpia el viaje abierto de config_server_viaje, pero el trip computer
+ * cargaba despues su "active" de la NVS y la P4 seguia anunciando un viaje EN
+ * CURSO (y sumando energia) hasta el siguiente inicio: un viaje fantasma. Se
+ * escribe el snapshot vacio, que es lo mismo que deja end() con init hecho. */
+void trip_computer_olvidar(void)
+{
+    trip_snap_t snap = {0};
+    (void)write_nvs(&snap);
+}
+
 /* TERMINAR EL VIAJE: ademas de apagar el flag, DEJA LOS CONTADORES A CERO
  * (auditoria del 16-oct-2026).
  *
