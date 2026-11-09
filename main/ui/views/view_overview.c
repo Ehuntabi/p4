@@ -899,14 +899,14 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_left, 8, 0);
     lv_obj_clear_flag(col_left, LV_OBJ_FLAG_SCROLLABLE);
-    /* SIN RELLENO POR ABAJO. El 06-nov-2026 hacia falta 1 px (la tarjeta
-     * quedaba 1 px mas alta que la zona visible y el marco nuevo se veia
-     * cortado por abajo), pero 1 no es multiplo de 4 y el CI lo rechazaba. Al
-     * redondear la fila de arriba a 296 (9-nov-2026) sobran 2 px y el recorte
-     * desaparece: el relleno se queda en 0, que ademas es un valor de la
-     * rejilla. Verificado con /captura (filo inferior cerrado, igual que las
-     * vecinas). */
-    lv_obj_set_style_pad_bottom(col_left, 0, 0);
+    /* 1 px de menos por abajo (06-nov-2026, y se volvio a poner el 09-nov
+     * despues de quitarlo "por la rejilla" y VER QUE SE CORTABA): la tarjeta
+     * queda 1 px mas alta que la zona visible de la pestana, asi que con el
+     * marco nuevo de 1 px el filo inferior se sale y la tarjeta se ve SIN
+     * LINEA abajo. Redondear la fila no lo arregla: el recorte es de la zona
+     * visible, no del reparto. Es una excepcion MEDIDA de la guia (como el 40
+     * del congelador) y la auditoria la tiene declarada. */
+    lv_obj_set_style_pad_bottom(col_left, 1, 0);
 
     ov->card_solar = create_node_card(col_left, &icon_solar,
                                       "Solar", UI_COLOR_GREEN, &ov->m_solar_w);
@@ -950,9 +950,9 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_center, 8, 0);
     lv_obj_clear_flag(col_center, LV_OBJ_FLAG_SCROLLABLE);
-    /* Sin relleno por abajo, igual que col_left: el 1 px del 06-nov-2026 ya no
-     * hace falta con la fila redondeada a 296 (ver el comentario de col_left). */
-    lv_obj_set_style_pad_bottom(col_center, 0, 0);
+    /* 1 px de menos por abajo, igual que col_left: sin esto el filo inferior de
+     * la tarjeta cae fuera de la zona visible y se ve sin linea abajo. */
+    lv_obj_set_style_pad_bottom(col_center, 1, 0);
 
     ov->card_bat = ui_card_create(col_center, UI_COLOR_ORANGE);
     lv_obj_set_width(ov->card_bat, lv_pct(100));
@@ -1063,8 +1063,8 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_right, 8, 0);
     lv_obj_clear_flag(col_right, LV_OBJ_FLAG_SCROLLABLE);
-    /* Sin relleno por abajo, igual que las otras dos columnas (ver col_left). */
-    lv_obj_set_style_pad_bottom(col_right, 0, 0);
+    /* 1 px de menos por abajo, igual que las otras dos columnas (ver col_left). */
+    lv_obj_set_style_pad_bottom(col_right, 1, 0);
 
     ov->card_loads = create_node_card(col_right, &icon_dcdc,
                                       "DC/DC", UI_COLOR_CYAN, &ov->m_loads_w);

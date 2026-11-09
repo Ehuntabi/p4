@@ -643,7 +643,15 @@ fi
 #    que coloca el grupo (termometro + "Congelador" + valor) donde el usuario lo
 #    aprobo; con 24 quedaba pegado arriba y con 56 el ventilador se salia. Es un
 #    valor MEDIDO, no un descuido: si alguien lo cambia, que sea mirando la pantalla.
+#    Tercera excepcion declarada (09-nov-2026): el pad_bottom de las TRES
+#    columnas de la vista principal. Es 1 px a proposito y medido: la tarjeta
+#    queda 1 px mas alta que la zona visible de la pestaña y sin ese pixel el
+#    filo inferior se sale y la tarjeta se ve SIN linea abajo (lo reporto el
+#    dueño: "las cards solar, bateria y dc/dc no tienen la parte inferior de su
+#    borde"). Se excluyen EXACTAMENTE esas tres lineas, con nombre y valor, y
+#    nada mas: cualquier otro pad de 1 sigue siendo un fallo.
 FUERA=$(grep -rhoE "lv_obj_set_style_(pad_[a-z]+|radius)\([^,]+, *-?[0-9]+" main/ui main/ui.c --include=*.c \
+        | grep -vE "lv_obj_set_style_pad_bottom\(col_(left|center|right), *1$" \
         | grep -oE ", *-?[0-9]+$" | tr -d ' ,' \
         | awk '$1!=0 && $1!=4 && $1!=8 && $1!=12 && $1!=16 && $1!=20 && $1!=24 && $1!=40' | wc -l)
 if [ "$FUERA" -eq 0 ]; then

@@ -488,8 +488,14 @@ esp_err_t ota_update_receive(httpd_req_t *req)
     }
 
     err = esp_ota_set_boot_partition(destino);
-    ota_wdt_suspend(false);
+    /* OJO: el plazo del TWDT (2 min) NO se devuelve aqui. Debajo quedan la
+     * restauracion de la pantalla y el volcado del log a la SD (600 KB), que
+     * puede tardar mas de los 10 s del plazo normal: devolverlo antes de eso
+     * dejaba al aparato a merced del TWDT en el peor momento (reset con
+     * motivo "Watchdog (TASK)" justo al acabar una OTA, visto el 09-nov-2026).
+     * Se devuelve al final, en las DOS salidas. */
     if (err != ESP_OK) {
+        ota_wdt_suspend(false);
         ota_pantalla_restaurar();
         ota_ui_descongelar();
         ui_ota_overlay_hide();
@@ -512,6 +518,9 @@ esp_err_t ota_update_receive(httpd_req_t *req)
      * la sesion completa de la OTA (el primero se hace al empezar, para no
      * perderla si algo sale mal). */
     log_capture_autosave_now(20);
+    /* Ya no queda nada largo: ahora si se devuelve el plazo normal. Detras solo
+     * esta contestar al navegador y el reinicio diferido. */
+    ota_wdt_suspend(false);
     ESP_LOGI(TAG, "actualizacion grabada en '%s'", destino->label);
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_sendstr(req,

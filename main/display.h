@@ -125,7 +125,13 @@
 /* Número de frame-buffers DPI del driver MIPI:
    1 → simple (por defecto)
    2 → doble buffer + avoid_tearing (requiere ~2.4 MB PSRAM adicional)     */
-#define BSP_LCD_DPI_BUFFER_NUMS   (1)
+/* 2 desde el 09-nov-2026: el dueño reporto "fogonazos" de vez en cuando en
+ * reposo, sin ningun evento en el log (ni brillo, ni LCD/DSI, ni LVGL): el panel
+ * se queda leyendo el unico framebuffer mientras se escribe. Con dos, el driver
+ * activa avoid_tearing (ver esp_bsp.c) y el volcado espera a que haya uno libre.
+ * Cuesta ~2,4 MB de PSRAM (sobran mas de 15 MB). Si el fogonazo siguiera, lo
+ * siguiente es subir la cache L2 (128 -> 256 KB) para quitarle trafico a PSRAM. */
+#define BSP_LCD_DPI_BUFFER_NUMS   (2)
 
 /* ── LEDC backlight ──────────────────────────────────────────────────────── */
 #define BSP_LEDC_TIMER_NUM    (1)
