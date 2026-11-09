@@ -959,7 +959,13 @@ static esp_err_t arranca_pesado(void)
     cfg_heavy.uri_match_fn = httpd_uri_match_wildcard;
     cfg_heavy.task_priority = 3;
     cfg_heavy.stack_size = 20480;
-    cfg_heavy.send_wait_timeout = 30;
+    /* 90 Y NO 30 (08-nov-2026): con 30 s, un movil que deja de leer un momento
+     * (Wi-Fi flojo, pantalla apagandose) hacia que el .tar se cortara a medias
+     * -- "Connection closed while receiving data" en la app, con el paquete de
+     * capturas pesando 30 MB. 90 s da aire de sobra; la app, ademas, reintenta
+     * (1.4.39) y su propio plazo de inactividad son 60 s, asi que en el caso
+     * normal el que corta limpio es ella. */
+    cfg_heavy.send_wait_timeout = 90;
     cfg_heavy.recv_wait_timeout = 30;
     cfg_heavy.max_open_sockets = 4;
     cfg_heavy.lru_purge_enable = true;
