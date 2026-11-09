@@ -377,6 +377,12 @@ esp_err_t ota_update_receive(httpd_req_t *req)
     const int64_t plazo_us = 10LL * 60 * 1000000LL;
     const int64_t t0_us = esp_timer_get_time();
     int esperas = 0;
+    /* Cuanto tarda la subida de verdad. Sirve para el diagnostico del campo:
+     * si algun dia baja de ~600 KB/s es que el enlace (o el camino de recepcion
+     * del C6) esta mal, no el handler. Medido el 09-nov-2026: 3,35 MB en 60 s
+     * (56 KB/s) con el enlace a 266 ms de ida y vuelta, y el lector esperando a
+     * la flash solo 28 ms en TODO el fichero: el cuello es la RED, no la flash. */
+    const int64_t t_recv_us = esp_timer_get_time();
     while (restante > 0) {
         if (esp_timer_get_time() - t0_us > plazo_us) {
             ESP_LOGE(TAG, "OTA: plazo total agotado con %d bytes por recibir", restante);
@@ -415,6 +421,12 @@ esp_err_t ota_update_receive(httpd_req_t *req)
         vTaskDelay(1);
     }
     free(buf);
+    ESP_LOGI(TAG, "OTA: %u bytes recibidos en %lld ms (%lld KB/s) %s",
+             (unsigned)req->content_len,
+             (long long)((esp_timer_get_time() - t_recv_us) / 1000),
+             (long long)((int64_t)req->content_len * 1000 /
+                         ((esp_timer_get_time() - t_recv_us) / 1024 + 1)),
+             fallo ? "(cortada)" : "");
 
     if (fallo) {
         esp_ota_abort(ota);
