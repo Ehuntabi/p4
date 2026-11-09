@@ -58,7 +58,11 @@ static const char *TAG = "ota";
  * watchdog_suspend_ex() se queda: es el watchdog DEL PROYECTO (el de la UI
  * congelada), que es otro mecanismo. */
 #define OTA_TWDT_TIMEOUT_MS   (120 * 1000)
-#define OTA_TWDT_NORMAL_MS    (10 * 1000)
+/* El plazo normal NO se escribe aqui: es el de la configuracion
+ * (CONFIG_ESP_TASK_WDT_TIMEOUT_S). Cablearlo a 10 s hacia que, si algun dia se
+ * cambia la opcion, CADA OTA dejara el watchdog del IDF con un plazo distinto
+ * hasta la siguiente. Revision del 09-nov. */
+#define OTA_TWDT_NORMAL_MS    (CONFIG_ESP_TASK_WDT_TIMEOUT_S * 1000)
 
 static void ota_twdt_plazo(uint32_t ms)
 {
@@ -279,6 +283,7 @@ esp_err_t ota_update_receive(httpd_req_t *req)
     const esp_partition_t *destino = esp_ota_get_next_update_partition(NULL);
     if (!destino) {
         ESP_LOGE(TAG, "no hay hueco de actualizacion (reparto de flash antiguo?)");
+        ota_pantalla_restaurar();   /* /ota_aviso pudo subir el brillo al 70% */
         ui_ota_overlay_hide();
         httpd_resp_set_status(req, "500 Internal Server Error");
         httpd_resp_sendstr(req,
@@ -287,12 +292,14 @@ esp_err_t ota_update_receive(httpd_req_t *req)
         return ESP_OK;
     }
     if (req->content_len <= 0) {
+        ota_pantalla_restaurar();
         ui_ota_overlay_hide();
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_sendstr(req, "No has adjuntado ningun fichero.");
         return ESP_OK;
     }
     if ((size_t)req->content_len > destino->size) {
+        ota_pantalla_restaurar();
         ui_ota_overlay_hide();
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_sendstr(req, "El fichero no cabe: no parece un firmware valido.");
@@ -421,12 +428,21 @@ esp_err_t ota_update_receive(httpd_req_t *req)
         vTaskDelay(1);
     }
     free(buf);
-    ESP_LOGI(TAG, "OTA: %u bytes recibidos en %lld ms (%lld KB/s) %s",
-             (unsigned)req->content_len,
-             (long long)((esp_timer_get_time() - t_recv_us) / 1000),
-             (long long)((int64_t)req->content_len * 1000 /
-                         ((esp_timer_get_time() - t_recv_us) / 1024 + 1)),
-             fallo ? "(cortada)" : "");
+    /* El dato util: cuanto ha tardado la SUBIDA de verdad, en KB/s con la
+     * cuenta bien hecha (esp_timer_get_time da MICROsegundos; antes se dividia
+     * por 1024 como si fueran ms y salia ~1024 veces mas, lo cazo la revision
+     * adversarial del 09-nov). Y se informa de lo LEIDO, no de lo declarado por
+     * el cliente, que en una subida cortada no es lo mismo. */
+    {
+        int64_t us = esp_timer_get_time() - t_recv_us;
+        int leidos = req->content_len - restante;
+        if (us < 1) us = 1;
+        ESP_LOGI(TAG, "OTA: %d de %d bytes en %lld ms (%lld KB/s)%s",
+                 leidos, req->content_len,
+                 (long long)(us / 1000),
+                 (long long)((int64_t)leidos * 1000000LL / (1024LL * us)),
+                 fallo ? " -- CORTADA" : "");
+    }
 
     if (fallo) {
         esp_ota_abort(ota);
@@ -469,7 +485,21 @@ esp_err_t ota_update_receive(httpd_req_t *req)
      * .bin con el que corre; si no es el mismo se dice, y no se toca ni la
      * particion de arranque ni el reinicio. */
     esp_app_desc_t nueva;
-    if (esp_ota_get_partition_description(destino, &nueva) == ESP_OK) {
+    if (esp_ota_get_partition_description(destino, &nueva) != ESP_OK) {
+        /* No se pudo verificar DE QUE proyecto es el .bin: se rechaza, igual
+         * que si fuera de otro. Antes se saltaba la comprobacion en silencio y
+         * el guard del 27-oct quedaba con un hueco. Revision del 09-nov. */
+        ota_pantalla_restaurar();
+        ota_ui_descongelar();
+        ui_ota_overlay_hide();
+        ESP_LOGE(TAG, "no pude leer la descripcion del .bin: no se marca para arrancar");
+        httpd_resp_set_status(req, "400 Bad Request");
+        httpd_resp_sendstr(req,
+            "No se pudo comprobar que ese .bin sea de este aparato. "
+            "No se ha cambiado nada.");
+        return ESP_OK;
+    }
+    {
         const esp_app_desc_t *actual = esp_app_get_description();
         const char *proyecto_actual = actual ? actual->project_name : "?";
         if (strcmp(nueva.project_name, proyecto_actual) != 0) {
@@ -500,14 +530,18 @@ esp_err_t ota_update_receive(httpd_req_t *req)
     }
 
     err = esp_ota_set_boot_partition(destino);
-    /* OJO: el plazo del TWDT (2 min) NO se devuelve aqui. Debajo quedan la
-     * restauracion de la pantalla y el volcado del log a la SD (600 KB), que
-     * puede tardar mas de los 10 s del plazo normal: devolverlo antes de eso
-     * dejaba al aparato a merced del TWDT en el peor momento (reset con
-     * motivo "Watchdog (TASK)" justo al acabar una OTA, visto el 09-nov-2026).
-     * Se devuelve al final, en las DOS salidas. */
+    /* Aqui YA se puede devolver el plazo normal del watchdog: lo unico que
+     * queda es restaurar la pantalla y volcar el log, y ese volcado NO es
+     * sincrono (encola en log_save_task y vuelve; medido en la placa: 175-530
+     * ms), asi que no puede pasarse de los 10 s.
+     *
+     * (El 09-nov se movio esto al final suponiendo que el volcado tardaba mas
+     * de 10 s. Era falso: el reset de esa tarde lo provocaba el arranque en
+     * bucle del firmware con dos framebuffers -- taskLVGL esperando un
+     * framebuffer --, que se revirtio en a946366 y dejo de pasar. Lo cazo la
+     * revision adversarial del 09-nov.) */
+    ota_wdt_suspend(false);
     if (err != ESP_OK) {
-        ota_wdt_suspend(false);
         ota_pantalla_restaurar();
         ota_ui_descongelar();
         ui_ota_overlay_hide();
@@ -530,9 +564,6 @@ esp_err_t ota_update_receive(httpd_req_t *req)
      * la sesion completa de la OTA (el primero se hace al empezar, para no
      * perderla si algo sale mal). */
     log_capture_autosave_now(20);
-    /* Ya no queda nada largo: ahora si se devuelve el plazo normal. Detras solo
-     * esta contestar al navegador y el reinicio diferido. */
-    ota_wdt_suspend(false);
     ESP_LOGI(TAG, "actualizacion grabada en '%s'", destino->label);
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     httpd_resp_sendstr(req,
