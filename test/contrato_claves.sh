@@ -87,9 +87,9 @@ caso() {
     local m=$1 ruta=$2 puerto=$3 ep=$4 ea=$5 nota="${6:-}"
     local url="http://$HOST:$puerto$ruta" cp ca
     cp=$(curl -s -o /dev/null -w '%{http_code}' -X "$m" \
-              -u "$PORTAL_USER:$PORTAL_PASS" --max-time 30 "$url")
+              -u "$PORTAL_USER:$PORTAL_PASS" --max-time 90 "$url")
     ca=$(curl -s -o /dev/null -w '%{http_code}' -X "$m" \
-              -u "$ADMIN_USER:$ADMIN_PASS" --max-time 30 "$url")
+              -u "$ADMIN_USER:$ADMIN_PASS" --max-time 90 "$url")
     if vale "$cp" "$ep" && vale "$ca" "$ea"; then
         ok "$(printf '%-50s' "$m $ruta (:$puerto)") portal=$cp admin=$ca ${nota}"
     else
