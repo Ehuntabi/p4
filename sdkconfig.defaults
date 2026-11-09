@@ -175,16 +175,24 @@ CONFIG_LWIP_MAX_ACTIVE_TCP=32
 # la P4 y 16 KB de ventana en las cabinas, el mismo enlace da 3 veces mas.
 # El limite real es el MENOR de los dos (el que anuncia la cabina), por eso se
 # tocan los tres repos. OJO: esto NO cambia el contrato de /api/pantalla/bin.
-# AJUSTADO A 16 KB EL 09-nov-2026 (medido con /api/perf): lwIP tiene en vuelo
-# hasta (ventana + buffer de envio) de pbufs en RAM INTERNA, asi que con 32K+32K
-# se llevaba ~64 KB y durante una descarga grande al heap interno le quedaban
-# ~650 B libres (el minimo de todo el arranque). Con 16K+16K el pico baja a
-# ~32 KB y el minimo sube a ~10 KB, a cambio de un 10 % mas de tiempo en una
-# descarga de 2 MB (4,5 s -> 5,0 s, medido). 8K+8K daria 18 KB de margen pero se
-# va a 15,8 s. OJO: para la OTA de las pantallas no se pierde nada, porque el
-# limite era la ventana de la CABINA (16 KB), no la nuestra.
+# AJUSTADO EL 09-nov-2026, y los dos valores NO son iguales a proposito:
+#
+# lwIP tiene en vuelo hasta (ventana + buffer de envio) de pbufs en RAM INTERNA.
+# Con 32K+32K se llevaba ~64 KB y al heap interno le quedaban ~650 B libres
+# durante una descarga grande (el minimo de todo el arranque, medido con
+# /api/perf). Eso es peligroso: si en ese momento LVGL pide memoria, su malloc
+# falla y asserta -> reinicio.
+#
+# - ENVIO (SND_BUF) a 16 KB: es lo que ocupa en las DESCARGAS (lo que el P4
+#   manda). El minimo sube de ~650 B a ~10 KB, a cambio de ~10 % mas de tiempo
+#   en una descarga de 2 MB con el enlace bueno (4,5 -> 5,0 s medidos).
+# - RECEPCION (WND) se queda en 32 KB: es lo que ocupa en las SUBIDAS, y ahi
+#   esta la OTA del firmware. Con los dos a 16 KB, subir 3,4 MB paso de ~25 s a
+#   3m17 (medido): demasiado lento para la operacion mas delicada del aparato.
+#
+# 8K+8K daria mas margen (18 KB) pero las descargas se iban a 15,8 s.
 CONFIG_LWIP_TCP_SND_BUF_DEFAULT=16384
-CONFIG_LWIP_TCP_WND_DEFAULT=16384
+CONFIG_LWIP_TCP_WND_DEFAULT=32768
 
 # ── Servidor HTTP (config web + API de la app Android) ────────────────────────
 # Buffer de cabeceras de peticion. El default 512 se queda corto en el login
