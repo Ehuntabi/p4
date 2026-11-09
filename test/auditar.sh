@@ -661,16 +661,24 @@ if [ "$ALTOS" -eq 0 ]; then
 else
     mal "$ALTOS altos fuera de la rejilla: usa un multiplo de 4 o el token del papel (UI_ROW_H/UI_TAB_H/UI_SLIDER_H)"
 fi
-# 4) Un solo estilo de etiqueta: nada de espaciar letras a mano. Era el resto del
-#    estilo viejo de versalitas y quedaba en UN sitio (la etiqueta "SATELITES" del
-#    GPS), que hacia que esa etiqueta no se pareciera a las demas de la app.
-#    Se busca la LLAMADA (con parentesis), no la palabra: los comentarios que
-#    explican por que se quito no cuentan.
-LETRA=$(grep -rc "lv_obj_set_style_text_letter_space(" main/ui main/ui.c --include=*.c 2>/dev/null | awk -F: '{s+=$2} END {print s+0}')
-if [ "$LETRA" -eq 0 ]; then
-    ok "etiquetas con un solo estilo (sin letter_space a mano)"
+# 4) Espaciado de letras: SOLO con los dos tokens, nunca un numero a mano. La
+#    regla original (3-oct-2026) era "nada de letter_space", porque quedaba un
+#    resto de versalitas suelto (la etiqueta "SATELITES" del GPS) que hacia que
+#    esa etiqueta no se pareciera a las demas. El 06-nov-2026 el dueño aprobo el
+#    acabado nuevo de la vista principal, que SI espacia los rotulos (titulos de
+#    tarjeta y rotulos de los depositos en blanco, con las letras separadas), asi
+#    que la regla pasa a ser la que de verdad importa: que ese valor sea un
+#    token de ui_style.h (UI_LS_TITULO / UI_LS_AJUSTE) y no un numero que cada
+#    vista elija. Se busca la LLAMADA (con parentesis), no la palabra: los
+#    comentarios que lo explican no cuentan.
+LETRA=$(grep -rhoE "lv_obj_set_style_text_letter_space\([^,]+, *-?[0-9]+" main/ui main/ui.c --include=*.c 2>/dev/null | wc -l)
+USOS_LS=$(grep -rhoE "lv_obj_set_style_text_letter_space\(" main/ui main/ui.c --include=*.c 2>/dev/null | wc -l)
+if [ "$LETRA" -eq 0 ] && [ "$USOS_LS" -gt 0 ]; then
+    ok "rotulos espaciados con token (UI_LS_TITULO/UI_LS_AJUSTE), 0 numeros a mano"
+elif [ "$USOS_LS" -eq 0 ]; then
+    ok "sin espaciado de letras a mano"
 else
-    mal "$LETRA usos de letter_space: las etiquetas van como las demas (UI_FONT_SMALL + TEXT_SOFT)"
+    mal "$LETRA usos de letter_space con un numero a mano: usa UI_LS_TITULO o UI_LS_AJUSTE"
 fi
 
 echo "=== 13. Las respuestas del viaje dicen cuanto queda (o que es la NVS) ==="
@@ -695,6 +703,33 @@ if grep -q 'responde_sin_sitio_nvs(req,' "$CS"; then
     ok "los 507 de NVS se distinguen de los de la tarjeta"
 else
     mal "los 507 de NVS no se distinguen: la pantalla diria que queda sitio cuando lo que falla es la NVS"
+fi
+
+echo "=== 14. Descargas: la clave que manda la app (portal O administracion) ==="
+# 9-nov-2026: el dueño abrio "Logs bateria" en la app y salio "El P4 no acepta la
+# clave (responde 401)". La clave era buena: `fetchCsv` mandaba la de
+# ADMINISTRACION a /data/*.csv, que solo aceptaba la del PORTAL (comprobado con
+# curl: p4:200, portal:401). Las dos claves son del dueño y estos handlers ya
+# estaban abiertos a la del portal, asi que las descargas de LECTURA aceptan las
+# dos -- y esta regla impide que una vuelva a exigir solo una. Lo que ESCRIBE
+# firmware y config.tar (lleva las claves AES) siguen exigiendo la de admin.
+CSV=main/portal/charts_svg.c
+if [ "$(grep -c 'REQUIRE_AUTH_PORTAL_O_ADMIN(req);' "$CSV")" -eq 6 ] &&
+   [ "$(grep -c '    REQUIRE_AUTH(req);' "$CSV")" -eq 0 ]; then
+    ok "los .csv (y el HTML de datos) aceptan la clave del portal o la de admin"
+else
+    mal "charts_svg.c volvio a exigir UNA sola clave para los .csv: la app manda la de admin en las descargas (401 en Logs bateria)"
+fi
+if awk '/^esp_err_t handle_data_viaje_tar\(/{d=1} d && /REQUIRE_AUTH_PORTAL_O_ADMIN\(req\);/{ok=1} d && /^}/{d=0; exit !ok}' main/portal/data_export_tar.c; then
+    ok "el .tar de un viaje acepta la clave del portal o la de admin"
+else
+    mal "handle_data_viaje_tar exige UNA sola clave: la app y el enlace del portal usan claves distintas"
+fi
+if grep -q "REQUIRE_AUTH_STRICT(req);" main/portal/data_export_tar.c &&
+   grep -q "REQUIRE_AUTH_STRICT(req)" main/portal/ota_update.c; then
+    ok "config.tar y /ota siguen exigiendo la clave de administracion"
+else
+    mal "config.tar/ota dejaron de exigir la clave de administracion (llevan las claves AES y el firmware)"
 fi
 
 echo

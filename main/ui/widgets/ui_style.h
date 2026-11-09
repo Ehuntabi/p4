@@ -68,6 +68,16 @@ extern "C" {
 #define UI_FONT_TEXT_SB       (&lv_font_inter_semibold_20)   /* etiqueta destacada */
 #define UI_FONT_SMALL         (&lv_font_inter_14_es)         /* unidades, notas, pie */
 
+/* ESPACIADO DE LOS ROTULOS (06-nov-2026). Los titulos de tarjeta y los rotulos
+ * de los depositos van en blanco y con las letras separadas; no es un valor
+ * suelto que cada vista elija: son estos dos, y el CI no admite numeros a mano
+ * en lv_obj_set_style_text_letter_space (regla 4 de la seccion 12 de
+ * test/auditar.sh). UI_LS_AJUSTE (1) es el unico que entra en el ancho de
+ * "CONGELADOR" dentro de la tarjeta del frigo (150 px de texto + 10 de
+ * espaciado en 164 libres); con 2 no cabia. */
+#define UI_LS_TITULO          2
+#define UI_LS_AJUSTE          1
+
 /* ── 3. MEDIDAS (rejilla de 4 px) ────────────────────────────────────────── */
 #define UI_PAD_4              4
 #define UI_PAD_8              8

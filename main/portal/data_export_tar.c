@@ -377,7 +377,7 @@ esp_err_t handle_data_frigo_tar(httpd_req_t *req)
     /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
      * La del punto de acceso es para hablar con la P4 (app y cabina);
      * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
     return handle_tar_dir(req, "/sdcard/frigo", "frigo.tar");
 }
 
@@ -386,7 +386,7 @@ esp_err_t handle_data_bateria_tar(httpd_req_t *req)
     /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
      * La del punto de acceso es para hablar con la P4 (app y cabina);
      * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
     return handle_tar_dir(req, "/sdcard/bateria", "bateria.tar");
 }
 
@@ -395,7 +395,7 @@ esp_err_t handle_data_solar_tar(httpd_req_t *req)
     /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
      * La del punto de acceso es para hablar con la P4 (app y cabina);
      * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
     return handle_tar_dir(req, "/sdcard/solar", "solar.tar");
 }
 
@@ -414,7 +414,7 @@ esp_err_t handle_data_historico_tar(httpd_req_t *req)
     /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
      * La del punto de acceso es para hablar con la P4 (app y cabina);
      * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
     static const char *const dirs[]     = { "/sdcard/bateria", "/sdcard/solar", "/sdcard/frigo" };
     static const char *const prefixes[] = { "bateria",         "solar",         "frigo"         };
     return tar_send_dirs(req, "historico.tar", dirs, prefixes, 3);
@@ -429,7 +429,11 @@ esp_err_t handle_data_historico_tar(httpd_req_t *req)
  * tragar por entero al verlo en su carpeta de descargas. */
 esp_err_t handle_data_viaje_tar(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    /* El .tar de un viaje lo piden las DOS cosas: el enlace del portal (clave
+     * del portal) y la app, que para descargas largas manda la de
+     * administracion. Una peticion lleva UNA sola cabecera Basic, asi que se
+     * aceptan las dos; ver REQUIRE_AUTH_PORTAL_O_ADMIN. */
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
 
     char q[160] = {0};
     char v[96] = {0}, inc[8] = {0};
@@ -697,7 +701,7 @@ esp_err_t handle_data_capturas_tar(httpd_req_t *req)
     /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
      * La del punto de acceso es para hablar con la P4 (app y cabina);
      * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
     return handle_tar_capturas(req);
 }
 
@@ -706,7 +710,7 @@ esp_err_t handle_data_vigilancia_tar(httpd_req_t *req)
     /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
      * La del punto de acceso es para hablar con la P4 (app y cabina);
      * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
     return handle_tar_dir_of_subdirs(req, "/sdcard/vigilancia", "vigilancia", "vigilancia.tar");
 }
 
@@ -727,7 +731,7 @@ esp_err_t handle_data_config_tar(httpd_req_t *req)
     /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
      * La del punto de acceso es para hablar con la P4 (app y cabina);
      * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
 
     struct stat st;
     if (!camera_sd_bus_lock(3000)) {
@@ -808,6 +812,6 @@ esp_err_t handle_data_logs_tar(httpd_req_t *req)
     /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
      * La del punto de acceso es para hablar con la P4 (app y cabina);
      * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
+    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
     return handle_tar_dir_of_subdirs(req, "/sdcard/logs", "logs", "logs.tar");
 }

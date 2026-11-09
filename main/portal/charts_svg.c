@@ -472,7 +472,7 @@ static void build_frigo_html(const char *csv,
 
 esp_err_t handle_data_frigo(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     httpd_resp_set_type(req, "text/html; charset=utf-8");
 
     /* Intentar SD: primero el CSV de hoy, luego el más reciente */
@@ -551,7 +551,7 @@ esp_err_t handle_data_frigo(httpd_req_t *req)
 
 esp_err_t handle_data_frigo_csv(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     char path[64];
     get_today_csv_path("frigo", path, sizeof path);
     size_t csv_len = 0;
@@ -575,7 +575,7 @@ esp_err_t handle_data_frigo_csv(httpd_req_t *req)
  * pagina ni grafica, es un log de diagnostico (ver ne185_vlog.h). */
 esp_err_t handle_data_ne185v_csv(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     char path[64];
     get_today_csv_path("ne185v", path, sizeof path);
     size_t csv_len = 0;
@@ -800,7 +800,7 @@ static void build_bateria_html(const char *csv,
 
 esp_err_t handle_data_bateria(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     httpd_resp_set_type(req, "text/html; charset=utf-8");
 
     char path[96];
@@ -873,7 +873,7 @@ esp_err_t handle_data_bateria(httpd_req_t *req)
 
 esp_err_t handle_data_bateria_csv(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     char path[64];
     get_today_csv_path("bateria", path, sizeof path);
     size_t csv_len = 0;
@@ -891,7 +891,7 @@ esp_err_t handle_data_bateria_csv(httpd_req_t *req)
 
 esp_err_t handle_data_index(httpd_req_t *req)
 {
-    REQUIRE_AUTH(req);
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     httpd_resp_set_type(req, "text/html; charset=utf-8");
     const char *html =
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"

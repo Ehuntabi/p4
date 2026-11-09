@@ -345,7 +345,7 @@ static void ov_estilo_cabecera(lv_obj_t *card, const char *titulo)
         /* BLANCO, que destaque (06-nov-2026, pedido del dueño): antes iba en
          * gris como el resto de rótulos y el título de la tarjeta se perdía. */
         lv_obj_set_style_text_color(tit, UI_COLOR_TEXT, 0);
-        lv_obj_set_style_text_letter_space(tit, 2, 0);
+        lv_obj_set_style_text_letter_space(tit, UI_LS_TITULO, 0);
     }
     if (header) lv_obj_set_style_border_width(header, 1, 0);
 }
@@ -368,8 +368,10 @@ static void ov_estilo_tarjeta(lv_obj_t *card, const char *titulo,
         lv_obj_set_flex_align(box, LV_FLEX_ALIGN_SPACE_BETWEEN,
                               LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
         /* Poco aire arriba/abajo del dato: con mucho, el bloque empujaba la
-         * pastilla de estado contra el filo de abajo de la tarjeta. */
-        lv_obj_set_style_pad_ver(box, 6, 0);
+         * pastilla de estado contra el filo de abajo de la tarjeta. 8 (era 6,
+         * fuera de la rejilla) sigue siendo poco: +2 px y el bloque no llega a
+         * tocar la pastilla. */
+        lv_obj_set_style_pad_ver(box, 8, 0);
         lv_obj_t *lab = lv_obj_get_child(box, 0);
         lv_obj_t *row = lv_obj_get_child(box, 1);
         lv_obj_t *val = row ? lv_obj_get_child(row, 0) : NULL;
@@ -380,7 +382,7 @@ static void ov_estilo_tarjeta(lv_obj_t *card, const char *titulo,
             /* Alinear abajo pone los dos textos al ras por el borde de su caja,
              * no por la línea base: el rótulo queda alto. Este relleno lo baja
              * a la altura de la cifra. */
-            lv_obj_set_style_pad_bottom(lab, 9, 0);
+            lv_obj_set_style_pad_bottom(lab, 8, 0);
         }
         if (val) {
             lv_obj_set_style_text_font(val, UI_FONT_DISPLAY, 0);
@@ -390,7 +392,7 @@ static void ov_estilo_tarjeta(lv_obj_t *card, const char *titulo,
         if (uni) {
             lv_obj_set_style_text_font(uni, UI_FONT_TEXT, 0);
             lv_obj_set_style_text_color(uni, UI_COLOR_TEXT_DIM, 0);
-            lv_obj_set_style_pad_bottom(uni, 9, 0);
+            lv_obj_set_style_pad_bottom(uni, 8, 0);
             lv_obj_set_width(uni, OV_UNIDAD_W);
             lv_obj_set_style_text_align(uni, LV_TEXT_ALIGN_LEFT, 0);
             /* Con ancho fijo "kWh" partiría en dos líneas: que recorte antes
@@ -865,8 +867,13 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
      * arriba con su tamaño de siempre y lo que se gane, para las dos de abajo).
      * Antes de quitar el relleno de las pestanas la fila medía 298 px; con
      * flex_grow(4) se repartia el alto ganado y crecia ella tambien. Ahora no
-     * crece: el hueco extra se lo queda la fila de abajo (camper y frigo). */
-    lv_obj_set_height(cards_row, 298);
+     * crece: el hueco extra se lo queda la fila de abajo (camper y frigo).
+     * REDONDEADO A LA REJILLA (9-nov-2026): 298 no es multiplo de 4 y el CI lo
+     * rechaza; 296 deja los mismos 544 px con la fila de abajo (296+8+240), que
+     * es el alto que hay de verdad. Medido con /captura: las tarjetas de arriba
+     * se encogen 2 px (son pct(100) de la columna y reparten igual) y las dos de
+     * abajo ganan esos 2; nada se solapa ni se recorta. */
+    lv_obj_set_height(cards_row, 296);
     lv_obj_set_layout(cards_row, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(cards_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(cards_row, LV_FLEX_ALIGN_CENTER,
@@ -885,11 +892,14 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_left, 8, 0);
     lv_obj_clear_flag(col_left, LV_OBJ_FLAG_SCROLLABLE);
-    /* 1 px de menos por abajo (06-nov-2026): la tarjeta quedaba 1 px más alta
-     * que la zona visible de la pestaña, así que el filo inferior caía fuera y
-     * con el marco nuevo de 1 px la tarjeta se veía CORTADA por abajo. Con el
-     * margen, el filo entra en pantalla y coincide con el de las vecinas. */
-    lv_obj_set_style_pad_bottom(col_left, 1, 0);
+    /* SIN RELLENO POR ABAJO. El 06-nov-2026 hacia falta 1 px (la tarjeta
+     * quedaba 1 px mas alta que la zona visible y el marco nuevo se veia
+     * cortado por abajo), pero 1 no es multiplo de 4 y el CI lo rechazaba. Al
+     * redondear la fila de arriba a 296 (9-nov-2026) sobran 2 px y el recorte
+     * desaparece: el relleno se queda en 0, que ademas es un valor de la
+     * rejilla. Verificado con /captura (filo inferior cerrado, igual que las
+     * vecinas). */
+    lv_obj_set_style_pad_bottom(col_left, 0, 0);
 
     ov->card_solar = create_node_card(col_left, &icon_solar,
                                       "Solar", UI_COLOR_GREEN, &ov->m_solar_w);
@@ -933,10 +943,9 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_center, 8, 0);
     lv_obj_clear_flag(col_center, LV_OBJ_FLAG_SCROLLABLE);
-    /* 1 px de menos por abajo, igual que las otras dos columnas: con el marco
-     * nuevo de 1 px, el filo inferior caía fuera de la zona visible de la
-     * pestaña y la tarjeta se veía sin línea abajo. */
-    lv_obj_set_style_pad_bottom(col_center, 1, 0);
+    /* Sin relleno por abajo, igual que col_left: el 1 px del 06-nov-2026 ya no
+     * hace falta con la fila redondeada a 296 (ver el comentario de col_left). */
+    lv_obj_set_style_pad_bottom(col_center, 0, 0);
 
     ov->card_bat = ui_card_create(col_center, UI_COLOR_ORANGE);
     lv_obj_set_width(ov->card_bat, lv_pct(100));
@@ -1047,10 +1056,8 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_right, 8, 0);
     lv_obj_clear_flag(col_right, LV_OBJ_FLAG_SCROLLABLE);
-    /* 1 px de menos por abajo, igual que la columna izquierda: con el marco
-     * nuevo de 1 px, el filo inferior se salía de la zona visible y la tarjeta
-     * se veía cortada por abajo. */
-    lv_obj_set_style_pad_bottom(col_right, 1, 0);
+    /* Sin relleno por abajo, igual que las otras dos columnas (ver col_left). */
+    lv_obj_set_style_pad_bottom(col_right, 0, 0);
 
     ov->card_loads = create_node_card(col_right, &icon_dcdc,
                                       "DC/DC", UI_COLOR_CYAN, &ov->m_loads_w);
@@ -1102,8 +1109,8 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
      * tarjetas de dentro se centraban y quedaban MAS PEQUEÑAS que antes (lo vio
      * el dueño). La pantalla es fija -- 600 px, barra de 48, 8 de margenes --,
      * asi que los altos se ponen aqui y no hay nada que adivinar:
-     *   arriba 298 (el de siempre) + 8 de hueco + 238 abajo = 544. */
-    lv_obj_set_height(bottom_region, 238);
+     *   arriba 296 (298 redondeado a la rejilla) + 8 de hueco + 240 abajo = 544. */
+    lv_obj_set_height(bottom_region, 240);
     lv_obj_set_layout(bottom_region, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(bottom_region, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(bottom_region, LV_FLEX_ALIGN_SPACE_BETWEEN,
@@ -1145,9 +1152,10 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                                  "Agua limpia", UI_COLOR_CYAN, UI_TANK_CLEAN_H);
     /* UN POCO MAS BAJO (05-nov-2026, pedido del dueño: "el grafico y los textos
      * 1/4..4/4, un poco mas pequeño en vertical"). Con pct(100) el deposito se
-     * comia todo el alto de la tarjeta (215 px con el nuevo reparto); a 190 deja
-     * aire arriba y abajo y la escala se lee igual. */
-    lv_obj_set_height(ov->tank_s1, 190);
+     * comia todo el alto de la tarjeta (215 px con el nuevo reparto); a 188
+     * (190 redondeado a la rejilla el 9-nov-2026) deja aire arriba y abajo y la
+     * escala se lee igual. */
+    lv_obj_set_height(ov->tank_s1, 188);
     /* Y UN POCO MAS ARRIBA (05-nov-2026, pedido del dueño): la tarjeta centra sus
      * columnas en vertical, asi que el rotulo "Agua limpia" quedaba a media altura.
      * Se sube el bloque 10 px sin tocar su tamaño. */
@@ -1176,7 +1184,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
             lv_label_set_text(t, "AGUA LIMPIA");
             lv_obj_set_style_text_font(t, UI_FONT_TEXT, 0);
             lv_obj_set_style_text_color(t, UI_COLOR_TEXT, 0);   /* blanco */
-            lv_obj_set_style_text_letter_space(t, 2, 0);
+            lv_obj_set_style_text_letter_space(t, UI_LS_TITULO, 0);
         }
     }
     lv_obj_add_flag(ov->tank_s1, LV_OBJ_FLAG_CLICKABLE);
@@ -1268,7 +1276,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
             lv_label_set_text(t, "AGUAS GRISES");
             lv_obj_set_style_text_font(t, UI_FONT_TEXT, 0);
             lv_obj_set_style_text_color(t, UI_COLOR_TEXT, 0);   /* blanco */
-            lv_obj_set_style_text_letter_space(t, 2, 0);
+            lv_obj_set_style_text_letter_space(t, UI_LS_TITULO, 0);
         }
     }
     lv_obj_add_flag(ov->tank_r1, LV_OBJ_FLAG_CLICKABLE);
@@ -1399,7 +1407,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
          * lateral de la tarjeta en 12. */
         lv_obj_set_style_text_font(t_lbl, UI_FONT_TEXT, 0);
         lv_obj_set_style_text_color(t_lbl, UI_COLOR_TEXT, 0);   /* blanco */
-        lv_obj_set_style_text_letter_space(t_lbl, 1, 0);
+        lv_obj_set_style_text_letter_space(t_lbl, UI_LS_AJUSTE, 0);
         lv_label_set_text(t_lbl, "CONGELADOR");
         /* Valor + unidad en una fila: el numero va grande (46, solo digitos
          * que esa fuente si tiene) y la unidad "C" en 28_es, que incluye el
@@ -1421,7 +1429,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
         ov->lbl_freezer_unit = lv_label_create(temp_row);
         lv_obj_set_style_text_font(ov->lbl_freezer_unit, UI_FONT_TEXT, 0);
         lv_obj_set_style_text_color(ov->lbl_freezer_unit, UI_COLOR_TEXT_DIM, 0);
-        lv_obj_set_style_pad_bottom(ov->lbl_freezer_unit, 9, 0);   /* al ras de la cifra */
+        lv_obj_set_style_pad_bottom(ov->lbl_freezer_unit, 8, 0);   /* al ras de la cifra */
         lv_label_set_text(ov->lbl_freezer_unit, "\xc2\xb0""C");
         /* Pequeno margen inferior para que la unidad case con la base del
          * numero grande en vez de pegarse al fondo del row. */
@@ -1439,7 +1447,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
         lv_obj_set_style_line_width(ov->ln_freezer_trend, 2, 0);
         lv_obj_set_style_line_rounded(ov->ln_freezer_trend, true, 0);
         lv_obj_set_style_line_color(ov->ln_freezer_trend, UI_COLOR_TEXT_DIM, 0);
-        lv_obj_set_style_pad_bottom(ov->ln_freezer_trend, 13, 0);
+        lv_obj_set_style_pad_bottom(ov->ln_freezer_trend, 12, 0);
         lv_obj_add_flag(ov->ln_freezer_trend, LV_OBJ_FLAG_HIDDEN);
 
         /* Ventilador (debajo dentro de la card): aro-gauge del PWM 0..100 %

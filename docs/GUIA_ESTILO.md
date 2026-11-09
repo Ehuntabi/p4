@@ -142,6 +142,18 @@ todas usan `UI_PAD_PAGE` y las cinco páginas de tarjeta empiezan **exactamente 
 iguala, porque la cabecera de Ajustes (saber dónde estás y cómo volver) es
 información, no adorno.
 
+**Vuelta a la rejilla tras el acabado nuevo (9-nov-2026, v4.96).** El rediseño
+del 6-nov metió cuatro valores que no son múltiplos de 4 y el CI los rechazó
+(`AUDITORIA CON FALLOS: 3`): altos de 298, 238 y 190, rellenos de 1, 6, 9, 10 y
+13, y cuatro `letter_space` a mano. Se arregló **sin cambiar el reparto**: la
+fila de arriba pasa a **296** y la de abajo a **240** (296+8+240 = los mismos
+544 px de alto útil que había con 298+8+238), el depósito de agua limpia a
+**188**, y los rellenos a la escala (6 y 9 → **8**, 10 y 13 → **12**, 1 → **0**
+porque con la fila 2 px más baja ya no hacía falta). Verificado con
+`/captura?n=0` (medido, no a ojo): las tres tarjetas de arriba se reparten los
+2 px que pierde la fila (son `pct(100)` de su columna) y los bordes inferiores
+siguen cerrados; las dos de abajo ganan esos 2 px de aire.
+
 **Aplicado el 4-oct-2026 (v4.19)**: había **93 usos fuera de la rejilla** de 328
 (39 de valor 10, 20 de 6, 9 de 14, 7 de 3, y sueltos de 1/2/5/7/28/42). Se
 redondearon a la escala —`1/2/3/5→4`, `6/7→8`, `10→12` (pads) y `10→8` (radios),
@@ -156,6 +168,7 @@ más abajo. La auditoría lo comprueba (regla 3 de la sección 12).
 |---|---|
 | **Cabecera** | icono (20) + título (`UI_FONT_TITLE`) + subtítulo (`UI_FONT_SMALL`, `TEXT_DIM`), alto `UI_HEADER_H`, fondo `BG` |
 | **Tarjeta** | `CARD` + borde `CARD_BORDER` 1 px + radio 16 + pad 20; título en `UI_FONT_VALUE` con icono; nunca sin icono |
+| **Rótulo** (título de tarjeta, rótulo de depósito) | en **blanco** (`TEXT`) y con las letras separadas **solo con los tokens** `UI_LS_TITULO` (2) y `UI_LS_AJUSTE` (1, el único que entra en el ancho de "CONGELADOR"). El 6-nov-2026 se aprobó ese acabado; lo que la auditoría prohíbe (regla 4) es un número suelto ahí |
 | **Cifra** | etiqueta `UI_FONT_SMALL` `TEXT_DIM` + valor `UI_FONT_VALUE`/`DISPLAY` `TEXT` + unidad `UI_FONT_SMALL` `TEXT_DIM`; las cifras de una fila comparten línea base |
 | **Fila de ajuste** | alto `UI_ROW_H`, icono en cuadro radio `RADIUS_CTRL`, etiqueta `UI_FONT_TEXT`, control a la derecha |
 | **Página de Ajustes** | **no puede obligar a desplazar en vertical**: el contenido tiene que caber. Se comprueba con el log permanente de `settings_panel.c`, que al entrar en cada página escribe `sobra=<px>`: **negativo = cabe**; si sale positivo, se reorganiza (paginador, campos en una fila, texto repetido fuera), no se deja que el usuario tenga que arrastrar |
@@ -167,7 +180,10 @@ más abajo. La auditoría lo comprueba (regla 3 de la sección 12).
 ## 5. Cómo se comprueba
 
 - **Reglas automáticas**: `test/auditar.sh` sección 12 (fuentes del SDK
-  prohibidas, literales de color fuera de la paleta, escala de medidas).
+  prohibidas, literales de color fuera de la paleta, escala de medidas y
+  espaciado de rótulos por token) y sección 14 (qué clave lleva cada descarga:
+  los `.csv` y el `.tar` de un viaje aceptan la del portal **o** la de
+  administración; `config.tar` y `/ota` solo la de administración).
   Cada regla se prueba **al revés** antes de darla por buena.
 - **Verificación visual**: `/captura?n=<i>` navega a la pantalla *i* y devuelve
   un BMP (0-23; índice en `/capturas`). Toda migración se compara antes/después

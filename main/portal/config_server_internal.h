@@ -77,6 +77,19 @@ void cfg_dns_start(void);   /* idempotente: arranca el DNS del portal si no esta
     if (check_basic_auth_strict(req) != ESP_OK) return ESP_OK; \
 } while (0)
 
+/* NIVEL ABIERTO **O** ADMINISTRACION, para las DESCARGAS DE LECTURA (.csv y el
+ * .tar de un viaje). Existe porque la app pide unas descargas con la clave del
+ * portal y otras con la de administracion, y el 9-nov-2026 el dueño se comio un
+ * 401 en "Logs bateria": fetchCsv mandaba `portal:<clave de admin>` a un handler
+ * que solo aceptaba la del portal. Las dos claves son del dueño, y estos
+ * handlers ya se abrian a la del portal, asi que aceptar tambien la de admin no
+ * amplia nada: cierra la clase de fallo "la descarga va con la otra clave".
+ * NO se usa para lo que escribe firmware (/ota, /api/pantalla/subir) ni para
+ * config.tar (lleva las claves AES): esos siguen con REQUIRE_AUTH_STRICT. */
+#define REQUIRE_AUTH_PORTAL_O_ADMIN(req) do { \
+    if (check_basic_auth_portal_o_admin(req) != ESP_OK) return ESP_OK; \
+} while (0)
+
 /* El aviso propio del 401/403 lo piden los handlers que lo necesitan llamando
  * a check_basic_auth_strict_aviso() directamente (borrar un viaje, subir el
  * firmware de una pantalla y su pagina): no hay macro para eso. */

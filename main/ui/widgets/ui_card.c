@@ -671,7 +671,7 @@ lv_obj_t *ui_battery_ring_create(lv_obj_t *parent, lv_coord_t size)
     lv_obj_t *uni = lv_label_create(row);
     lv_obj_set_style_text_font(uni, UI_FONT_TEXT, 0);
     lv_obj_set_style_text_color(uni, UI_COLOR_TEXT_DIM, 0);
-    lv_obj_set_style_pad_bottom(uni, 9, 0);   /* al ras de la cifra */
+    lv_obj_set_style_pad_bottom(uni, 8, 0);   /* al ras de la cifra */
     lv_label_set_text(uni, "%");
 
     /* La cifra va EXACTAMENTE en el centro del aro. No se pone la tensión
@@ -778,7 +778,7 @@ lv_obj_t *ui_tank_create(lv_obj_t *parent, lv_coord_t width, lv_coord_t height,
     /* EL TITULO, SEPARADO DEL DIBUJO (05-nov-2026, pedido del dueño: "que el
      * texto aguas limpias se quede separado en vertical del grafico"). Con 4 px
      * el rotulo casi tocaba el marco del deposito. */
-    lv_obj_set_style_pad_gap(box, 10, 0);
+    lv_obj_set_style_pad_gap(box, 12, 0);
     lv_obj_set_user_data(box, (void *)(intptr_t)kind);
 
     /* Etiqueta arriba (altura content), color claro accent para destacar */
