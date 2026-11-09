@@ -554,13 +554,151 @@ esp_err_t handle_data_viaje_tar(httpd_req_t *req)
     return tar_send_dirs(req, nombre, dirs, prefixes, 1);
 }
 
+/* ── /data/capturas.tar: SOLO LAS ULTIMAS CAPTURAS (09-nov-2026) ────────────
+ *
+ * El paquete llego a pesar 32 MB: la carpeta /sdcard/screenshots acumula las
+ * capturas de pantalla del carrusel de documentacion y por un movil con el
+ * Wi-Fi flojo el .tar se cortaba a mitad ("Connection closed while receiving
+ * data" en la app). Ahora se mandan SOLO las CAPTURAS_NUEVAS mas recientes por
+ * fecha; las demas SIGUEN EN LA TARJETA (esto no borra nada), simplemente no
+ * viajan en el .tar. Con una tanda de capturas -- que es lo que hace falta para
+ * las figuras del manual -- va de sobra. */
+#define CAPTURAS_NUEVAS       24
+#define CAPTURAS_NOMBRE_MAX   64
+
+typedef struct {
+    char   nombre[CAPTURAS_NOMBRE_MAX];
+    time_t mtime;
+} captura_t;
+
+/* Las 'max' capturas mas recientes de 'dir', de mas nueva a mas vieja.
+ * readdir/stat tocan la tarjeta: el llamante tiene que llevar el cerrojo. */
+static int capturas_recientes(const char *dir, captura_t *out, int max)
+{
+    DIR *d = opendir(dir);
+    if (!d) return 0;
+    int n = 0;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (de->d_name[0] == '.') continue;
+        if (strlen(de->d_name) >= CAPTURAS_NOMBRE_MAX) continue;
+        char ruta[400];
+        snprintf(ruta, sizeof ruta, "%s/%s", dir, de->d_name);
+        struct stat st;
+        if (stat(ruta, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size <= 0) continue;
+        /* insercion ordenada de mas nueva a mas vieja, con tope 'max' */
+        int pos = 0;
+        while (pos < n && out[pos].mtime >= st.st_mtime) pos++;
+        if (pos >= max) continue;                 /* mas vieja que las guardadas */
+        int last = (n < max) ? n : max - 1;
+        for (int k = last; k > pos; k--) out[k] = out[k - 1];
+        snprintf(out[pos].nombre, sizeof out[pos].nombre, "%s", de->d_name);
+        out[pos].mtime = st.st_mtime;
+        if (n < max) n++;
+    }
+    closedir(d);
+    return n;
+}
+
+static esp_err_t handle_tar_capturas(httpd_req_t *req)
+{
+    if (!datalogger_sd_montada()) {
+        httpd_resp_set_status(req, "507 Insufficient Storage");
+        httpd_resp_set_type(req, "text/plain; charset=utf-8");
+        httpd_resp_sendstr(req, "No hay tarjeta SD montada.");
+        return ESP_OK;
+    }
+    captura_t *caps = heap_caps_malloc(sizeof(captura_t) * CAPTURAS_NUEVAS,
+                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!caps) caps = malloc(sizeof(captura_t) * CAPTURAS_NUEVAS);
+    char *buf = malloc(2048);
+    if (!caps || !buf) {
+        free(caps); free(buf);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "OOM");
+        return ESP_FAIL;
+    }
+
+    if (!camera_sd_bus_lock(3000)) {
+        free(caps); free(buf);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        httpd_resp_set_type(req, "text/plain; charset=utf-8");
+        httpd_resp_sendstr(req, "La tarjeta esta ocupada. Prueba otra vez en unos segundos.");
+        return ESP_OK;
+    }
+    const int n = capturas_recientes("/sdcard/screenshots", caps, CAPTURAS_NUEVAS);
+    camera_sd_bus_unlock();
+    ESP_LOGI(TAG, "capturas.tar: %d capturas (las mas recientes, tope %d)", n, CAPTURAS_NUEVAS);
+
+    httpd_resp_set_type(req, "application/x-tar");
+    httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=capturas.tar");
+
+    uint8_t hdr[TAR_BLOCK];
+    size_t bytes_since_yield = 0;
+    bool ok = true;
+    for (int i = 0; i < n && ok; i++) {
+        char ruta[400];
+        snprintf(ruta, sizeof ruta, "/sdcard/screenshots/%s", caps[i].nombre);
+        /* Abrir ANTES de anunciar la cabecera (mismo motivo que en
+         * tar_stream_dir: anunciar bytes que luego no llegan desalinea el .tar). */
+        if (!camera_sd_bus_lock(3000)) { ok = false; break; }
+        struct stat st;
+        int sr = stat(ruta, &st);
+        FILE *f = (sr == 0 && st.st_size > 0) ? fopen(ruta, "rb") : NULL;
+        camera_sd_bus_unlock();
+        if (!f) continue;
+        sd_reader_abrir();
+
+        tar_build_header(hdr, caps[i].nombre, st.st_size, st.st_mtime);
+        if (httpd_resp_send_chunk(req, (const char *)hdr, TAR_BLOCK) != ESP_OK) ok = false;
+
+        size_t remaining = ok ? (size_t)st.st_size : 0;
+        while (remaining > 0) {
+            size_t to_read = remaining > 2048 ? 2048 : remaining;
+            if (!camera_sd_bus_lock(3000)) { ok = false; break; }
+            size_t m = fread(buf, 1, to_read, f);
+            camera_sd_bus_unlock();
+            if (m == 0) { ok = false; break; }
+            if (httpd_resp_send_chunk(req, buf, m) != ESP_OK) { ok = false; break; }
+            remaining -= m;
+            bytes_since_yield += m;
+            if (bytes_since_yield >= 32768) {
+                bytes_since_yield = 0;
+                vTaskDelay(1);   /* ceder CPU a LVGL/WDT/WiFi */
+            }
+        }
+        bool got_lock = camera_sd_bus_lock_wait(5000);
+        if (!got_lock) ESP_LOGW(TAG, "fclose sin cerrojo SD tras 5s de espera");
+        fclose(f);
+        if (got_lock) camera_sd_bus_unlock();
+        sd_reader_cerrar();
+        if (!ok) break;
+
+        size_t pad = (TAR_BLOCK - (st.st_size % TAR_BLOCK)) % TAR_BLOCK;
+        if (pad > 0) {
+            uint8_t zero[TAR_BLOCK] = {0};
+            if (httpd_resp_send_chunk(req, (const char *)zero, pad) != ESP_OK) {
+                ok = false;
+                break;
+            }
+        }
+    }
+    free(buf);
+    free(caps);
+    if (!ok) return ESP_FAIL;
+
+    uint8_t zeros[TAR_BLOCK * 2] = {0};
+    httpd_resp_send_chunk(req, (const char *)zeros, sizeof zeros);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
+}
+
 esp_err_t handle_data_capturas_tar(httpd_req_t *req)
 {
     /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
      * La del punto de acceso es para hablar con la P4 (app y cabina);
      * lo que saca datos de la tarjeta va con la otra. */
     REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de comunicacion (la del portal) */
-    return handle_tar_dir(req, "/sdcard/screenshots", "capturas.tar");
+    return handle_tar_capturas(req);
 }
 
 esp_err_t handle_data_vigilancia_tar(httpd_req_t *req)
