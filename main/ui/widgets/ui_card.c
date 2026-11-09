@@ -5,20 +5,29 @@
 
 /* ── Card contenedor ─────────────────────────────────────────────── */
 /* FONDO CON UN TINTE DEL COLOR DEL MARCO (09-nov-2026, peticion del usuario:
- * "colores sutiles de fondo en las cards acorde al color de su marco"). Se
- * mezcla el acento con la superficie de tarjeta a ~7 % (18/255): se nota el
- * tono de cada tarjeta -- verde la bateria, ambar la solar, violeta la camper,
- * azul hielo el congelador -- sin perder contraste con el texto ni parecer un
- * semaforo. `lv_color_mix(c1, c2, mix)`: mix 0 = c2, 255 = c1. */
-#define UI_CARD_TINTE_MIX  18
+ * "colores sutiles de fondo en las cards acorde al color de su marco", y luego
+ * "pero mucho mas sutil": de 18/255 (7 %) a 10/255 (4 %)). Se nota el tono de
+ * cada tarjeta -- verde la bateria, ambar la solar, violeta la camper, azul
+ * hielo el congelador -- sin que se lea como un semaforo ni pierda contraste
+ * con el texto. `lv_color_mix(c1, c2, mix)`: mix 0 = c2 (la superficie), 255 =
+ * c1 (el acento).
+ *
+ * OJO CON BAJARLO MAS: la pantalla es de 16 bits (5-6 bits por canal), asi que
+ * por debajo de ~8 el tinte se cuantiza a CERO en algunos tonos y unas tarjetas
+ * salen tintadas y otras no. 10 es el minimo que se ve en los cinco acentos.
+ * El mismo token lo usa la vista principal (ov_estilo_marco): las cinco
+ * tarjetas de la pantalla de inicio llevan el tinte de SU marco. */
+lv_color_t ui_card_superficie(lv_color_t accent, lv_color_t base)
+{
+    return lv_color_mix(accent, base, UI_CARD_TINTE_MIX);
+}
 
 lv_obj_t *ui_card_create(lv_obj_t *parent, lv_color_t border_color)
 {
     lv_obj_t *card = lv_obj_create(parent);
     lv_obj_set_width(card, lv_pct(100));
     lv_obj_set_height(card, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(card, lv_color_mix(border_color, UI_COLOR_CARD,
-                                                 UI_CARD_TINTE_MIX), 0);
+    lv_obj_set_style_bg_color(card, ui_card_superficie(border_color, UI_COLOR_CARD), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(card, border_color, 0);
     /* 2 px, el mismo grosor que las tarjetas compactas de Ajustes: un solo

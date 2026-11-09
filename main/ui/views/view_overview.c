@@ -321,10 +321,16 @@ static lv_obj_t *ov_make_state_pill(lv_obj_t *card)
 #define OV_CIFRA_W   96     /* ancho fijo de la cifra (aguanta "12.4") */
 #define OV_UNIDAD_W  42     /* ancho fijo de la unidad ("kWh" mide 37) */
 
-static void ov_estilo_marco(lv_obj_t *card)
+static void ov_estilo_marco(lv_obj_t *card, lv_color_t accent)
 {
     if (!card) return;
-    lv_obj_set_style_bg_color(card, UI_COLOR_CARD_HI, 0);
+    /* FONDO CON EL TINTE DE SU MARCO, MUY SUTIL (09-nov-2026): el mismo token
+     * que las tarjetas de las vistas (UI_CARD_TINTE_MIX, 4 %), sobre la
+     * superficie clara de esta pantalla (UI_COLOR_CARD_HI). Asi las cinco
+     * tarjetas de la pantalla de inicio -- verde/ambar/cian arriba,
+     * violeta/hielo abajo -- llevan cada una su tono sin que se lea como un
+     * semaforo, y coinciden con el filo. */
+    lv_obj_set_style_bg_color(card, ui_card_superficie(accent, UI_COLOR_CARD_HI), 0);
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_border_opa(card, LV_OPA_80, 0);
     lv_obj_set_style_radius(card, 12, 0);
@@ -350,11 +356,12 @@ static void ov_estilo_cabecera(lv_obj_t *card, const char *titulo)
     if (header) lv_obj_set_style_border_width(header, 1, 0);
 }
 
-static void ov_estilo_tarjeta(lv_obj_t *card, const char *titulo,
+static void ov_estilo_tarjeta(lv_obj_t *card, lv_color_t accent,
+                              const char *titulo,
                               lv_obj_t *m1, lv_obj_t *m2)
 {
     if (!card) return;
-    ov_estilo_marco(card);
+    ov_estilo_marco(card, accent);
     ov_estilo_cabecera(card, titulo);
 
     lv_obj_t *mets[2] = { m1, m2 };
@@ -921,7 +928,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     ov->m_solar_kwh = ui_metric_create_compact(ov->card_solar, "Hoy");
     ui_metric_set(ov->m_solar_kwh, "--", "kWh", UI_COLOR_TEXT_DIM);
     /* La tarjeta Solar estrena el acabado (ver ov_estilo_tarjeta). */
-    ov_estilo_tarjeta(ov->card_solar, "SOLAR", ov->m_solar_w, ov->m_solar_kwh);
+    ov_estilo_tarjeta(ov->card_solar, UI_COLOR_GREEN, "SOLAR", ov->m_solar_w, ov->m_solar_kwh);
 
     ov->pill_solar_state = ov_make_state_pill(ov->card_solar);
     lv_obj_add_event_cb(ov->pill_solar_state, ov_solar_state_pill_cb,
@@ -970,7 +977,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     lv_obj_add_flag(ov->card_bat, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(ov->card_bat, alarm_mute_soc_cb, LV_EVENT_CLICKED, ov);
     /* Mismo acabado que Solar y DC/DC. */
-    ov_estilo_marco(ov->card_bat);
+    ov_estilo_marco(ov->card_bat, UI_COLOR_ORANGE);
     ov_estilo_cabecera(ov->card_bat, "BATERÍA");
     /* Cuerpo de card_bat: fila horizontal con [Corriente · Arc SoC · Autonomía].
      * Aprovecha el ancho disponible en lugar del alto para que con la card
@@ -1076,7 +1083,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     /* El mismo acabado que la tarjeta Solar: la cifra pasa a 46 (la pone
      * ov_estilo_tarjeta) y no a 28, que era lo que había antes para dejar sitio
      * a la pastilla. Pastilla pulsable al final de la card. */
-    ov_estilo_tarjeta(ov->card_loads, "DC/DC", ov->m_loads_w, ov->m_loads_kwh);
+    ov_estilo_tarjeta(ov->card_loads, UI_COLOR_CYAN, "DC/DC", ov->m_loads_w, ov->m_loads_kwh);
     ov->pill_dcdc_state = ov_make_state_pill(ov->card_loads);
     lv_obj_add_event_cb(ov->pill_dcdc_state, ov_dcdc_state_pill_cb,
                         LV_EVENT_CLICKED, ov);
@@ -1133,7 +1140,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
     /* Mismo acabado que la fila de arriba (06-nov-2026): superficie un punto
      * más clara que el fondo, filo de 1 px y sombra abierta. La cambiamos de
      * paso al helper compartido para que las cinco tarjetas sean iguales. */
-    ov_estilo_marco(camper_card);
+    ov_estilo_marco(camper_card, UI_COLOR_VIOLET);
     lv_obj_set_style_bg_opa(camper_card, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(camper_card, 8, 0);
     lv_obj_set_style_pad_gap(camper_card, 12, 0);
@@ -1351,7 +1358,7 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
         lv_obj_set_style_border_color(card_fridge, UI_COLOR_ICE, 0);
         /* Mismo marco que el resto (el interior de esta tarjeta se revisa
          * aparte): si no, al lado de la Camper cantaba la diferencia. */
-        ov_estilo_marco(card_fridge);
+        ov_estilo_marco(card_fridge, UI_COLOR_ICE);
         lv_obj_set_style_bg_opa(card_fridge, LV_OPA_COVER, 0);
         lv_obj_set_style_pad_hor(card_fridge, 12, 0);
         /* Arriba 12 y abajo 24 (abajo no 6: el aro del ventilador de 92 px quedaba

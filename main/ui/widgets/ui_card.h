@@ -12,6 +12,16 @@ extern "C" {
 #endif
 
 /* ── Card contenedor con borde de color por rol ─────────────────── */
+/* Cuanto acento se mezcla en la superficie de la tarjeta (ver ui_card.c): el
+ * fondo lleva un tinte MUY sutil del color de su marco. Lo usan ui_card_create
+ * y la vista principal (ov_estilo_marco), para que las tarjetas de la pantalla
+ * de inicio y las de las vistas no se diferencien. */
+#define UI_CARD_TINTE_MIX  10
+
+/* Devuelve la superficie de tarjeta con el tinte de [accent] (10/255). Va con
+ * `base` porque la vista principal usa una superficie un punto mas clara
+ * (UI_COLOR_CARD_HI) que las demas (UI_COLOR_CARD). */
+lv_color_t ui_card_superficie(lv_color_t accent, lv_color_t base);
 /* Devuelve un objeto LVGL configurado como card vertical (flex column,
  * pad UI_PAD_CARD, gap UI_GAP_CARD, bg UI_COLOR_CARD, border de 3 px del
  * color indicado, radius UI_RADIUS_CARD). El caller añade hijos. */
