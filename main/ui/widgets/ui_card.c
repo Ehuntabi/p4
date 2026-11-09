@@ -4,12 +4,21 @@
 #include <string.h>
 
 /* ── Card contenedor ─────────────────────────────────────────────── */
+/* FONDO CON UN TINTE DEL COLOR DEL MARCO (09-nov-2026, peticion del usuario:
+ * "colores sutiles de fondo en las cards acorde al color de su marco"). Se
+ * mezcla el acento con la superficie de tarjeta a ~7 % (18/255): se nota el
+ * tono de cada tarjeta -- verde la bateria, ambar la solar, violeta la camper,
+ * azul hielo el congelador -- sin perder contraste con el texto ni parecer un
+ * semaforo. `lv_color_mix(c1, c2, mix)`: mix 0 = c2, 255 = c1. */
+#define UI_CARD_TINTE_MIX  18
+
 lv_obj_t *ui_card_create(lv_obj_t *parent, lv_color_t border_color)
 {
     lv_obj_t *card = lv_obj_create(parent);
     lv_obj_set_width(card, lv_pct(100));
     lv_obj_set_height(card, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_color(card, UI_COLOR_CARD, 0);
+    lv_obj_set_style_bg_color(card, lv_color_mix(border_color, UI_COLOR_CARD,
+                                                 UI_CARD_TINTE_MIX), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(card, border_color, 0);
     /* 2 px, el mismo grosor que las tarjetas compactas de Ajustes: un solo
