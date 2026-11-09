@@ -899,26 +899,35 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_left, 8, 0);
     lv_obj_clear_flag(col_left, LV_OBJ_FLAG_SCROLLABLE);
-    /* 1 px de menos por abajo (06-nov-2026, y se volvio a poner el 09-nov
-     * despues de quitarlo "por la rejilla" y VER QUE SE CORTABA): la tarjeta
-     * queda 1 px mas alta que la zona visible de la pestana, asi que con el
-     * marco nuevo de 1 px el filo inferior se sale y la tarjeta se ve SIN
-     * LINEA abajo. Redondear la fila no lo arregla: el recorte es de la zona
-     * visible, no del reparto. Es una excepcion MEDIDA de la guia (como el 40
-     * del congelador) y la auditoria la tiene declarada. */
-    lv_obj_set_style_pad_bottom(col_left, 1, 0);
+    /* 4 px de menos por abajo (09-nov-2026). La columna mide un pelin mas de
+     * lo que se ve en la pestana y ademas la tarjeta se salia con su contenido:
+     * con 1 px el filo inferior caia justo en el limite del recorte y la
+     * tarjeta se veia SIN linea abajo (lo reporto el dueño). Con 4 (valor de la
+     * rejilla, sin excepciones) el filo queda 4 px dentro de la zona visible y
+     * se ve entero; el contenido de la tarjeta se sube esos mismos 4 px (ver
+     * pad_top de cada card). */
+    lv_obj_set_style_pad_bottom(col_left, 4, 0);
 
     ov->card_solar = create_node_card(col_left, &icon_solar,
                                       "Solar", UI_COLOR_GREEN, &ov->m_solar_w);
     lv_obj_set_width(ov->card_solar, lv_pct(100));
-    /* Altura fija para garantizar tamaño igual al de bat / dcdc.
-     * flex_grow=1 + height pct(80) → cada card 80% del alto de la col. */
-    lv_obj_set_flex_grow(ov->card_solar, 1);
+    /* ALTO = 100 % DE LA COLUMNA, no SIZE_CONTENT (09-nov-2026). Con
+     * SIZE_CONTENT la card medía lo que su contenido, que es 2-3 px MÁS que la
+     * columna; la columna le recortaba esos píxeles y con ellos el borde de
+     * abajo: la card se veía sin linea inferior (lo reportó el dueño: "solar,
+     * bateria y dc/dc solo"). Con pct(100) la card acaba justo donde acaba la
+     * columna y el borde entra entero. */
+    lv_obj_set_height(ov->card_solar, lv_pct(100));
     /* Subir el contenido 5 px sin alterar el tamano externo de la card:
      * reducimos el pad superior y aumentamos el inferior en la misma
      * cantidad. La altura es la misma porque la fija el flex_grow. */
-    lv_obj_set_style_pad_top(ov->card_solar, UI_PAD_CARD - 5, 0);
-    lv_obj_set_style_pad_bottom(ov->card_solar, UI_PAD_CARD + 5, 0);
+    /* El contenido 4 px MAS ARRIBA (09-nov-2026, peticion del dueño: "que
+     * suba esos pixeles"). Desde que la card mide el 100 % de la columna, el
+     * contenido quedaba 2-3 px justo y se cortaba por abajo; subiendolo 4 el
+     * borde inferior entra entero y no se recorta nada. La caja del contenido
+     * sigue midiendo lo mismo: se quita arriba y se pone abajo. */
+    lv_obj_set_style_pad_top(ov->card_solar, UI_PAD_CARD - 9, 0);
+    lv_obj_set_style_pad_bottom(ov->card_solar, UI_PAD_CARD + 9, 0);
     /* Reducir el gap entre header/Actual/Hoy de 16 a 8 px: la 2ª métrica
      * se salía por abajo en columnas estrechas. */
     lv_obj_set_style_pad_gap(ov->card_solar, 8, 0);
@@ -950,9 +959,8 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_center, 8, 0);
     lv_obj_clear_flag(col_center, LV_OBJ_FLAG_SCROLLABLE);
-    /* 1 px de menos por abajo, igual que col_left: sin esto el filo inferior de
-     * la tarjeta cae fuera de la zona visible y se ve sin linea abajo. */
-    lv_obj_set_style_pad_bottom(col_center, 1, 0);
+    /* 4 px de menos por abajo, igual que col_left (ver el comentario de alli). */
+    lv_obj_set_style_pad_bottom(col_center, 4, 0);
 
     ov->card_bat = ui_card_create(col_center, UI_COLOR_ORANGE);
     lv_obj_set_width(ov->card_bat, lv_pct(100));
@@ -960,17 +968,17 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
      * col_right card_loads=8, tank_r1=3) para que card_bat tenga la misma
      * altura que Solar/DC/DC y el bottom_row gane espacio suficiente para
      * que la card frigo se vea entera. */
-    lv_obj_set_flex_grow(ov->card_bat, 1);
+    lv_obj_set_height(ov->card_bat, lv_pct(100));   /* ver card_solar */
     /* Subir el contenido 10 px en total (los 5 px del cambio anterior +
      * 5 px adicionales pedidos al "subir la card 5"). Reducimos pad_top
      * a UI_PAD_CARD-10 y aumentamos pad_bottom a UI_PAD_CARD+10 para no
      * tocar el tamano externo de la card. */
-    lv_obj_set_style_pad_top(ov->card_bat, UI_PAD_CARD - 10, 0);
+    lv_obj_set_style_pad_top(ov->card_bat, UI_PAD_CARD - 14, 0);   /* 4 px mas arriba, ver card_solar */
     /* Relleno de abajo 26 -> 14 (06-nov-2026): el aro grande (200 px) no
      * cabía en el alto que quedaba y se cortaba por arriba; con 12 px más de
      * fila entra entero. El contenido baja con él, que es justo lo que se
      * buscaba. */
-    lv_obj_set_style_pad_bottom(ov->card_bat, UI_PAD_CARD - 2, 0);
+    lv_obj_set_style_pad_bottom(ov->card_bat, UI_PAD_CARD + 2, 0);
     ui_card_set_title_img(ov->card_bat, &icon_battery,
                           "Batería", UI_COLOR_ORANGE);
     /* Click en la card de bateria silencia la alarma de SOC */
@@ -1063,15 +1071,15 @@ ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent)
                           LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_gap(col_right, 8, 0);
     lv_obj_clear_flag(col_right, LV_OBJ_FLAG_SCROLLABLE);
-    /* 1 px de menos por abajo, igual que las otras dos columnas (ver col_left). */
-    lv_obj_set_style_pad_bottom(col_right, 1, 0);
+    /* 4 px de menos por abajo, igual que las otras dos columnas (ver col_left). */
+    lv_obj_set_style_pad_bottom(col_right, 4, 0);
 
     ov->card_loads = create_node_card(col_right, &icon_dcdc,
                                       "DC/DC", UI_COLOR_CYAN, &ov->m_loads_w);
     lv_obj_set_width(ov->card_loads, lv_pct(100));
-    lv_obj_set_flex_grow(ov->card_loads, 1);
-    lv_obj_set_style_pad_top(ov->card_loads, UI_PAD_CARD - 5, 0);
-    lv_obj_set_style_pad_bottom(ov->card_loads, UI_PAD_CARD + 5, 0);
+    lv_obj_set_height(ov->card_loads, lv_pct(100));   /* ver card_solar */
+    lv_obj_set_style_pad_top(ov->card_loads, UI_PAD_CARD - 9, 0);   /* 4 px mas arriba, ver card_solar */
+    lv_obj_set_style_pad_bottom(ov->card_loads, UI_PAD_CARD + 9, 0);
     /* Reducir el gap entre header/Motor/Servicio de 16 a 8 px: la 2ª
      * métrica se salía por abajo en columnas estrechas. */
     lv_obj_set_style_pad_gap(ov->card_loads, 8, 0);
