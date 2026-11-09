@@ -20,6 +20,19 @@
 static void flush_pending_to_sd_impl(void);
 static const char *TAG = "DATALOGGER";
 
+/* Metricas del volcado para /api/perf (09-nov-2026): cuantas veces se ha
+ * volcado, cuanto tardo el ultimo, el maximo y los fallos de E/S. Se leen desde
+ * main/perf.c con estos getters; el componente no depende de nadie. */
+static uint32_t s_volcados;
+static uint32_t s_volcado_fallos;
+static int64_t  s_ultimo_us;
+static int64_t  s_max_us;
+
+uint32_t datalogger_volcados(void)      { return s_volcados; }
+uint32_t datalogger_volcado_fallos(void){ return s_volcado_fallos; }
+int64_t  datalogger_ultimo_volcado_us(void) { return s_ultimo_us; }
+int64_t  datalogger_max_volcado_us(void)    { return s_max_us; }
+
 #define MOUNT_POINT "/sdcard"
 #define LOG_DIR     MOUNT_POINT "/frigo"
 #define FLUSH_INTERVAL_MS 60000  /* volcado cada 60s */
@@ -480,6 +493,7 @@ static void flush_pending_to_sd_impl(void)
     }
     bool need_header = (stat(path, &st) != 0);
     if (!need_header) arreglar_cabecera_si_hace_falta(path);
+    int64_t t_volcado = esp_timer_get_time();
     FILE *f = fopen(path, "a");
     if (!f) {
         ESP_LOGW(TAG, "fopen %s failed", path);
@@ -545,6 +559,15 @@ static void flush_pending_to_sd_impl(void)
      * muestras. 2-oct-2026. */
     if (fclose(f) != 0) {
         io_error = true;
+    }
+    /* Cuanto ha costado el volcado completo (fopen..fclose) para /api/perf:
+     * es la medida que dice si la SD va lenta o si la camara le quita el bus. */
+    s_volcados++;
+    if (io_error) s_volcado_fallos++;
+    {
+        int64_t dt = esp_timer_get_time() - t_volcado;
+        s_ultimo_us = dt;
+        if (dt > s_max_us) s_max_us = dt;
     }
     camera_sd_bus_unlock();
 

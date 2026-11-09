@@ -21,6 +21,7 @@
 #include "frigo.h"
 #include "battery_history.h"
 #include "stack_watch.h"
+#include "perf.h"
 #include "log_cleanup.h"
 #include "alerts.h"
 #include "audio_es8311.h"
@@ -851,6 +852,7 @@ static void init_audio_ble(void)
      * la carpeta del viaje ademas del historico de siempre. */
     viaje_telemetria_start();
     stack_watch_start();
+    perf_start();
 
     victron_ble_register_callback(ui_on_panel_data);
     victron_ble_init();

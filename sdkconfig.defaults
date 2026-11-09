@@ -39,6 +39,11 @@ CONFIG_COMPILER_STACK_CHECK=y
 # no solo el sintoma. Cuesta hasta 60 bytes de pila usable por watchpoint
 # (alineamiento) y "gasta" el ultimo hardware watchpoint si se depura con gdb.
 CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK=y
+# Estadisticas de CPU por tarea y lista de tareas, para /api/perf (09-nov-2026):
+# sin esto no se puede saber que tarea se come el procesador ni cuanto.
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y
+CONFIG_FREERTOS_GENERATE_RUN_TIME_STATS=y
+CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER=y
 
 # ── CPU ───────────────────────────────────────────────────────────────────────
 # El módulo ESP32-P4 soporta hasta 400 MHz

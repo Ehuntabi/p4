@@ -126,6 +126,7 @@ caso GET /data/viajes        80     200 401
 echo "-- 3) Secretos y firmware: SOLO la de administracion --"
 caso GET /data/config.tar    8081   401 "200|404" "(backup; 404 = no hay respaldo)"
 caso GET /keys               80     401 200 "(claves AES en crudo)"
+caso GET /api/perf           80     401 200 "(numeros de rendimiento)"
 
 # Con la clave del PORTAL, lo que escribe firmware tiene que rebotar ANTES de
 # mirar el cuerpo. NO se prueba con la de admin: un POST a /ota es una

@@ -803,6 +803,7 @@ tabla = [
     ('main/portal/ota_pantalla.c', ['ota_pantalla_subir'], 'check_basic_auth_strict', None),
     ('main/portal/config_server.c', ['handle_keys'], 'REQUIRE_AUTH_STRICT(req)', None),
     ('main/portal/config_server.c', ['post_save'], 'REQUIRE_AUTH_STRICT(req)', None),
+    ('main/portal/config_server.c', ['handle_api_perf'], 'REQUIRE_AUTH_STRICT(req)', None),
 ]
 
 fallos = []

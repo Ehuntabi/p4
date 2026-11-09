@@ -35,6 +35,14 @@ typedef struct {
 } datalogger_entry_t;
 
 esp_err_t datalogger_init(void);
+
+/* Metricas del volcado a la SD (para /api/perf): cuantas veces se ha volcado,
+ * cuanto tardo el ultimo, el maximo visto y cuantos fallaron. */
+#include <stdint.h>
+uint32_t datalogger_volcados(void);
+uint32_t datalogger_volcado_fallos(void);
+int64_t  datalogger_ultimo_volcado_us(void);
+int64_t  datalogger_max_volcado_us(void);
 esp_err_t datalogger_log(const frigo_state_t *frigo);
 int datalogger_get_count(void);
 const datalogger_entry_t *datalogger_get_entry(int index);

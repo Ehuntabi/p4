@@ -29,6 +29,7 @@
 #include "hal/mipi_dsi_host_ll.h"
 #include "lvgl.h"
 #include "esp_lvgl_port.h"
+#include "perf.h"
 
 /* Copia LOCAL del layout privado de esp_lcd_dsi_bus_t (esp-idf 5.5.5,
  * components/esp_lcd/dsi/mipi_dsi_priv.h). La necesitamos para acceder al
@@ -493,6 +494,11 @@ lv_disp_t    *bsp_display_start_with_config(const bsp_display_cfg_t *cfg)
 
     s_disp = bsp_display_lcd_init(cfg);
     if (!s_disp) { ESP_LOGE(TAG, "LCD init failed"); return NULL; }
+
+    /* Cronometro del volcado de LVGL (09-nov-2026): se envuelve el flush_cb del
+     * puerto para saber cuanto cuesta pintar cada bloque. Solo mide; el
+     * original se llama igual. Se ve en /api/perf y en el log cada 10 min. */
+    perf_envuelve_flush(s_disp);
 
     s_disp_indev = bsp_display_indev_init(s_disp);
 

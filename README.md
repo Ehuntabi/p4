@@ -202,6 +202,7 @@ Páginas con cards de borde de color, dropdown scrollable cuando hay overflow, s
 - **Actualización por Wi-Fi (OTA)** en `http://192.168.4.1:8081/ota` (servidor pesado, puerto **8081**: `/ota` no está en el 80): se sube el `.bin` desde el navegador, sin cable ni PC.
 - `/snapshot`: última foto de la cámara en JPEG. `/capturas` y `/captura?n=<0..23>`: capturas de las pantallas del propio display.
 - `/keys`: configuración de claves Victron.
+- `GET /api/perf` (**clave de administración**): números de rendimiento para diagnosticar sin adivinar — % de CPU por tarea y núcleo, pila mínima libre de cada una, heap interno (libre / bloque mayor / mínimo histórico), coste del volcado a la SD (media y máximo) y coste del volcado de LVGL por bloque. Además se escribe un resumen en el log cada 10 min, que acaba en `/data/logs.tar`. Medido el 09-nov-2026 con la pantalla normal: **~12 % de un núcleo** para `taskLVGL`, **~0,23 ms** por bloque de LVGL (máx 1,5 ms), volcado a SD **~19 ms** y heap interno libre **~66 KB** (mínimo visto 14 KB).
 - Sincronización automática de hora (`<img>` GET → `/settime`, compatible captive portal).
 
 #### Backup/restore de configuración

@@ -45,6 +45,7 @@
 #include "cJSON.h"             /* POST /api/alarma */
 #include "esp_bsp.h"           /* bsp_display_lock/unlock para tocar LVGL desde httpd */
 #include "screenshot.h"        /* screenshot_take_bmp para /captura?n=<i> */
+#include "perf.h"              /* perf_json para /api/perf */
 #include "esp_heap_caps.h"     /* heap_caps_free del BMP servido */
 #include <sys/time.h>
 #include <time.h>
@@ -638,6 +639,22 @@ static esp_err_t post_save(httpd_req_t *req) {
 }
 
 // --- Dashboard handlers ---
+/* GET /api/perf — numeros de rendimiento (CPU por tarea, heap, SD, LVGL).
+ * NIVEL ADMINISTRACION: es diagnostico interno y no lo necesita la app. */
+static esp_err_t handle_api_perf(httpd_req_t *req)
+{
+    REQUIRE_AUTH_STRICT(req);
+    static char buf[2400];
+    size_t n = perf_json(buf, sizeof buf);
+    if (n == 0) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "sin datos");
+        return ESP_FAIL;
+    }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, buf, n);
+}
+
 static esp_err_t handle_api_state(httpd_req_t *req)
 {
     REQUIRE_AUTH(req);
@@ -1163,6 +1180,8 @@ esp_err_t config_server_start(void) {
     registrar(server, &uri_keys);
     httpd_uri_t uri_api_state = { .uri = "/api/state", .method = HTTP_GET, .handler = handle_api_state };
     registrar(server, &uri_api_state);
+    httpd_uri_t uri_api_perf = { .uri = "/api/perf", .method = HTTP_GET, .handler = handle_api_perf };
+    registrar(server, &uri_api_perf);
     /* /mirror y /mirror.bmp eliminados — la info ya está en otras vistas
      * (Dashboard, Logs, Keys). */
     httpd_uri_t uri_data = { .uri = "/data", .method = HTTP_GET, .handler = handle_data_index };
