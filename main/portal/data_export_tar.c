@@ -374,28 +374,22 @@ static esp_err_t handle_tar_dir(httpd_req_t *req, const char *src_dir, const cha
 
 esp_err_t handle_data_frigo_tar(httpd_req_t *req)
 {
-    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
-     * La del punto de acceso es para hablar con la P4 (app y cabina);
-     * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
+    /* Descarga de datos: las dos claves valen (ver REQUIRE_AUTH_PORTAL_O_ADMIN). */
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     return handle_tar_dir(req, "/sdcard/frigo", "frigo.tar");
 }
 
 esp_err_t handle_data_bateria_tar(httpd_req_t *req)
 {
-    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
-     * La del punto de acceso es para hablar con la P4 (app y cabina);
-     * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
+    /* Descarga de datos: las dos claves valen (ver REQUIRE_AUTH_PORTAL_O_ADMIN). */
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     return handle_tar_dir(req, "/sdcard/bateria", "bateria.tar");
 }
 
 esp_err_t handle_data_solar_tar(httpd_req_t *req)
 {
-    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
-     * La del punto de acceso es para hablar con la P4 (app y cabina);
-     * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
+    /* Descarga de datos: las dos claves valen (ver REQUIRE_AUTH_PORTAL_O_ADMIN). */
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     return handle_tar_dir(req, "/sdcard/solar", "solar.tar");
 }
 
@@ -411,10 +405,8 @@ esp_err_t handle_data_solar_tar(httpd_req_t *req)
  * propio paquete. */
 esp_err_t handle_data_historico_tar(httpd_req_t *req)
 {
-    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
-     * La del punto de acceso es para hablar con la P4 (app y cabina);
-     * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
+    /* Descarga de datos: las dos claves valen (ver REQUIRE_AUTH_PORTAL_O_ADMIN). */
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     static const char *const dirs[]     = { "/sdcard/bateria", "/sdcard/solar", "/sdcard/frigo" };
     static const char *const prefixes[] = { "bateria",         "solar",         "frigo"         };
     return tar_send_dirs(req, "historico.tar", dirs, prefixes, 3);
@@ -429,10 +421,9 @@ esp_err_t handle_data_historico_tar(httpd_req_t *req)
  * tragar por entero al verlo en su carpeta de descargas. */
 esp_err_t handle_data_viaje_tar(httpd_req_t *req)
 {
-    /* El .tar de un viaje lo piden las DOS cosas: el enlace del portal (clave
-     * del portal) y la app, que para descargas largas manda la de
-     * administracion. Una peticion lleva UNA sola cabecera Basic, asi que se
-     * aceptan las dos; ver REQUIRE_AUTH_PORTAL_O_ADMIN. */
+    /* El .tar de un viaje lo piden el enlace del portal y la app. Las dos
+     * mandan la clave del portal desde el 09-nov-2026; se aceptan las dos por
+     * si queda alguna app antigua mandando la de administracion. */
     REQUIRE_AUTH_PORTAL_O_ADMIN(req);
 
     char q[160] = {0};
@@ -698,19 +689,15 @@ static esp_err_t handle_tar_capturas(httpd_req_t *req)
 
 esp_err_t handle_data_capturas_tar(httpd_req_t *req)
 {
-    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
-     * La del punto de acceso es para hablar con la P4 (app y cabina);
-     * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
+    /* Descarga de datos: las dos claves valen (ver REQUIRE_AUTH_PORTAL_O_ADMIN). */
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     return handle_tar_capturas(req);
 }
 
 esp_err_t handle_data_vigilancia_tar(httpd_req_t *req)
 {
-    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
-     * La del punto de acceso es para hablar con la P4 (app y cabina);
-     * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
+    /* Descarga de datos: las dos claves valen (ver REQUIRE_AUTH_PORTAL_O_ADMIN). */
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     return handle_tar_dir_of_subdirs(req, "/sdcard/vigilancia", "vigilancia", "vigilancia.tar");
 }
 
@@ -728,10 +715,13 @@ esp_err_t handle_data_vigilancia_tar(httpd_req_t *req)
  * de bueno. */
 esp_err_t handle_data_config_tar(httpd_req_t *req)
 {
-    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
-     * La del punto de acceso es para hablar con la P4 (app y cabina);
-     * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
+    /* STRICT, y con razon (revision del 09-nov-2026): el export NUEVO ya no
+     * mete las claves AES (config_backup.c las excluye a proposito), pero el
+     * fichero que hoy hay en la tarjeta puede ser de una version anterior y SI
+     * llevarlas -- el de esta placa (config_backup.json del 2026-07-09) las
+     * lleva. Abrir esto a la clave del portal las entregaria. Se descarga una
+     * vez al ano y la app manda la de admin, asi que no cuesta nada. */
+    REQUIRE_AUTH_STRICT(req);
 
     struct stat st;
     if (!camera_sd_bus_lock(3000)) {
@@ -809,9 +799,7 @@ esp_err_t handle_data_config_tar(httpd_req_t *req)
  * subcarpeta por dia. */
 esp_err_t handle_data_logs_tar(httpd_req_t *req)
 {
-    /* DESCARGA (4-nov-2026): pide la clave del PORTAL, que es la segunda.
-     * La del punto de acceso es para hablar con la P4 (app y cabina);
-     * lo que saca datos de la tarjeta va con la otra. */
-    REQUIRE_AUTH_STRICT(req);   /* descarga: la clave de ADMINISTRACION (la segunda) */
+    /* Descarga de datos: las dos claves valen (ver REQUIRE_AUTH_PORTAL_O_ADMIN). */
+    REQUIRE_AUTH_PORTAL_O_ADMIN(req);
     return handle_tar_dir_of_subdirs(req, "/sdcard/logs", "logs", "logs.tar");
 }

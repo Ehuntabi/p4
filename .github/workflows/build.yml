@@ -105,7 +105,7 @@ jobs:
         run: |
           shellcheck -S warning scripts/grabar.sh scripts/bin_con_version.sh release.sh \
             test/auditar.sh test/run.sh test/test_viaje_dueno.sh test/test_viaje_token.sh \
-            test/test_viaje_dupe_fin.sh
+            test/test_viaje_dupe_fin.sh test/protocolo_cabina.sh test/contrato_claves.sh
 
 
   # El contrato con la app del movil, comprobado SIN placa: se compilan
@@ -124,11 +124,17 @@ jobs:
       - name: Contrato con la app (endpoints, puertos y campos)
         run: bash test/contrato_app.sh
 
-  # mini_proto.h se mantiene sincronizado A MANO entre este repo y 35cabina
+  # mini_proto.h se mantiene sincronizado A MANO entre este repo y cabina5
   # (protocolo UDP compartido, ver la cabecera del fichero). Sin esto, editar
   # solo una copia no falla hasta que los dos aparatos se rechazan los
   # paquetes en produccion, semanas despues. Detectado auditando el
   # 07-sep-2026.
+  #
+  # LA 3,5" SALE DEL CONTRATO (09-nov-2026, pedido del dueño: "olvida la
+  # 35cabina para siempre, ya no la usare"). Se quita del CI y de la lista de
+  # pares: era el motivo de que cada cambio del ciclo de viaje hubiera que
+  # portarlo alli. Su repo queda intacto en GitHub, pero la P4 ya no lo
+  # arrastra.
   mini_proto_sync:
     runs-on: ubuntu-latest
     steps:
@@ -136,12 +142,6 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: p4
-
-      - name: Checkout 35cabina
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: Ehuntabi/35cabina
-          path: 35cabina
 
       # La 5" habla el mismo protocolo y hasta el 13-oct-2026 no la miraba
       # ningun job de contrato.
@@ -151,10 +151,8 @@ jobs:
           repository: Ehuntabi/cabina5
           path: cabina5
 
-      - name: Comparar mini_proto.h entre los dos proyectos
-        run: |
-          diff p4/main/net/mini_proto.h 35cabina/main/net/mini_proto.h
-          diff p4/main/net/mini_proto.h cabina5/main/net/mini_proto.h
+      - name: Comparar mini_proto.h con la 5"
+        run: diff p4/main/net/mini_proto.h cabina5/main/net/mini_proto.h
 
   # El limite de cuerpo del apunte tambien se mantiene sincronizado A MANO
   # (CUERPO_MAX en el satelite tiene que caber siempre en VIAJE_BODY_MAX de
@@ -170,12 +168,6 @@ jobs:
         with:
           path: p4
 
-      - name: Checkout 35cabina
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: Ehuntabi/35cabina
-          path: 35cabina
-
       # La 5" habla el mismo protocolo y hasta el 13-oct-2026 no la miraba
       # ningun job de contrato.
       - name: Checkout cabina5
@@ -186,14 +178,9 @@ jobs:
 
       - name: Comprobar que CUERPO_MAX (satelite) cabe en VIAJE_BODY_MAX (P4)
         run: |
-          cuerpo_max=$(grep -oP '#define\s+CUERPO_MAX\s+\K[0-9]+' 35cabina/main/net/viaje_cola.h)
-          cuerpo_max5=$(grep -oP '#define\s+CUERPO_MAX\s+\K[0-9]+' cabina5/main/net/viaje_cola.h)
-          if [ "$cuerpo_max" != "$cuerpo_max5" ]; then
-            echo "CUERPO_MAX distinto entre las dos cabinas ($cuerpo_max vs $cuerpo_max5)"
-            exit 1
-          fi
+          cuerpo_max=$(grep -oP '#define\s+CUERPO_MAX\s+\K[0-9]+' cabina5/main/net/viaje_cola.h)
           body_max=$(grep -oP '#define\s+VIAJE_BODY_MAX\s+\K[0-9]+' p4/main/portal/config_server_viaje.c)
-          echo "CUERPO_MAX (35cabina) = $cuerpo_max"
+          echo "CUERPO_MAX (cabina5) = $cuerpo_max"
           echo "VIAJE_BODY_MAX (p4) = $body_max"
           if [ -z "$cuerpo_max" ] || [ -z "$body_max" ]; then
             echo "No se pudo leer alguna de las dos constantes"; exit 1
@@ -214,12 +201,6 @@ jobs:
         with:
           path: p4
 
-      - name: Checkout 35cabina
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: Ehuntabi/35cabina
-          path: 35cabina
-
       # La 5" habla el mismo protocolo y hasta el 13-oct-2026 no la miraba
       # ningun job de contrato.
       - name: Checkout cabina5
@@ -229,9 +210,6 @@ jobs:
           path: cabina5
 
       - name: Comprobar que la cabina y la P4 hablan el mismo idioma
-        # Se llama DOS veces, una por cabina: el script compara p4 contra
-        # UNA cabina, y asi no hay que reescribirlo (auditoria del 13-oct-2026:
-        # la 5" no estaba en ningun job de contrato).
-        run: |
-          bash p4/test/protocolo_cabina.sh p4 35cabina
-          bash p4/test/protocolo_cabina.sh p4 cabina5
+        # Solo la 5": la 3,5" salio del contrato el 09-nov-2026 (el dueño no la
+        # volvera a usar). El script compara p4 contra UNA cabina.
+        run: bash p4/test/protocolo_cabina.sh p4 cabina5

@@ -115,9 +115,10 @@ volver a investigarlos:
   `espressif/idf:v5.5.5`, target `esp32p4`). Solo pilla errores de
   COMPILACION, no sustituye probar en la placa.
 - Job `mini_proto_sync` (07-sep-2026): compara byte a byte
-  `main/net/mini_proto.h` contra la copia de `Ehuntabi/35cabina` (protocolo
-  UDP compartido) y falla si difieren. 35cabina tiene el mismo job en su
-  propio repo.
+  `main/net/mini_proto.h` contra la copia de `Ehuntabi/cabina5` (protocolo UDP
+  compartido) y falla si difieren. La 3,5" (`35cabina`) se retiró del CI el
+  09-nov-2026: el dueño no la usará nunca más, así que el único satélite es la
+  5" y no hay que portar los cambios a ningún otro sitio.
 
 ## Versionado / releases
 - La version que se ve en Ajustes -> Acerca de sale SOLA de `git describe`
@@ -234,8 +235,10 @@ absoluta. Lo que decide de verdad es el hook, que mira lo que SE VA A COMMITEAR.
 - components/config_storage/: persistencia general (Wi-Fi, screensaver, etc.)
 
 ## Pendientes activos
-1. **Ninguno del satélite 3.5"** — el cuaderno de viaje está cerrado y en uso
-   (`~/joint/35cabina`). Su versión, también con `git describe` en ese repo.
+1. **La 3,5" está RETIRADA** (09-nov-2026, decisión del dueño: "olvídala para
+   siempre"). Su repo `~/joint/35cabina` queda congelado como histórico: no se
+   sincroniza con la P4, no está en el CI y no hay que portarle nada. El único
+   satélite en uso es la 5" (`~/joint/cabina5`).
 
    Al día 24-ago-2026: los apuntes sueltos ya se envían y se suman en el
    `resumen.txt`, la energía del viaje la abre y la cierra el propio viaje, y

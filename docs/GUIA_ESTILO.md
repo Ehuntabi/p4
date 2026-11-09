@@ -181,9 +181,14 @@ más abajo. La auditoría lo comprueba (regla 3 de la sección 12).
 
 - **Reglas automáticas**: `test/auditar.sh` sección 12 (fuentes del SDK
   prohibidas, literales de color fuera de la paleta, escala de medidas y
-  espaciado de rótulos por token) y sección 14 (qué clave lleva cada descarga:
-  los `.csv` y el `.tar` de un viaje aceptan la del portal **o** la de
-  administración; `config.tar` y `/ota` solo la de administración).
+  espaciado de rótulos por token) y sección 14 (qué clave lleva cada endpoint,
+  comprobado **por función**: las descargas de datos —los `.csv`, el HTML de
+  datos y los ocho `.tar` de frigo, batería, solar, histórico, viaje, capturas,
+  vigilancia y logs— aceptan la del portal **o** la de administración;
+  `config.tar`, `/ota`, `/api/pantalla/subir`, `/keys` y `/save` solo la de
+  administración, y `/api/state`, `/api/pantalla/info` y `/data/viajes` solo la
+  del portal). La misma matriz se comprueba **en la placa** con
+  `test/contrato_claves.sh` (no corre en CI: necesita la P4).
   Cada regla se prueba **al revés** antes de darla por buena.
 - **Verificación visual**: `/captura?n=<i>` navega a la pantalla *i* y devuelve
   un BMP (0-23; índice en `/capturas`). Toda migración se compara antes/después

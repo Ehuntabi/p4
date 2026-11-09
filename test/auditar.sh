@@ -387,15 +387,16 @@ if [ -f "$H" ]; then
     fi
 fi
 
-echo "=== 9. mini_proto.h igual en los dos repos (si esta al lado) ==="
+echo "=== 9. mini_proto.h igual que la 5\" (si esta al lado) ==="
 # El 2-oct-2026 el CI de la cabina fallo porque se publico la cabina 70 s antes
-# que el cambio del P4: el protocolo se sincroniza A MANO.
-if [ -f ../35cabina/main/net/mini_proto.h ]; then
-    diff -q main/net/mini_proto.h ../35cabina/main/net/mini_proto.h >/dev/null 2>&1 \
-        && ok "mini_proto.h identico en p4 y 35cabina" \
-        || mal "mini_proto.h DISTINTO entre los dos repos (sincronizar a mano)"
+# que el cambio del P4: el protocolo se sincroniza A MANO. La 3,5" ya no es par
+# (09-nov-2026): el unico satelite es la 5".
+if [ -f ../cabina5/main/net/mini_proto.h ]; then
+    diff -q main/net/mini_proto.h ../cabina5/main/net/mini_proto.h >/dev/null 2>&1 \
+        && ok "mini_proto.h identico en p4 y cabina5" \
+        || mal "mini_proto.h DISTINTO entre la P4 y la 5\" (sincronizar a mano)"
 else
-    echo "  (sin el repo de la cabina al lado: se omite)"
+    echo "  (sin el repo de la cabina5 al lado: se omite)"
 fi
 
 echo "=== 10. dependencies.lock sin rutas de esta maquina ==="
@@ -705,31 +706,176 @@ else
     mal "los 507 de NVS no se distinguen: la pantalla diria que queda sitio cuando lo que falla es la NVS"
 fi
 
-echo "=== 14. Descargas: la clave que manda la app (portal O administracion) ==="
+echo "=== 14. Claves: descargas con la del portal, firmware con la de admin ==="
 # 9-nov-2026: el dueño abrio "Logs bateria" en la app y salio "El P4 no acepta la
-# clave (responde 401)". La clave era buena: `fetchCsv` mandaba la de
-# ADMINISTRACION a /data/*.csv, que solo aceptaba la del PORTAL (comprobado con
-# curl: p4:200, portal:401). Las dos claves son del dueño y estos handlers ya
-# estaban abiertos a la del portal, asi que las descargas de LECTURA aceptan las
-# dos -- y esta regla impide que una vuelva a exigir solo una. Lo que ESCRIBE
-# firmware y config.tar (lleva las claves AES) siguen exigiendo la de admin.
-CSV=main/portal/charts_svg.c
-if [ "$(grep -c 'REQUIRE_AUTH_PORTAL_O_ADMIN(req);' "$CSV")" -eq 6 ] &&
-   [ "$(grep -c '    REQUIRE_AUTH(req);' "$CSV")" -eq 0 ]; then
-    ok "los .csv (y el HTML de datos) aceptan la clave del portal o la de admin"
-else
-    mal "charts_svg.c volvio a exigir UNA sola clave para los .csv: la app manda la de admin en las descargas (401 en Logs bateria)"
+# clave (responde 401)" con la clave buena: `fetchCsv` mandaba la de
+# ADMINISTRACION a /data/*.csv, que solo aceptaba la del PORTAL. Se arreglo en
+# los dos lados y, de paso, al reves: la app mandaba la de admin en TODAS las
+# descargas .tar aunque no hiciera falta.
+#
+# REGLA: las descargas de DATOS (los .csv/HTML de datos y los 8 .tar de frigo,
+# bateria, solar, historico, viaje, capturas, vigilancia y logs) aceptan
+# cualquiera de las dos claves, y la app manda la del portal. Lo que ESCRIBE
+# firmware o entrega secretos (/ota, /api/pantalla/subir, /keys, /save y
+# config.tar -- el backup que hay en la tarjeta SI puede llevar las AES, ver
+# handle_data_config_tar) exige la de administracion.
+#
+# LA COMPROBACION ES POR FUNCION Y CON EL CODIGO, NO CON GREP: la version
+# anterior contaba macros y se podia cumplir en falso con una linea comentada o
+# redefiniendo la macro a nada. Esto quita comentarios y cadenas, saca el cuerpo
+# de CADA handler por llaves y mira que llamada hace de verdad. Lo cazo la
+# revision adversarial del 09-nov-2026.
+if ! REV_AUTH=$(python3 - <<'PYAUTH'
+import re
+
+def quita_if0(t):
+    """Fuera los bloques #if 0 ... #endif: lo que no se compila no protege."""
+    out, i, n, prof = [], 0, len(t), 0
+    while i < n:
+        if t[i] == '#' and (i == 0 or t[i-1] == '\n'):
+            m = re.match(r'#[ \t]*(if|ifdef|ifndef|else|elif|endif)\b[^\n]*', t[i:])
+            if m:
+                tok, linea = m.group(1), m.group(0)
+                if prof == 0 and tok == 'if' and re.match(r'#\s*if\s+0\s*$', linea.rstrip()):
+                    prof = 1
+                    i += m.end()
+                    continue
+                if prof > 0:
+                    if tok in ('if', 'ifdef', 'ifndef'):
+                        prof += 1
+                    elif tok == 'endif':
+                        prof -= 1
+                    i += m.end()
+                    continue
+                out.append(linea)
+                i += m.end()
+                continue
+        if prof == 0:
+            out.append(t[i])
+        i += 1
+    return ''.join(out)
+
+def limpia(t):
+    t = quita_if0(t)
+    out, i, n = [], 0, len(t)
+    while i < n:
+        c = t[i]
+        if c == '/' and i + 1 < n and t[i+1] == '/':
+            while i < n and t[i] != '\n': i += 1
+        elif c == '/' and i + 1 < n and t[i+1] == '*':
+            i += 2
+            while i + 1 < n and not (t[i] == '*' and t[i+1] == '/'): i += 1
+            i += 2
+        elif c in '"\'':
+            q = c; i += 1
+            while i < n and t[i] != q:
+                i += 2 if t[i] == '\\' else 1
+            i += 1
+        else:
+            out.append(c); i += 1
+    return ''.join(out)
+
+def cuerpos(txt):
+    res, fuera = {}, limpia(txt)
+    for m in re.finditer(r'^[A-Za-z_][\w \t\*]*?\b([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{', fuera, re.M):
+        nombre = m.group(1)
+        i, prof = m.end(), 1
+        while i < len(fuera) and prof:
+            if fuera[i] == '{': prof += 1
+            elif fuera[i] == '}': prof -= 1
+            i += 1
+        res[nombre] = fuera[m.end():i-1]
+    return res
+
+tabla = [
+    ('main/portal/charts_svg.c',
+     ['handle_data_frigo', 'handle_data_frigo_csv', 'handle_data_ne185v_csv',
+      'handle_data_bateria', 'handle_data_bateria_csv', 'handle_data_index'],
+     'REQUIRE_AUTH_PORTAL_O_ADMIN(req)', 'REQUIRE_AUTH(req)'),
+    ('main/portal/data_export_tar.c',
+     ['handle_data_frigo_tar', 'handle_data_bateria_tar', 'handle_data_solar_tar',
+      'handle_data_historico_tar', 'handle_data_viaje_tar', 'handle_data_capturas_tar',
+      'handle_data_vigilancia_tar', 'handle_data_logs_tar'],
+     'REQUIRE_AUTH_PORTAL_O_ADMIN(req)', 'REQUIRE_AUTH(req)'),
+    ('main/portal/data_export_tar.c', ['handle_data_config_tar'],
+     'REQUIRE_AUTH_STRICT(req)', None),
+    ('main/portal/config_server.c', ['handle_ota_post'], 'REQUIRE_AUTH_STRICT(req)', None),
+    ('main/portal/ota_pantalla.c', ['ota_pantalla_subir'], 'check_basic_auth_strict', None),
+    ('main/portal/config_server.c', ['handle_keys'], 'REQUIRE_AUTH_STRICT(req)', None),
+    ('main/portal/config_server.c', ['post_save'], 'REQUIRE_AUTH_STRICT(req)', None),
+]
+
+fallos = []
+for fichero, handlers, obliga, prohibido in tabla:
+    cs = cuerpos(open(fichero, encoding='utf-8', errors='ignore').read())
+    for h in handlers:
+        c = cs.get(h)
+        if c is None:
+            fallos.append('%s: no encuentro el handler %s' % (fichero, h))
+        elif obliga not in c:
+            fallos.append('%s: %s no llama a %s' % (fichero, h, obliga))
+        elif prohibido and prohibido in c:
+            fallos.append('%s: %s tiene tambien %s' % (fichero, h, prohibido))
+        elif re.search(r'\bif\s*\(\s*0\s*\)', c):
+            fallos.append('%s: %s mete la comprobacion en un if (0)' % (fichero, h))
+
+# Las macros tienen que LLAMAR y CORTAR: una macro que llama pero no devuelve
+# deja pasar la peticion igual (lo demostro la revision del 09-nov-2026).
+# A4: la macro no se puede redefinir ni deshacer desde un .c
+import glob
+for f in glob.glob('main/**/*.c', recursive=True) + glob.glob('main/**/*.h', recursive=True):
+    if f.endswith('config_server_internal.h'):
+        continue
+    t = open(f, encoding='utf-8', errors='ignore').read()
+    if re.search(r'#\s*(undef|define)\s+REQUIRE_AUTH', t):
+        fallos.append('%s: redefine/deshace REQUIRE_AUTH (la puerta se apaga desde ahi)' % f)
+
+h = open('main/portal/config_server_internal.h', encoding='utf-8').read()
+for macro, llama in (('REQUIRE_AUTH_PORTAL_O_ADMIN', 'check_basic_auth_portal_o_admin(req)'),
+                     ('REQUIRE_AUTH_STRICT', 'check_basic_auth_strict(req)')):
+    m = re.search(r'#define\s+' + macro + r'\(req\)(.*?)(?=\n#|\Z)', limpia(h), re.S)
+    if not m:
+        fallos.append('config_server_internal.h: no existe la macro ' + macro)
+    elif llama not in m.group(1):
+        fallos.append('config_server_internal.h: %s no llama a %s (macro vacia?)' % (macro, llama))
+    elif 'return ESP_OK' not in m.group(1):
+        fallos.append('config_server_internal.h: %s llama pero NO corta (falta el return ESP_OK)' % macro)
+
+# Que la puerta de verdad compare: ni un return ESP_OK a la primera (A5), ni un
+# estricto que compare contra la cabecera del portal (V4).
+a = cuerpos(open('main/portal/config_server_auth.c', encoding='utf-8').read())
+ca = a.get('auth_comprueba', '')
+if not re.search(r'\bauth_equal_ct\s*\(', ca):
+    fallos.append('config_server_auth.c: auth_comprueba no compara cabeceras')
+if re.match(r'\s*return\s+ESP_OK\s*;', ca):
+    fallos.append('config_server_auth.c: auth_comprueba devuelve ESP_OK antes de comprobar nada')
+cs_ = a.get('check_basic_auth_strict', '')
+if 's_admin_header' not in cs_:
+    fallos.append('config_server_auth.c: check_basic_auth_strict no usa la cabecera de administracion')
+if 's_admin_header' not in a.get('check_basic_auth_strict_aviso', '') + ca:
+    fallos.append('config_server_auth.c: el nivel estricto no menciona s_admin_header')
+for fn in ('check_basic_auth_portal_o_admin', 'check_basic_auth_strict',
+           'check_basic_auth_strict_aviso', 'check_basic_auth'):
+    c = a.get(fn)
+    if c is None:
+        fallos.append('config_server_auth.c: no encuentro %s' % fn)
+    elif 'auth_comprueba' not in c and 'check_basic_auth' not in c:
+        fallos.append('config_server_auth.c: %s no comprueba nada' % fn)
+c = a.get('check_basic_auth_portal_o_admin', '')
+if 'PORTAL_REQUIRE_BASIC_AUTH' in c and 'check_basic_auth_strict' not in c:
+    fallos.append('config_server_auth.c: con PORTAL_REQUIRE_BASIC_AUTH=0 las descargas quedarian abiertas')
+
+print('; '.join(fallos))
+PYAUTH
+); then
+    mal "no se pudo ejecutar el comprobador de claves (falta python3 o algun fichero): NO se da por bueno"
+    REV_AUTH="__error__"
+    fallos=$((fallos+1))
 fi
-if awk '/^esp_err_t handle_data_viaje_tar\(/{d=1} d && /REQUIRE_AUTH_PORTAL_O_ADMIN\(req\);/{ok=1} d && /^}/{d=0; exit !ok}' main/portal/data_export_tar.c; then
-    ok "el .tar de un viaje acepta la clave del portal o la de admin"
-else
-    mal "handle_data_viaje_tar exige UNA sola clave: la app y el enlace del portal usan claves distintas"
-fi
-if grep -q "REQUIRE_AUTH_STRICT(req);" main/portal/data_export_tar.c &&
-   grep -q "REQUIRE_AUTH_STRICT(req)" main/portal/ota_update.c; then
-    ok "config.tar y /ota siguen exigiendo la clave de administracion"
-else
-    mal "config.tar/ota dejaron de exigir la clave de administracion (llevan las claves AES y el firmware)"
+if [ "$REV_AUTH" = "" ]; then
+    ok "cada handler pide la clave que le toca (9 .tar, 6 .csv, /ota, /keys, /save, /api/pantalla/subir)"
+elif [ "$REV_AUTH" != "__error__" ]; then
+    mal "contrato de claves ROTO -> $REV_AUTH"
 fi
 
 echo

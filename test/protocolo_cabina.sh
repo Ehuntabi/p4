@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# protocolo_cabina.sh — Comprueba, SIN PLACA, que la 35cabina y la P4 siguen
+# protocolo_cabina.sh — Comprueba, SIN PLACA, que la cabina de 5" y la P4 siguen
 # hablando el mismo idioma. Es el guardián del contrato entre las dos placas,
 # hermano de contrato_app.sh (que mira el de la app).
 #
@@ -18,19 +18,20 @@
 #      "descartar") la conoce la P4.
 #   3. Cada campo del JSON que manda la cabina aparece en el portal de la P4.
 #
-# Uso:  bash test/protocolo_cabina.sh [ruta_victron] [ruta_35cabina]
-#       (por defecto las busca como hermanas, que es como las deja el CI)
+# Uso:  bash test/protocolo_cabina.sh [ruta_victron] [ruta_cabina]
+#       (por defecto las busca como hermanas, que es como las deja el CI; el
+#        satelite es la 5": la 3,5" salio del contrato el 09-nov-2026)
 set -uo pipefail
 
 VICT="${1:-$(cd "$(dirname "$0")/.." && pwd)}"
-CAB="${2:-$(cd "$(dirname "$0")/../../35cabina" 2>/dev/null && pwd || echo "")}"
+CAB="${2:-$(cd "$(dirname "$0")/../../cabina5" 2>/dev/null && pwd || echo "")}"
 
 fallos=0
 ok()   { printf '  [ok] %s\n' "$*"; }
 mal()  { printf '  [!!] %s\n' "$*"; fallos=$((fallos + 1)); }
 
 [ -d "$VICT" ] || { echo "ERROR: no encuentro el repo p4 en $VICT"; exit 2; }
-[ -n "$CAB" ] && [ -d "$CAB" ] || { echo "ERROR: no encuentro el repo 35cabina (pasalo como 2o argumento)"; exit 2; }
+[ -n "$CAB" ] && [ -d "$CAB" ] || { echo "ERROR: no encuentro el repo de la cabina de 5 pulgadas (pasalo como 2o argumento)"; exit 2; }
 
 echo "== 1. El protocolo UDP es el mismo en las dos placas =="
 if diff -q "$VICT/main/net/mini_proto.h" "$CAB/main/net/mini_proto.h" >/dev/null 2>&1; then

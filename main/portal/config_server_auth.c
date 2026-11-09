@@ -485,7 +485,15 @@ esp_err_t config_server_set_web_credentials(const char *user, const char *pass)
  *
  * Con PORTAL_REQUIRE_BASIC_AUTH a 1 se exige tambien en el nivel abierto: la
  * app de Android necesita usuario y clave (se ponen una vez en sus ajustes; se
- * leen en Ajustes -> Wi-Fi de la pantalla). A 0 vuelve a quedar abierto. */
+ * leen en Ajustes -> Wi-Fi de la pantalla).
+ *
+ * A 0 el nivel abierto no pide nada, PERO las rutas que usan
+ * REQUIRE_AUTH_PORTAL_O_ADMIN (descargas de datos y /api/viaje) pasan a exigir
+ * la clave de administracion: el flag deja comodo el portal, no la tarjeta
+ * (revision del 09-nov-2026). Consecuencia practica: en el banco, con el flag a
+ * 0 y clave de administracion puesta, las cabinas no podrian mandar apuntes;
+ * con el flag a 0 y SIN clave de administracion, esas rutas comparan contra la
+ * cabecera del portal (el firmware cae a ella cuando no hay clave de admin). */
 #define PORTAL_REQUIRE_BASIC_AUTH 1
 
 /* Compara en tiempo CONSTANTE (no strcmp, que sale en cuanto encuentra la
@@ -884,8 +892,13 @@ esp_err_t check_basic_auth_strict_aviso(httpd_req_t *req, const char *aviso)
  * su aviso en el log). El `borrar` sigue exigiendo la de administracion despues. */
 esp_err_t check_basic_auth_portal_o_admin(httpd_req_t *req)
 {
-    /* Sin auth en este portal (PORTAL_REQUIRE_BASIC_AUTH=0), como el resto. */
-    if (!PORTAL_REQUIRE_BASIC_AUTH) return check_basic_auth(req);
+    /* Con el portal SIN auth (PORTAL_REQUIRE_BASIC_AUTH=0) esto NO se abre: se
+     * pide la de administracion. El flag existe para dejar el portal comodo en
+     * el banco, pero estas rutas entregan capturas, la camara y los logs; si se
+     * abrieran con el flag a 0 quedarian a la vista de cualquiera que entre al
+     * Wi-Fi (antes de la v4.98 esos .tar seguian pidiendo la de admin). Lo cazo
+     * la revision adversarial del 09-nov-2026. */
+    if (!PORTAL_REQUIRE_BASIC_AUTH) return check_basic_auth_strict(req);
     /* Y por el MISMO camino que las otras dos puertas: el chequeo de origen
      * (CSRF), el freno por IP, el log del 401 y el "no drenar". Escribir aqui
      * una comparacion de cabeceras aparte se saltaba todo eso -- lo cazo la
@@ -893,6 +906,19 @@ esp_err_t check_basic_auth_portal_o_admin(httpd_req_t *req)
      * mensaje de siempre. */
     return auth_comprueba(req, s_auth_header, s_admin_header,
                           NULL, /*es_admin=*/false, /*prohibido=*/false);
+}
+
+/* El canal de las CABINAS (los apuntes del viaje, POST /api/viaje). Admite las
+ * dos claves como la puerta de las descargas, pero con el portal SIN auth
+ * (PORTAL_REQUIRE_BASIC_AUTH=0) se queda ABIERTO, como estaba: es el canal del
+ * satelite y no entrega nada de la tarjeta. Sin esto, en un build con el flag a
+ * 0 las cabinas se comieran un 401 en cada apunte (regresion que cazo la
+ * revision adversarial del 09-nov-2026, dormida en produccion porque el flag
+ * esta a 1). */
+esp_err_t check_basic_auth_cabinas(httpd_req_t *req)
+{
+    if (!PORTAL_REQUIRE_BASIC_AUTH) return check_basic_auth(req);
+    return check_basic_auth_portal_o_admin(req);
 }
 
 /* Nivel abierto: basta con estar dentro del Wi-Fi (ver el bloque de arriba).

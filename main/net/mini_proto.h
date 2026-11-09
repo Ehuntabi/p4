@@ -1,10 +1,13 @@
-/* mini_proto.h - Protocolo entre el 7" (P4+C6) y el satelite 3,5" de cabina.
+/* mini_proto.h - Protocolo entre el 7" (P4+C6) y el satelite de cabina de 5".
  *
- * MANTENER SINCRONIZADO entre TRES proyectos, byte a byte (auditoria del
- * 27-oct-2026, X3: hay TRES copias y el CI las compara):
+ * MANTENER SINCRONIZADO entre los DOS proyectos en uso, byte a byte (auditoria
+ * del 27-oct-2026, X3; el CI de la P4 compara p4 contra cabina5):
  *   - 7"       : ~/joint/p4/main/net/mini_proto.h
  *   - 5"       : ~/joint/cabina5/main/net/mini_proto.h
- *   - 35cabina : ~/joint/35cabina/main/net/mini_proto.h
+ *
+ * La 3,5" (35cabina) se retiro el 09-nov-2026 ("olvidala para siempre", dijo el
+ * dueño): su copia queda congelada en su repo y ya NO se sincroniza ni se
+ * compara. No hay que portarle nada.
  *
  * El satelite viejo, el mini C6 1.47" (victron_mini, retirado el 17-sep-2026)
  * esta DESCARTADO desde el 20-ago-2026: la 35cabina lo sustituye. Ya NO
@@ -146,8 +149,8 @@ _Static_assert(offsetof(mini_latido_t, crc32) == 8, "mini_latido_t: crc32 en 8")
  * una cabina vieja ignora estos bytes y sigue funcionando igual.
  *
  * El precio, dicho claro: ESTE ERA EL ULTIMO RELLENO. El siguiente dato que
- * haya que mandar ya obliga a subir MINI_PROTO_VERSION y a grabar las TRES
- * placas a la vez. Los _Static_assert de abajo fijan los offsets para que un
+ * haya que mandar ya obliga a subir MINI_PROTO_VERSION y a grabar la P4 y la 5"
+ * a la vez. Los _Static_assert de abajo fijan los offsets para que un
  * campo nuevo no los mueva en silencio.
  *
  * COMO SE RECOMPONEN (asi lo hace data_model.c en las cabinas):

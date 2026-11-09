@@ -5067,7 +5067,7 @@ esp_err_t handle_api_viaje(httpd_req_t *req)
      * desde la app no podria funcionar NUNCA (401 en la primera puerta). Una
      * peticion solo lleva una cabecera Basic, asi que aqui se admite cualquiera
      * de las dos y el `borrar` sigue exigiendo la de administracion. */
-    if (check_basic_auth_portal_o_admin(req) != ESP_OK) return ESP_OK;
+    if (check_basic_auth_cabinas(req) != ESP_OK) return ESP_OK;
 
     /* 1 KB (VIAJE_BODY_MAX, definida arriba). El comentario de antes decia
      * "unos 90 bytes, cuatro numeros": eso era la fase 1. Hoy el cuerpo mas
