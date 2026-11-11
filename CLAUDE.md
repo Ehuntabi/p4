@@ -39,6 +39,34 @@ panel JD9165, pero no es parte del componente) vive en
 `main/esp_bsp.c:33-53` y se autoprotege con `_Static_assert` contra un
 cambio de layout privado de IDF.
 
+## El "flash" de la pantalla en el banco es la LUZ, no los datos (10-nov-2026)
+
+Entre el 9 y el 10-nov-2026 el usuario vio en el banco un destello claro en la
+pantalla, "cada rato", que **en la autocaravana no habia visto nunca**. Se midio
+en vez de suponer, y las tres medidas dicen lo mismo:
+
+- **Underruns del DSI: 0.** Ni en reposo ni bajando 6 MB por Wi-Fi con la
+  pantalla encendida (`GET /api/perf`, campo `dsi.underruns`). Si fueran
+  underruns, la imagen **desapareceria** durante el destello; el usuario
+  confirmo que **la imagen se sigue viendo**, solo que todo mas claro.
+- **Duty de la retroiluminacion: sin tocar.** En 9 minutos solo cambio 3 veces,
+  y las tres eran las esperadas (80 % del arranque, 50 % de Ajustes y la
+  atenuacion del salvapantallas al 20 %). Un destello que no mueve el duty no lo
+  manda el software (`GET /api/perf`, campo `luz`).
+- **Sin reinicios espontaneos.** El unico `poweron` del registro fue el usuario
+  desenchufando la pantalla a proposito, no una caida de tension.
+
+Conclusion: el destello es **electrico**, del camino de la luz del panel (LED y
+su driver, o el contacto del flex). No es un fallo del firmware y no se arregla
+con codigo de UI. Lo que si queda puesto es la medida: `perf.c` cuenta los
+underruns a mano (leyendo el bit raw, con la interrupcion del driver apagada
+porque su ISR lo borra en microsegundos) y vigila el duty del LEDC, asi que
+cualquier cambio de brillo o cualquier hambruna del DSI queda fechada en el log.
+
+Ojo: para separar un reinicio provocado por el cable de uno de verdad, mirar
+`reinicio` en `/api/perf` y el `MOTIVO ULTIMO REINICIO` del log; grabar por USB
+deja motivo **usb** y desenchufar la pantalla deja **poweron**.
+
 ## Límite conocido: la pantalla parpadea mientras se graba flash (OTA)
 
 No es un fallo del código y **no tiene arreglo por software en esta placa**: el

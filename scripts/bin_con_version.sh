@@ -91,9 +91,15 @@ version_mayor() {
     }'
 }
 
+# Arbol sin .git (la copia de scripts/build_p4.sh): git no da version, pero el
+# binario SI la lleva dentro (CMake la saco de version.txt). Se usa esa, que es
+# la verdad del fichero, en vez de quedarse sin copia con nombre.
+if ! es_version "$V_ARBOL" && es_version "$V_BIN"; then
+    V_ARBOL="$V_BIN"
+fi
 if ! es_version "$V_ARBOL"; then
-    echo "AVISO: el arbol no da una version utilizable ('$VER_DESCRITA')." >&2
-    echo "       No dejo copia con version (el .bin de siempre esta donde toca)." >&2
+    echo "AVISO: el arbol no da una version utilizable ('$VER_DESCRITA') y el" >&2
+    echo "       binario tampoco ('$V_BIN'): no dejo copia con version." >&2
     exit 0
 fi
 

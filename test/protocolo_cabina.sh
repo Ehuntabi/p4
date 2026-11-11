@@ -18,8 +18,9 @@
 #      "descartar") la conoce la P4.
 #   3. Cada campo del JSON que manda la cabina aparece en el portal de la P4.
 #
-# Uso:  bash test/protocolo_cabina.sh [ruta_victron] [ruta_cabina]
-#       (por defecto las busca como hermanas, que es como las deja el CI; el
+# Uso:  bash test/protocolo_cabina.sh [ruta_p4] [ruta_cabina]
+#       (ruta_p4 = el repo de la P4, que es donde vive este script; por defecto
+#        se deduce de su propia ubicacion. Se busca como hermanas, como en el CI; el
 #        satelite es la 5": la 3,5" salio del contrato el 09-nov-2026)
 set -uo pipefail
 
