@@ -108,7 +108,7 @@ fi
 # leer, con la del arbol. Asi el nombre nunca miente sobre el contenido.
 V_NOMBRE="$V_ARBOL"
 DESAJUSTE=0
-if [ -n "$V_BIN" ] && [ "$V_BIN" != "$V_ARBOL" ]; then
+if es_version "$V_BIN" && [ "$V_BIN" != "$V_ARBOL" ]; then
     DESAJUSTE=1
     V_NOMBRE="$V_BIN"
 fi

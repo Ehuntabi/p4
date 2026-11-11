@@ -93,8 +93,9 @@ arregla con el paso 4.
   parte es nueva). Compila y, si el fichero no está o no parece una imagen, el
   módulo **no hace nada** y lo dice por el log: el modo de fallo es «no
   actualiza», nunca «actualiza a medias».
-- El árbol ya está preparado en `~/joint/.scratch/c6_carrier` (con los
-  componentes descargados), así que `./aplicar.sh flash` tarda poco.
+- El árbol de trabajo lo crea `./aplicar.sh` en `~/joint/.scratch/c6_carrier`
+  (la primera vez descarga los componentes y tarda; las siguientes, poco).
+  Si se borra `~/joint/.scratch`, la siguiente pasada lo vuelve a crear.
 
 ## Cómo funciona por dentro
 

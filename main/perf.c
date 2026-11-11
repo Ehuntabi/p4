@@ -136,6 +136,17 @@ static void perf_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t 
     if (dt > s_flush_max_us) s_flush_max_us = dt;
 }
 
+/* snprintf devuelve lo que HARIA falta, no lo escrito: sumarlo tal cual podia
+ * dejar w > n y que httpd_resp_send leyera fuera del buffer del llamante (lo
+ * canto el arbitraje del 11-nov-2026). Esto deja w siempre dentro. */
+static size_t perf_suma(char *out, size_t n, size_t w, int r)
+{
+    (void)out;
+    if (r < 0) return w;
+    if ((size_t)r >= n - w) return n - 1;
+    return w + (size_t)r;
+}
+
 void perf_envuelve_flush(void *disp_v)
 {
     lv_disp_t *disp = (lv_disp_t *)disp_v;
@@ -301,7 +312,7 @@ size_t perf_json(char *out, size_t n)
     size_t heap_minimo = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL);
 
     size_t w = 0;
-    w += (size_t)snprintf(out + w, (w < n) ? n - w : 0,
+    w = perf_suma(out, n, w, snprintf(out + w, (w < n) ? n - w : 0,
         "{\"ver\":\"%s\",\"uptime_s\":%lld,\"reinicio\":\"%s\","
         "\"heap\":{\"libre\":%u,\"mayor\":%u,\"minimo\":%u},"
         "\"sd\":{\"n\":%u,\"fallos\":%u,\"media_us\":%lld,\"max_us\":%lld},"
@@ -320,16 +331,17 @@ size_t perf_json(char *out, size_t n)
         (long long)(s_flush_n ? s_flush_suma_us / s_flush_n : 0), (long long)s_flush_max_us,
         (unsigned)s_dsi_underruns,
         (unsigned)((REG_READ(DSI_BRG_INT_ENA_REG) & DSI_BRG_UNDERRUN_INT_ENA) ? 1 : 0),
-        (unsigned)s_duty_visto, (unsigned)s_duty_cambios);
+        (unsigned)s_duty_visto, (unsigned)s_duty_cambios));
 
 
     for (uint32_t i = 0; i < n_orden && w + 64 < n; i++) {
-        w += (size_t)snprintf(out + w, n - w,
+        w = perf_suma(out, n, w, snprintf(out + w, n - w,
             "%s{\"n\":\"%s\",\"cpu\":%u,\"pila\":%u,\"nucleo\":%d}",
             i ? "," : "", orden[i].nombre, (unsigned)orden[i].cpu_pct,
-            (unsigned)orden[i].pila_libre, orden[i].nucleo);
+            (unsigned)orden[i].pila_libre, orden[i].nucleo));
     }
-    w += (size_t)snprintf(out + w, (w < n) ? n - w : 0, "]}");
+    if (n > 3 && w > n - 3) w = n - 3;      /* hueco para el cierre */
+    w = perf_suma(out, n, w, snprintf(out + w, (w < n) ? n - w : 0, "]}"));
     return w;
 }
 
@@ -395,6 +407,7 @@ void perf_start(void)
     esp_timer_start_periodic(t, 10 * 1000 * 1000);
 
     perf_dsi_quita_isr();
+    s_duty_visto = ledc_get_duty(LEDC_LOW_SPEED_MODE, BSP_LEDC_CHANNEL_NUM);
 
     static esp_timer_handle_t t_dsi;
     const esp_timer_create_args_t args_dsi = {
@@ -409,6 +422,5 @@ void perf_start(void)
 
     perf_muestra();   /* primera referencia para el primer % */
     perf_mira_dsi();
-    s_duty_visto = ledc_get_duty(LEDC_LOW_SPEED_MODE, BSP_LEDC_CHANNEL_NUM);
     ESP_LOGI(TAG, "medidas activas (CPU por tarea, heap, SD, LVGL, FIFO del DSI); /api/perf");
 }

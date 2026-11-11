@@ -216,4 +216,4 @@ else
 fi
 
 echo ""
-echo "Documentacion completa: ~/joint/AUTOCARAVANA-SETUP.md"
+echo "Documentacion completa: ~/joint/p4/AUTOCARAVANA-SETUP.md"
