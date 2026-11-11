@@ -7,8 +7,6 @@
  *   - heap interno: libre, bloque mas grande y minimo historico (fragmentacion)
  *   - coste del volcado a la SD (media y maximo del fopen..fclose del datalogger)
  *   - coste del volcado de LVGL por bloque (media y maximo del flush_cb)
- *   - underruns del puente DSI (el "flash" claro de la pantalla: ver la
- *     seccion 3 bis de perf.c)
  *   - tiempo en marcha, motivo del ultimo reinicio y version
  *
  * Los contadores de CPU se calculan por DIFERENCIA entre muestras: la primera

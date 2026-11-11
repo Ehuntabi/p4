@@ -630,7 +630,8 @@ v4.14 — la cámara atascada se recupera SOLA, por software (ya no hay que cort
 - Reglas nuevas en `test/auditar.sh` (sección 11): orden de la recuperación, pausa
   del bucle, reinicio con tope y no servir fotos corruptas. **Probadas al revés**:
   rompiendo cada cosa a propósito, la auditoría falla.
-- Trampas del banco, documentadas en `documentacion/CONTINUAR_AQUI.md`: abrir
+- Trampas del banco (estaban en el traspaso `CONTINUAR_AQUI.md`, retirado el
+  11-nov-2026): abrir
   `/dev/ttyACM0` **reinicia la placa** (un lector que se reconecta la deja
   arrancando en bucle: 341 arranques en 4 minutos), y el JPEG del portal **estira
   el color** respecto a la miniatura en crudo (R/G 335 vs 201 en la misma escena),
