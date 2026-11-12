@@ -255,25 +255,35 @@ size_t perf_json(char *out, size_t n)
  *
  * Unidades: ulRunTimeCounter va en microsegundos (se compila con
  * CONFIG_FREERTOS_RUN_TIME_STATS_USING_ESP_TIMER), igual que esp_timer. */
+/* Lee los contadores de ralenti y los guarda como referencia. Se llama al
+ * arrancar para que el PRIMER resumen ya tenga ventana (si no, salia cpu=-1%
+ * en la primera linea de cada arranque). */
+static configRUN_TIME_COUNTER_TYPE s_idle_prev[2];
+static int64_t s_idle_prev_us;
+
+static void perf_cpu_muestra_inicial(void)
+{
+    s_idle_prev[0] = ulTaskGetIdleRunTimeCounterForCore(0);
+    s_idle_prev[1] = ulTaskGetIdleRunTimeCounterForCore(1);
+    s_idle_prev_us = esp_timer_get_time();
+}
+
 void perf_log(void)
 {
-    static configRUN_TIME_COUNTER_TYPE idle_prev[2];
-    static int64_t t_prev;
-
     int64_t ahora = esp_timer_get_time();
     configRUN_TIME_COUNTER_TYPE i0 = ulTaskGetIdleRunTimeCounterForCore(0);
     configRUN_TIME_COUNTER_TYPE i1 = ulTaskGetIdleRunTimeCounterForCore(1);
     long long cpu = -1;
-    if (t_prev != 0 && ahora > t_prev) {
-        int64_t capacidad = 2 * (ahora - t_prev);      /* dos nucleos */
-        int64_t usado = capacidad - (int64_t)((i0 - idle_prev[0]) + (i1 - idle_prev[1]));
+    if (s_idle_prev_us != 0 && ahora > s_idle_prev_us) {
+        int64_t capacidad = 2 * (ahora - s_idle_prev_us);   /* dos nucleos */
+        int64_t usado = capacidad - (int64_t)((i0 - s_idle_prev[0]) + (i1 - s_idle_prev[1]));
         if (usado < 0) usado = 0;
         cpu = usado * 100 / capacidad;
         if (cpu > 100) cpu = 100;
     }
-    idle_prev[0] = i0;
-    idle_prev[1] = i1;
-    t_prev = ahora;
+    s_idle_prev[0] = i0;
+    s_idle_prev[1] = i1;
+    s_idle_prev_us = ahora;
 
     ESP_LOGI(TAG, "resumen: cpu=%lld%% | heap libre=%u | sd media=%lldms max=%lldms (n=%u) | "
              "lvgl media=%lldus max=%lldus (n=%u)",
@@ -313,6 +323,7 @@ void perf_start(void)
         return;
     }
     esp_timer_start_periodic(t, 10 * 1000 * 1000);
+    perf_cpu_muestra_inicial();   /* ventana valida para el primer resumen */
     perf_muestra();   /* primera referencia para el primer % */
     ESP_LOGI(TAG, "medidas activas (CPU por tarea, heap, SD, LVGL); /api/perf");
 }
