@@ -80,6 +80,11 @@ datalogger_sd_estado_t datalogger_sd_estado(void);
 /* Escrituras fallidas SEGUIDAS (0 si la ultima fue bien). */
 int datalogger_sd_fallos_seguidos(void);
 
+/* Espacio libre/total de la tarjeta en MB, cacheado por la tarea de vuelco (se
+ * refresca una vez por minuto). La UI lo lee de aqui en vez de llamar a
+ * f_getfree() desde la tarea de LVGL, que recorre la FAT entera. */
+void datalogger_sd_espacio(uint32_t *libre_mb, uint32_t *total_mb, bool *valido);
+
 /* Latido de watchdog para flush_task (mismo patron que
  * frigo_set_heartbeat_cb): este componente no puede incluir main/watchdog.h
  * directamente, asi que quien registra el callback (main.c) es quien conoce

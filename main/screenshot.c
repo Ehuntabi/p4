@@ -128,6 +128,14 @@ esp_err_t screenshot_take_bmp(uint8_t **out_buf, size_t *out_len)
  * crashea el CSI). Deja detalle del fallo en s_last_err. */
 static esp_err_t write_buf_to_sd(const char *path, const uint8_t *buf, size_t len)
 {
+    /* REGISTRARSE COMO LECTOR DE LA SD (13-nov-2026). Esta funcion escribe en
+     * trozos soltando el bus entre ellos, asi que el desmontaje seguro del
+     * datalogger (que solo cuenta a los lectores registrados) podia entrar en el
+     * hueco: el siguiente write iba contra un sistema de ficheros ya desmontado y
+     * dejaba un JPEG truncado que el carrusel enseñaba como bueno (el fallo del
+     * 2-oct otra vez). Ver sd_reader_abrir() en camera.c. */
+    sd_reader_abrir();
+
     /* Asegurar el directorio padre bajo el bus (I/O de metadatos). */
     char dir[96];
     const char *slash = strrchr(path, '/');
@@ -144,6 +152,7 @@ static esp_err_t write_buf_to_sd(const char *path, const uint8_t *buf, size_t le
     if (!camera_sd_bus_lock(2000)) {
         snprintf(s_last_err, sizeof(s_last_err), "bus lock (open)");
         ESP_LOGE(TAG, "Bus SD ocupado (camara), no abro %s", path);
+        sd_reader_cerrar();
         return ESP_FAIL;
     }
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -152,6 +161,7 @@ static esp_err_t write_buf_to_sd(const char *path, const uint8_t *buf, size_t le
     if (fd < 0) {
         snprintf(s_last_err, sizeof(s_last_err), "open errno=%d", open_errno);
         ESP_LOGE(TAG, "No se pudo abrir %s (errno=%d)", path, open_errno);
+        sd_reader_cerrar();
         return ESP_FAIL;
     }
 
@@ -199,9 +209,11 @@ static esp_err_t write_buf_to_sd(const char *path, const uint8_t *buf, size_t le
         } else {
             ESP_LOGW(TAG, "no pude borrar la captura a medias %s (bus ocupado)", path);
         }
+        sd_reader_cerrar();
         return ESP_FAIL;
     }
     ESP_LOGI(TAG, "Guardado: %s (%u bytes)", path, (unsigned)len);
+    sd_reader_cerrar();
     return ESP_OK;
 }
 

@@ -325,24 +325,22 @@ static void sd_trip_timer_cb(lv_timer_t *t)
         /* Todo bien: quitar el color de aviso y enseñar el espacio libre. */
         lv_obj_remove_local_style_prop(ui->lbl_about_sd, LV_STYLE_TEXT_COLOR, 0);
 
-        /* f_getfree escanea la FAT (bloqueante): tomar el bus de la SD sin
-         * esperar (timeout 0); si la camara lo tiene, saltar esta actualizacion
-         * para no congelar el render. */
-        if (!camera_sd_bus_lock(0)) return;
-        FATFS *fs = NULL;
-        DWORD free_clusters = 0;
-        if (f_getfree("0:", &free_clusters, &fs) == FR_OK && fs) {
-            uint64_t sect_per_cluster = fs->csize;
-            uint64_t total_sect = (fs->n_fatent - 2) * sect_per_cluster;
-            uint64_t free_sect  = (uint64_t)free_clusters * sect_per_cluster;
-            uint64_t total_mb = (total_sect * 512ULL) / (1024ULL * 1024ULL);
-            uint64_t free_mb  = (free_sect  * 512ULL) / (1024ULL * 1024ULL);
+        /* EL ESPACIO LIBRE NO SE CALCULA AQUI (13-nov-2026). Antes se llamaba a
+         * f_getfree() desde este mismo callback, o sea EN LA TAREA DE LVGL y con
+         * el cerrojo del bus SD tomado: recorre la tabla FAT entera y en una
+         * tarjeta grande eso son cientos de milisegundos con el render parado
+         * (hallazgo alto de la auditoria del 13-nov). Ahora lo calcula la tarea
+         * de vuelco del datalogger una vez por minuto y aqui solo se leen dos
+         * enteros de RAM. */
+        uint32_t libre_mb = 0, total_mb = 0;
+        bool valido = false;
+        datalogger_sd_espacio(&libre_mb, &total_mb, &valido);
+        if (valido) {
             lv_label_set_text_fmt(ui->lbl_about_sd, "SD: %u/%u MB libres",
-                (unsigned)free_mb, (unsigned)total_mb);
+                (unsigned)libre_mb, (unsigned)total_mb);
         } else {
-            lv_label_set_text(ui->lbl_about_sd, "SD: no montada");
+            lv_label_set_text(ui->lbl_about_sd, "SD: calculando...");
         }
-        camera_sd_bus_unlock();
     }
 }
 

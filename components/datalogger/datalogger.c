@@ -605,12 +605,56 @@ static datalogger_heartbeat_cb_t s_hb_cb = NULL;   /* ver datalogger_set_heartbe
 
 void datalogger_set_heartbeat_cb(datalogger_heartbeat_cb_t cb) { s_hb_cb = cb; }
 
+/* ── Espacio libre de la tarjeta, cacheado (13-nov-2026) ────────────────────
+ *
+ * POR QUE. La pagina SD de Ajustes hacia f_getfree('0:') cada segundo DESDE LA
+ * TAREA DE LVGL: f_getfree recorre la tabla FAT con el cerrojo del bus tomado y
+ * en una tarjeta grande son cientos de milisegundos, o sea el render congelado
+ * mientras esa pagina esta visible (auditoria del 13-nov, hallazgo alto: es el
+ * mismo patron que ya se saco de log_cleanup por el INT WDT).
+ *
+ * Ahora el recorrido lo hace la tarea de vuelco, que ya existe y ya sabe de la
+ * SD, una vez por minuto; la UI solo lee dos enteros de RAM. */
+static volatile uint32_t s_sd_libre_mb;
+static volatile uint32_t s_sd_total_mb;
+static volatile bool     s_sd_espacio_valido;
+
+void datalogger_sd_espacio(uint32_t *libre_mb, uint32_t *total_mb, bool *valido)
+{
+    if (libre_mb)  *libre_mb  = s_sd_libre_mb;
+    if (total_mb)  *total_mb  = s_sd_total_mb;
+    if (valido)    *valido    = s_sd_espacio_valido;
+}
+
+/* Se llama desde la tarea de vuelco. No espera al bus: si la camara o un
+ * volcado lo tienen, se deja el valor anterior (uno mas viejo no hace dano). */
+static void sd_actualiza_espacio(void)
+{
+    if (datalogger_sd_estado() != DL_SD_OK) {
+        s_sd_espacio_valido = false;
+        return;
+    }
+    if (!camera_sd_bus_lock(200)) return;
+    FATFS *fs = NULL;
+    DWORD libre_clusters = 0;
+    if (f_getfree("0:", &libre_clusters, &fs) == FR_OK && fs) {
+        uint64_t sect_por_cluster = fs->csize;
+        uint64_t total_sect = (fs->n_fatent - 2) * sect_por_cluster;
+        uint64_t libre_sect = (uint64_t)libre_clusters * sect_por_cluster;
+        s_sd_total_mb = (uint32_t)((total_sect * 512ULL) / (1024ULL * 1024ULL));
+        s_sd_libre_mb = (uint32_t)((libre_sect * 512ULL) / (1024ULL * 1024ULL));
+        s_sd_espacio_valido = true;
+    }
+    camera_sd_bus_unlock();
+}
+
 static void flush_task(void *arg)
 {
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         if (s_hb_cb) s_hb_cb();   /* latido watchdog: ver datalogger_set_heartbeat_cb */
         flush_pending_to_sd_impl();
+        sd_actualiza_espacio();   /* para la pagina SD de Ajustes (ver arriba) */
     }
 }
 

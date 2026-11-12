@@ -1403,6 +1403,11 @@ static bool vig_write_jpeg_sd(uint32_t id, time_t ts, time_t session,
     camera_sd_bus_unlock();
     if (fd < 0) { ESP_LOGW(TAG, "vig: no abre SD (%s)", path); return false; }
 
+    /* REGISTRARSE COMO LECTOR DE LA SD (13-nov-2026): esta funcion escribe en
+     * trozos soltando el bus, y el desmontaje seguro solo cuenta a los lectores
+     * registrados; sin esto podia desmontar en mitad de una foto. */
+    sd_reader_abrir();
+
     /* Escribir en trozos pequenos SOLTANDO el bus entre cada uno: la camara (GDMA)
      * recupera su ventana y no se bloquean interrupciones >300ms -> sin INT WDT. Con
      * write() de bajo nivel (sin buffer de stdio) cada trozo cae de verdad en su
@@ -1432,6 +1437,8 @@ static bool vig_write_jpeg_sd(uint32_t id, time_t ts, time_t session,
         unlink(path);
         if (got_lock) camera_sd_bus_unlock();
     }
+
+    sd_reader_cerrar();
 
     if (ok) ESP_LOGI(TAG, "vig: guardada en SD %s (%u B, troceada)", path, (unsigned)len);
     else    ESP_LOGW(TAG, "vig: fallo guardando en SD (%s)", path);
