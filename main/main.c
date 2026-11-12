@@ -130,7 +130,15 @@ static void rtc_backup_timer_cb(void *arg)
     nvs_handle_t nh;
     if (nvs_open("rtc_backup", NVS_READWRITE, &nh) == ESP_OK) {
         nvs_set_i64(nh, "epoch", (int64_t)now);
+        /* MARCA DE ESCRITURA EN FLASH (12-nov-2026): esta NVS se escribe sola
+         * cada 5 min y mientras se graba flash la cache se para. Si el
+         * "destello claro" de la pantalla cae pegado a estas marcas, el
+         * sospechoso es la contencion, no la retroiluminacion. */
+        int64_t t0 = esp_timer_get_time();
         esp_err_t err = nvs_commit(nh);
+        ESP_LOGI(TAG, "FLASHW: nvs rtc_backup %lld ms (%s)",
+                 (long long)((esp_timer_get_time() - t0) / 1000),
+                 err == ESP_OK ? "ok" : esp_err_to_name(err));
         if (err != ESP_OK) ESP_LOGW(TAG, "backup de hora no persistio: %s", esp_err_to_name(err));
         nvs_close(nh);
     }

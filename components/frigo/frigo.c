@@ -250,6 +250,14 @@ static void fan_apply_duty(uint8_t pct)
     uint32_t duty = ((uint32_t)pct * 1023) / 100;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL);
+    /* MARCA DE CARGA (12-nov-2026): el ventilador son 0,2-1 A de 12 V y su
+     * arranque pega un pulso del 100 % durante 700 ms. Solo se apunta cuando
+     * cambia de verdad (esta funcion se llama en cada vuelta del regulador). */
+    static uint8_t s_ultimo_apuntado = 0xFF;
+    if (pct != s_ultimo_apuntado) {
+        s_ultimo_apuntado = pct;
+        ESP_LOGI(TAG, "CARGA fan: %u%%", (unsigned)pct);
+    }
 }
 
 /* Fin del pulso de arranque: baja del 100% al objetivo real. */

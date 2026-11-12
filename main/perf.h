@@ -33,8 +33,9 @@ void perf_start(void);
 /* Construye el JSON de /api/perf en 'out'. Devuelve los bytes escritos. */
 size_t perf_json(char *out, size_t n);
 
-/* Una linea al log con el resumen (la llama perf_start cada 10 min). */
-void perf_log(void);
+/* El resumen periodico (cada 10 min) ya NO se expone: lo imprime el propio
+ * perf.c sin tocar el planificador ni recorrer el heap. La foto completa se
+ * pide a mano con /api/perf (perf_json). */
 
 #ifdef __cplusplus
 }

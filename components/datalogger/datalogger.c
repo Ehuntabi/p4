@@ -568,6 +568,12 @@ static void flush_pending_to_sd_impl(void)
         int64_t dt = esp_timer_get_time() - t_volcado;
         s_ultimo_us = dt;
         if (dt > s_max_us) s_max_us = dt;
+        /* MARCA DE CARGA (12-nov-2026): un volcado a la SD son rafagas de
+         * 30-200 mA y es el unico consumo del banco que cambia solo cada
+         * minuto. Si el destello de la pantalla cae pegado a estas marcas,
+         * el sospechoso es el escalon de corriente, no la luz. */
+        ESP_LOGI(TAG, "CARGA sd: volcado %d entradas en %lld ms",
+                 written, (long long)(dt / 1000));
     }
     camera_sd_bus_unlock();
 

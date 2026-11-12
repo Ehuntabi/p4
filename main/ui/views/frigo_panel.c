@@ -52,8 +52,6 @@ static lv_obj_t *s_lbl_sol_estado = NULL;
  * modo cambiaba por detras (o si al crearla el cerrojo estaba cogido) se
  * quedaba mintiendo para siempre. */
 static lv_obj_t *s_sw_solar = NULL;
-static lv_obj_t *s_lbl_sol_test = NULL;   /* boton de PRUEBA de la salida */
-static lv_timer_t *s_sol_test_timer = NULL;
 static lv_obj_t *s_dot_sol        = NULL;
 static bool      s_sol_est_act    = false;
 static bool      s_sol_est_en     = false;
@@ -285,41 +283,6 @@ static void sw_solar_cb(lv_event_t *e)
     bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
     frigo_solar_set_enabled(on);
 }
-/* PRUEBA DE LA SALIDA DE EXCEDENTE (12-nov-2026).
- *
- * Enciende el rele 10 s y vuelve al automatico. Hace falta porque el modo
- * automatico pide SoC >= 80 % y 80 W de panel sostenidos 60 s: en casa o en el
- * taller no hay forma de comprobar el borne RELE_SOLAR_OUT1 sin sol. Es la
- * misma orden que /control?dev=sol&mode=on, pero con el dedo y sin movil.
- * El texto del boton dice lo que esta pasando para no dejarlo encendido sin
- * darse cuenta (ademas la orden caduca sola en frigo.c). */
-static void sol_test_fin_cb(lv_timer_t *t)
-{
-    (void)t;
-    frigo_solar_forzar(-1);          /* vuelve al automatico */
-    s_sol_test_timer = NULL;         /* LVGL lo borra solo (repeat_count=1) */
-    if (s_lbl_sol_test) {
-        lv_label_set_text(s_lbl_sol_test, LV_SYMBOL_PLAY "  Probar salida (10 s)");
-    }
-    s_sol_est_min = 0xFFFFFFFFu;     /* que el chivato se repinte ya */
-}
-
-static void btn_sol_test_cb(lv_event_t *e)
-{
-    (void)e;
-    frigo_solar_forzar(1);           /* rele ON, forzado */
-    if (s_lbl_sol_test) {
-        lv_label_set_text(s_lbl_sol_test, LV_SYMBOL_POWER "  Encendido 10 s...");
-    }
-    if (s_sol_test_timer) {
-        lv_timer_set_period(s_sol_test_timer, 10000);
-        lv_timer_reset(s_sol_test_timer);
-    } else {
-        s_sol_test_timer = lv_timer_create(sol_test_fin_cb, 10000, NULL);
-        if (s_sol_test_timer) lv_timer_set_repeat_count(s_sol_test_timer, 1);
-    }
-}
-
 static void refresh_solon_label(void)
 {
     if (!s_lbl_solon) return;
@@ -1022,22 +985,6 @@ void ui_frigo_panel_init(ui_state_t *ui)
     lv_obj_set_style_text_color(s_lbl_sol_estado, UI_COLOR_TEXT_DIM, 0);
     s_sol_est_min = 0xFFFFFFFFu;   /* forzar el primer pintado del chivato */
     refresh_sol_estado_label();
-
-    /* Boton de prueba de la salida (ver btn_sol_test_cb). */
-    lv_obj_t *btn_sol_test = lv_btn_create(card_solar);
-    lv_obj_set_width(btn_sol_test, lv_pct(100));
-    lv_obj_set_height(btn_sol_test, 52);
-    lv_obj_set_style_radius(btn_sol_test, UI_RADIUS_CARD, 0);
-    lv_obj_set_style_bg_color(btn_sol_test, UI_COLOR_CARD, 0);
-    lv_obj_set_style_bg_opa(btn_sol_test, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(btn_sol_test, 2, 0);
-    lv_obj_set_style_border_color(btn_sol_test, UI_COLOR_ORANGE, 0);
-    lv_obj_add_event_cb(btn_sol_test, btn_sol_test_cb, LV_EVENT_CLICKED, NULL);
-    s_lbl_sol_test = lv_label_create(btn_sol_test);
-    lv_obj_set_style_text_font(s_lbl_sol_test, &lv_font_montserrat_20_es, 0);
-    lv_obj_set_style_text_color(s_lbl_sol_test, UI_COLOR_ORANGE, 0);
-    lv_label_set_text(s_lbl_sol_test, LV_SYMBOL_PLAY "  Probar salida (10 s)");
-    lv_obj_center(s_lbl_sol_test);
 
     /* Overlay Exterior */
     lv_obj_t *overlay_cont = lv_obj_create(ui->bottom_bar ? ui->bottom_bar : lv_scr_act());
