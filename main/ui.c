@@ -868,11 +868,28 @@ void ui_ota_overlay_show(const char *msg)
 void ui_ota_overlay_hide(void)
 {
     if (!s_ota_overlay) return;
-    if (!lvgl_port_lock(300)) return;
-    lv_obj_del(s_ota_overlay);
-    s_ota_overlay = NULL;
-    s_ota_overlay_lbl = NULL;
-    lvgl_port_unlock();
+    /* NO RENDIRSE AL PRIMER INTENTO (auditoria 13-nov). Antes, si el cerrojo de
+     * LVGL estaba pillado 300 ms (una captura, el carrusel), esto volvia en
+     * silencio: el aviso opaco y clicable se quedaba para siempre y la pantalla
+     * se quedaba sorda hasta cortar la corriente. Ahora se reintenta, acotado,
+     * y si de verdad no se puede se deja dicho en el log en vez de callarse. */
+    bool borrado = false;
+    for (int intento = 0; intento < 10 && !borrado; intento++) {
+        if (lvgl_port_lock(300)) {
+            if (s_ota_overlay) {
+                lv_obj_del(s_ota_overlay);
+                s_ota_overlay = NULL;
+                s_ota_overlay_lbl = NULL;
+            }
+            lvgl_port_unlock();
+            borrado = true;
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
+    if (!borrado) {
+        ESP_LOGE("VICTRON_LVGL_APP", "no pude quitar el aviso de OTA: LVGL ocupado tras 10 intentos");
+    }
 }
 
 /* ── Auto-volver a Live tras 60 s sin actividad del usuario ──

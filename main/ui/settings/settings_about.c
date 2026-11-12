@@ -58,8 +58,8 @@ static lv_obj_t *s_lbl_wd = NULL;
 void ui_flush_all_before_restart(void)
 {
     ESP_LOGI("UI", "Flushing data before restart...");
-    datalogger_flush();
-    battery_history_flush();
+    (void)datalogger_flush();
+    (void)battery_history_flush();
     solar_daily_flush();
     trip_computer_flush();
     ne185_vlog_flush();

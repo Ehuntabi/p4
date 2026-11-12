@@ -17,7 +17,7 @@
 #include <sys/time.h>
 #include <sys/stat.h>
 
-static void flush_pending_to_sd_impl(void);
+static bool flush_pending_to_sd_impl(void);
 static const char *TAG = "DATALOGGER";
 
 /* Metricas del volcado para /api/perf (09-nov-2026): cuantas veces se ha
@@ -314,7 +314,7 @@ static void format_temp(char *buf, size_t len, float t)
  * estado limpio para el siguiente arranque. */
 esp_err_t datalogger_close_sd(void)
 {
-    datalogger_flush();          /* lo que quede en RAM, al fichero */
+    (void)datalogger_flush();    /* lo que quede en RAM, al fichero */
 
     if (!s_card) {
         return ESP_ERR_INVALID_STATE;
@@ -385,9 +385,11 @@ bool datalogger_sd_montada(void)
     return s_card != NULL;
 }
 
-void datalogger_flush(void)
+/* Devuelve si el vuelco fue COMPLETO (auditoria 13-nov): ver
+ * battery_history_flush(). */
+bool datalogger_flush(void)
 {
-    flush_pending_to_sd_impl();
+    return flush_pending_to_sd_impl();
 }
 
 /* El dia que se instala una version con la columna nueva (min_solar_hoy), el
@@ -444,14 +446,17 @@ static void arreglar_cabecera_si_hace_falta(const char *path)
     }
 }
 
-static void flush_pending_to_sd_impl(void)
+static bool flush_pending_to_sd_impl(void)
 {
-    if (!s_sd_mounted || !s_mutex) return;
-    if (s_pending_count <= 0) return;
+    /* Devuelve true si NO queda nada pendiente por un fallo (auditoria 13-nov):
+     * quien lo llama de cara al usuario (soltar la tarjeta) necesita saberlo para
+     * no decir "Todo guardado" cuando en realidad se salto el volcado. */
+    if (!s_sd_mounted || !s_mutex) return false;
+    if (s_pending_count <= 0) return true;
 
     /* Serializa flushes concurrentes (timer + main thread). */
     if (s_flush_mutex && xSemaphoreTake(s_flush_mutex, 0) != pdTRUE) {
-        return;
+        return false;
     }
 
     /* Dia destino = el de la PRIMERA muestra pendiente. Un volcado escribe solo
@@ -462,7 +467,7 @@ static void flush_pending_to_sd_impl(void)
     char first_ts[sizeof s_buf[0].timestamp];
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         if (s_flush_mutex) xSemaphoreGive(s_flush_mutex);
-        return;
+        return false;
     }
     snprintf(first_ts, sizeof first_ts, "%s", s_buf[s_pending_first].timestamp);
     xSemaphoreGive(s_mutex);
@@ -489,7 +494,7 @@ static void flush_pending_to_sd_impl(void)
      * quita. */
     if (!camera_sd_bus_lock(200)) {
         if (s_flush_mutex) xSemaphoreGive(s_flush_mutex);
-        return;
+        return false;
     }
     bool need_header = (stat(path, &st) != 0);
     if (!need_header) arreglar_cabecera_si_hace_falta(path);
@@ -505,7 +510,7 @@ static void flush_pending_to_sd_impl(void)
         }
         camera_sd_bus_unlock();
         if (s_flush_mutex) xSemaphoreGive(s_flush_mutex);
-        return;
+        return false;
     }
 
     /* Mantenemos s_mutex durante toda la escritura. La alternativa "2 fases
@@ -518,7 +523,7 @@ static void flush_pending_to_sd_impl(void)
         fclose(f);
         camera_sd_bus_unlock();
         if (s_flush_mutex) xSemaphoreGive(s_flush_mutex);
-        return;
+        return false;
     }
 
     bool io_error = false;
@@ -588,6 +593,8 @@ static void flush_pending_to_sd_impl(void)
         s_fallos_seguidos = 0;
     }
     if (s_flush_mutex) xSemaphoreGive(s_flush_mutex);
+    /* Un fallo de I/O deja muestras pendientes: eso NO es un vuelco completo. */
+    return !io_error;
 }
 
 /* La tarea de esp_timer es COMPARTIDA por todo el firmware (heap log, GPS,
@@ -653,7 +660,7 @@ static void flush_task(void *arg)
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         if (s_hb_cb) s_hb_cb();   /* latido watchdog: ver datalogger_set_heartbeat_cb */
-        flush_pending_to_sd_impl();
+        (void)flush_pending_to_sd_impl();
         sd_actualiza_espacio();   /* para la pagina SD de Ajustes (ver arriba) */
     }
 }

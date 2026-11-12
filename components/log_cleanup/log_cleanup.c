@@ -104,21 +104,32 @@ static int process_dir(const char *dir, int max_days, bool dry_run, bool count_w
         return 0;
     }
     int hits = 0;
-    struct dirent *de;
-    while ((de = readdir(dp)) != NULL) {
-        if (de->d_type == DT_DIR) continue;
-        time_t ftime = parse_csv_date(de->d_name);
-        if (ftime == 0) continue;
+    /* EL CERROJO SE SUELTA ENTRE ENTRADAS (auditoria 13-nov). Antes se tomaba
+     * UNA vez para opendir + todos los readdir + TODOS los remove() de la
+     * carpeta, y con una carpeta de meses eso dejaba a la camara sin su ventana
+     * de GDMA: es exactamente el patron que este mismo fichero documenta unas
+     * lineas mas arriba como origen de un INT WDT. Ahora cada entrada se toca
+     * con el cerrojo y se suelta, cediendo 2 ms para que la camara respire. */
+    while (1) {
+        if (!camera_sd_bus_lock(200)) break;
+        struct dirent *de = readdir(dp);
+        if (!de) {
+            camera_sd_bus_unlock();
+            break;
+        }
+        const bool es_dir = (de->d_type == DT_DIR);
+        const time_t ftime = es_dir ? 0 : parse_csv_date(de->d_name);
         char full_path[300];
-        snprintf(full_path, sizeof full_path, "%s/%s", dir, de->d_name);
-        if (count_warn) {
-            /* Avisar: fecha mas antigua que cutoff_warn pero NO la suficiente para cutoff_delete (por si hay solapamiento) */
-            if (ftime < cutoff_warn && ftime >= cutoff_delete) {
-                hits++;
-            }
-        } else {
-            /* Modo borrar */
-            if (ftime < cutoff_delete) {
+        full_path[0] = '\0';
+        if (!es_dir && ftime != 0) {
+            snprintf(full_path, sizeof full_path, "%s/%s", dir, de->d_name);
+        }
+        if (!es_dir && ftime != 0) {
+            if (count_warn) {
+                /* Avisar: mas antigua que cutoff_warn pero NO tanto como para
+                 * cutoff_delete (por si hay solapamiento). */
+                if (ftime < cutoff_warn && ftime >= cutoff_delete) hits++;
+            } else if (ftime < cutoff_delete) {
                 if (!dry_run) {
                     if (remove(full_path) == 0) {
                         ESP_LOGI(TAG, "Borrado %s (antiguedad > %d dias)", full_path, max_days);
@@ -131,9 +142,13 @@ static int process_dir(const char *dir, int max_days, bool dry_run, bool count_w
                 }
             }
         }
+        camera_sd_bus_unlock();
+        vTaskDelay(pdMS_TO_TICKS(2));   /* ventana para el GDMA de la camara */
     }
-    closedir(dp);
-    camera_sd_bus_unlock();
+    if (camera_sd_bus_lock(200)) {
+        closedir(dp);
+        camera_sd_bus_unlock();
+    }
     return hits;
 }
 

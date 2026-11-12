@@ -14,7 +14,7 @@
 #include <stdio.h>
 #include <errno.h>
 
-static void bh_flush_to_sd_impl(void);
+static bool bh_flush_to_sd_impl(void);
 static bool bh_flush_to_sd_dated(time_t file_date);
 static void bh_reset_for_new_day(void);
 static const char *TAG = "bathist";
@@ -290,14 +290,16 @@ static void bh_get_day_filename(time_t t, char *buf, size_t len)
     }
 }
 
-void battery_history_flush(void)
+/* Devuelve si el vuelco fue COMPLETO (auditoria 13-nov): quien lo llama de cara
+ * al usuario (soltar la tarjeta) no puede decir "Todo guardado" sin saberlo. */
+bool battery_history_flush(void)
 {
-    bh_flush_to_sd_impl();
+    return bh_flush_to_sd_impl();
 }
 
-static void bh_flush_to_sd_impl(void)
+static bool bh_flush_to_sd_impl(void)
 {
-    bh_flush_to_sd_dated(0);
+    return bh_flush_to_sd_dated(0);
 }
 
 /* file_date: fecha (time_t) para elegir el fichero diario destino; 0 = ahora.

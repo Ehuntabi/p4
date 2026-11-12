@@ -72,9 +72,14 @@ static void heap_log_cb(void *arg)
     /* La DMA es la que se agota primero (Wi-Fi fuerte + tarjeta SD a la vez) y la
      * que provoco el panic del SPI en v3.5: por eso va con su minimo y con el
      * bloque mas grande que queda, que es lo que dice si cabe una transferencia. */
+    /* SIN heap_caps_get_largest_free_block (auditoria 13-nov): esa funcion
+     * recorre TODOS los bloques libres del heap con el cerrojo global tomado e
+     * interrupciones fuera, y esto corre en el callback de un esp_timer, o sea en
+     * la tarea de timers compartida. El dato sigue disponible, a mano, en
+     * GET /api/perf. */
     ESP_LOGI(TAG,
         "uptime %llus | heap libre %" PRIu32 " min %" PRIu32
-        " | interno %u min %u | DMA %u min %u bloque %u | PSRAM %u",
+        " | interno %u min %u | DMA %u min %u | PSRAM %u",
         esp_timer_get_time() / 1000000ULL,
         esp_get_free_heap_size(),
         esp_get_minimum_free_heap_size(),
@@ -82,7 +87,6 @@ static void heap_log_cb(void *arg)
         (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
         (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA),
         (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_DMA),
-        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA),
         (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM)
     );
 }

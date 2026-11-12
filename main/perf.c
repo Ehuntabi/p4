@@ -187,10 +187,20 @@ size_t perf_json(char *out, size_t n)
 {
     if (!out || n < 64) return 0;
 
-    /* NO se vuelve a muestrear en cada peticion: la muestra de 10 s ya esta
-     * fresca y re-muestrear dos veces seguidas da porcentajes sobre una ventana
-     * de milisegundos (basura). Solo se muestrea si aun no hay ninguna. */
-    if (s_previa_us == 0) perf_muestra();
+    /* MUESTREAR AQUI, PERO CON SUELO (13-nov-2026). Antes solo se muestreaba si
+     * no habia ninguna muestra previa, y como perf_start() ya hace una al
+     * arrancar (con dt=0), el % de CPU por tarea salia SIEMPRE 0 y los
+     * documentos que citaban "taskLVGL ~12 %" ya no eran ciertos.
+     *
+     * Se muestrea al pedir /api/perf (una peticion deliberada, nadie la sondea
+     * periodicamente), y solo si la ultima muestra tiene al menos 5 s: con menos,
+     * el delta del contador es tan pequeno que los porcentajes salen basura.
+     * OJO: perf_muestra() usa uxTaskGetSystemState(), que paraliza el
+     * planificador; por eso NO puede volver al camino periodico: es justo lo que
+     * causaba el destello de la pantalla (v5.10). */
+    if (s_previa_us == 0 || (esp_timer_get_time() - s_previa_us) >= 5000000LL) {
+        perf_muestra();
+    }
 
     perf_uso_t orden[PERF_MAX_TAREAS];
     uint32_t n_orden = 0;

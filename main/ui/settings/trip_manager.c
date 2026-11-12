@@ -63,10 +63,23 @@ static void trip_reset_btn_cb(lv_event_t *e)
 static void do_soltar_tarjeta_action(void)
 {
     ESP_LOGI(TAG_SETTINGS, "Soltar tarjeta: volcando todo");
-    battery_history_flush();     /* historico de corriente/tension/panel */
-    solar_daily_flush();         /* dia de produccion en curso */
-    ne185_vlog_flush();          /* comparativa de voltaje NE185 (hasta 10 min en RAM) */
-    trip_computer_flush();       /* contadores a NVS (el viaje lo cierra la cabina) */
+    /* SE MIRA SI LOS VOLCADOS ENTRARON (auditoria 13-nov): antes se llamaba a
+     * todos, se desmontaba igual y se decia "Todo guardado" aunque alguno se
+     * hubiera saltado por no conseguir el bus (200 ms) — lo que quedaba en RAM
+     * se tiraba con el desmontaje y el usuario leia que estaba todo. */
+    bool todo_ok = battery_history_flush();   /* historico de corriente/tension/panel */
+    solar_daily_flush();                      /* dia de produccion en curso */
+    ne185_vlog_flush();                       /* comparativa de voltaje NE185 */
+    trip_computer_flush();                    /* contadores a NVS */
+    todo_ok = datalogger_flush() && todo_ok;  /* lo que quede del registro del frigo */
+    if (!todo_ok) {
+        ui_show_info_dialog(LV_SYMBOL_WARNING "  No se pudo guardar todo",
+            "Algun volcado no ha entrado (la tarjeta estaba\n"
+            "ocupada o ha fallado). NO se ha soltado la tarjeta\n"
+            "para no perder lo que queda en memoria.\n\n"
+            "Espera unos segundos y vuelve a intentarlo.");
+        return;
+    }
 
     const esp_err_t err = datalogger_close_sd();   /* incluye su propio flush */
     if (err == ESP_OK) {
@@ -102,13 +115,12 @@ static void trip_finish_btn_cb(lv_event_t *e)
     char viaje[64];
     if (viaje_abierto_nombre(viaje, sizeof(viaje))) {
         char cuerpo[320];
+        /* 6 lineas: el modal mide 280 px y caben 8 (auditoria 13-nov). Antes
+         * pedia 8 y la ultima instruccion quedaba bajo los botones. */
         snprintf(cuerpo, sizeof(cuerpo),
                  "Hay un viaje ABIERTO (%s).\n\n"
-                 "Si sacas la tarjeta ahora, la P4 no puede\n"
-                 "cerrarlo ni guardar nada mas, y habria que\n"
-                 "reiniciarla con la tarjeta puesta.\n\n"
-                 "Termina el viaje en la pantalla de la\n"
-                 "cabina y vuelve a intentarlo.", viaje);
+                 "Si sacas la tarjeta, la P4 no puede cerrarlo.\n"
+                 "Termina el viaje en la cabina y vuelve.", viaje);
         ui_show_info_dialog(LV_SYMBOL_WARNING "  Viaje abierto", cuerpo);
         return;
     }

@@ -301,7 +301,14 @@ static void fan_rampa(uint8_t pct)
 static void fan_kick_done_cb(void *arg)
 {
     /* Fin del kickstart: BAJAR EN RAMPA al objetivo (un salto de 100 % al 30 %
-     * tambien pega un escalon de corriente). */
+     * tambien pega un escalon de corriente).
+     *
+     * OJO (auditoria 13-nov): esp_timer_stop() NO cancela un callback que ya esta
+     * despachado. Si entre el despacho y esta linea alguien manda el ventilador a
+     * parado, esto volvia a subirlo y el PWM se quedaba girando con la pantalla
+     * diciendo 0 %. s_last_applied es 0 en ese caso, y ese es el testigo: si sigue
+     * a 0 es que el ventilador esta mandado parar y no hay nada que bajar. */
+    if (s_last_applied == 0) return;
     fan_rampa(s_kick_target);
 }
 
@@ -581,12 +588,18 @@ static void frigo_task(void *arg)
 
         float temps[FRIGO_MAX_SENSORS] = {-127.0f, -127.0f, -127.0f};
 
-        /* Broadcast: disparar conversión en todos a la vez */
-        /* Los handles pueden ser NULL: el bus enumero la sonda pero crear el
-         * dispositivo DS18B20 fallo (ver escanear_y_aplicar). */
-        for (int i = 0; i < s_state.n_sensors; i++)
-            if (s_devs[i]) ds18b20_trigger_temperature_conversion(s_devs[i]);
-        vTaskDelay(pdMS_TO_TICKS(DS18B20_CONV_MS));
+        /* Broadcast DE VERDAD: un solo reset + SKIP_ROM + 800 ms para todas las
+         * sondas (ds18b20_trigger_temperature_conversion_for_all, que ya incluye
+         * la espera). Antes se llamaba a ds18b20_trigger_temperature_conversion()
+         * una vez por sonda, y CADA una hace su propio reset + 800 ms: con 3
+         * sondas mas los 800 ms de aqui el ciclo se iba a 3-4 s, y con el bus
+         * muerto a ~8,8 s contra un Task WDT de 10 s sin latido en medio
+         * (auditoria del 13-nov). Los handles pueden ser NULL: el bus enumero la
+         * sonda pero crear el dispositivo fallo (ver escanear_y_aplicar). */
+        if (s_bus && s_state.n_sensors > 0) {
+            ds18b20_trigger_temperature_conversion_for_all(s_bus);
+        }
+        if (s_hb_cb) s_hb_cb();   /* latido: la lectura puede tardar casi 1 s */
 
         for (int i = 0; i < s_state.n_sensors; i++) {
             float t;
@@ -959,11 +972,13 @@ esp_err_t frigo_set_thresholds(uint8_t t_min, uint8_t t_max)
 {
     if (t_min < 30 || t_max > 60 || t_min >= t_max) return ESP_ERR_INVALID_ARG;
     if (t_min % 5 != 0 || t_max % 5 != 0)           return ESP_ERR_INVALID_ARG;
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        s_state.T_min = t_min;
-        s_state.T_max = t_max;
-        xSemaphoreGive(s_mutex);
-    }
+    /* Si no se consigue el cerrojo NO se toca nada y se dice: antes se devolvia
+     * ESP_OK igual y ademas se persistia el valor viejo (auditoria 13-nov). Mismo
+     * patron que frigo_set_assignment y frigo_solar_set_enabled. */
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    s_state.T_min = t_min;
+    s_state.T_max = t_max;
+    xSemaphoreGive(s_mutex);
     nvs_save();
     return ESP_OK;
 }
@@ -972,10 +987,11 @@ esp_err_t frigo_set_fan_min(uint8_t pct)
 {
     if (pct > 60)      return ESP_ERR_INVALID_ARG;   /* techo de cordura */
     if (pct % 5 != 0)  return ESP_ERR_INVALID_ARG;   /* pasos de 5 como los umbrales */
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
-        s_state.fan_min_pct = pct;
-        xSemaphoreGive(s_mutex);
-    }
+    /* Igual que los umbrales: sin cerrojo no se toca nada, se dice, y no se
+     * persiste un valor que no se ha aplicado (auditoria 13-nov). */
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    s_state.fan_min_pct = pct;
+    xSemaphoreGive(s_mutex);
     nvs_save();
     return ESP_OK;
 }

@@ -246,7 +246,17 @@ void dns_server_task(void *pvParameters)
 
         int err = bind(sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
         if (err < 0) {
-            ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
+            /* SIN CERRAR EL SOCKET NI ESPERAR (auditoria 13-nov): el bucle
+             * exterior volvia a crear otro socket al instante y esta tarea va a
+             * prioridad 5, por encima del httpd (que se bajo a 3 justo para no
+             * ahogar a LVGL). El caso tipico es EADDRINUSE tras un stop que no
+             * cerro el socket (ver stop_dns_server), y entonces esto era un
+             * bucle cerrado logueando 3 errores por vuelta. Ademas el "Socket
+             * bound" de abajo se imprimia igual, mintiendo. */
+            ESP_LOGE(TAG, "Socket unable to bind: errno %d (reintento en 5 s)", errno);
+            close(sock);
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            break;
         }
         ESP_LOGI(TAG, "Socket bound, port %d", DNS_PORT);
 

@@ -591,14 +591,15 @@ static void clave_admin_nueva_do(void)
         if (lbl) lv_label_set_text(lbl, LV_SYMBOL_EYE_CLOSE);
     }
     refresca_botones();
+    /* TEXTO CORTO A PROPOSITO (auditoria 13-nov): este dialogo mide 280 px y
+     * caben 8 lineas; antes pedia 10 y los botones tapaban justo las dos ultimas,
+     * que eran "Mientras no guardes..." y "Apunta la clave AHORA". O sea que la
+     * unica vez que se puede leer la clave nueva, no se leia entera. */
     char msg[520];
     snprintf(msg, sizeof(msg),
-             "Usuario:  %s\nClave de ADMINISTRACION:  %s\n\n"
-             "La clave NUEVA esta escrita en el campo, pero\n"
-             "TODAVIA NO se ha guardado.\n\n"
-             "Pulsa GUARDAR para que empiece a funcionar.\n"
-             "Mientras no guardes, sigue valiendo la de antes.\n\n"
-             "Apunta la clave AHORA: se lee solo aqui.", user, nueva);
+             "Usuario:  %s\nClave ADMIN:  %s\n\n"
+             "Todavia NO esta guardada: pulsa GUARDAR.\n"
+             "Apunta la clave AHORA.", user, nueva);
     ui_show_info_dialog(LV_SYMBOL_SETTINGS "  Clave nueva preparada", msg);
 }
 

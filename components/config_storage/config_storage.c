@@ -166,10 +166,15 @@ esp_err_t save_screensaver_settings(bool enabled, uint8_t brightness, uint16_t t
     nvs_handle_t h;
     esp_err_t err = nvs_open(SCREENSAVER_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
-    nvs_set_u8(h, SS_ENABLED_KEY, enabled ? 1 : 0);
-    nvs_set_u8(h, SS_BRIGHT_KEY, brightness);
-    nvs_set_u16(h, SS_TIMEOUT_KEY, timeout);
-    err = nvs_commit(h);
+    /* Se COMPRUEBAN los sets (auditoria 13-nov): en este IDF nvs_commit() es un
+     * no-op (la entrada se escribe dentro de nvs_set_*), asi que devolver su
+     * resultado daba ESP_OK aunque la NVS estuviera llena y el ajuste se
+     * perdiera. Mismo patron que trip_computer.c. */
+    esp_err_t e1 = nvs_set_u8(h, SS_ENABLED_KEY, enabled ? 1 : 0);
+    esp_err_t e2 = nvs_set_u8(h, SS_BRIGHT_KEY, brightness);
+    esp_err_t e3 = nvs_set_u16(h, SS_TIMEOUT_KEY, timeout);
+    err = (e1 != ESP_OK) ? e1 : (e2 != ESP_OK) ? e2 : e3;
+    if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     return err;
 }
@@ -196,9 +201,10 @@ esp_err_t save_screensaver_mode(uint8_t mode, uint8_t rotate_period_min) {
     if (err != ESP_OK) return err;
     if (rotate_period_min < 1) rotate_period_min = 1;
     if (rotate_period_min > 10) rotate_period_min = 10;
-    nvs_set_u8(h, "mode", mode);
-    nvs_set_u8(h, "rot_period", rotate_period_min);
-    err = nvs_commit(h);
+    esp_err_t e1 = nvs_set_u8(h, "mode", mode);
+    esp_err_t e2 = nvs_set_u8(h, "rot_period", rotate_period_min);
+    err = (e1 != ESP_OK) ? e1 : e2;
+    if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     return err;
 }
@@ -675,10 +681,12 @@ esp_err_t save_night_mode(bool enabled,
     nvs_handle_t h;
     esp_err_t err = nvs_open(BRIGHTNESS_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
-    nvs_set_u8(h, NIGHT_EN_KEY,    enabled ? 1 : 0);
-    nvs_set_u8(h, NIGHT_START_KEY, start_h);
-    nvs_set_u8(h, NIGHT_END_KEY,   end_h);
-    err = nvs_commit(h);
+    /* Los sets se comprueban; nvs_commit() es no-op en este IDF (auditoria 13-nov). */
+    esp_err_t e1 = nvs_set_u8(h, NIGHT_EN_KEY,    enabled ? 1 : 0);
+    esp_err_t e2 = nvs_set_u8(h, NIGHT_START_KEY, start_h);
+    esp_err_t e3 = nvs_set_u8(h, NIGHT_END_KEY,   end_h);
+    err = (e1 != ESP_OK) ? e1 : (e2 != ESP_OK) ? e2 : e3;
+    if (err == ESP_OK) err = nvs_commit(h);
     nvs_close(h);
     return err;
 }

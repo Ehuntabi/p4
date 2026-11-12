@@ -68,4 +68,5 @@ void battery_history_set_heartbeat_cb(battery_history_heartbeat_cb_t cb);
 #ifdef __cplusplus
 }
 #endif
-void battery_history_flush(void);
+/* true = se volco todo lo pendiente a la SD. */
+bool battery_history_flush(void);

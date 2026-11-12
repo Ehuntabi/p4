@@ -492,6 +492,10 @@ esp_err_t ota_update_receive(httpd_req_t *req)
         ota_pantalla_restaurar();
         ota_ui_descongelar();
         ui_ota_overlay_hide();
+        /* ESTA SALIDA SE DEJABA EL WATCHDOG SUSPENDIDO (auditoria 13-nov): es la
+         * unica de las siete que no reanudaba el Task WDT, asi que un cuelgue de
+         * la UI en los 10 min siguientes ya no reiniciaba el aparato. */
+        ota_wdt_suspend(false);
         ESP_LOGE(TAG, "no pude leer la descripcion del .bin: no se marca para arrancar");
         httpd_resp_set_status(req, "400 Bad Request");
         httpd_resp_sendstr(req,

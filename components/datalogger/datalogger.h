@@ -47,7 +47,8 @@ esp_err_t datalogger_log(const frigo_state_t *frigo);
 int datalogger_get_count(void);
 const datalogger_entry_t *datalogger_get_entry(int index);
 char *datalogger_get_csv(void);
-void datalogger_flush(void);
+/* true = se volco todo lo pendiente. */
+bool datalogger_flush(void);
 
 /* Handle de la tarea de vuelco a SD. Solo para la medicion de
  * uxTaskGetStackHighWaterMark (ver stack_watch.c) -- nadie mas la necesita. */
