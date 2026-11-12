@@ -39,18 +39,44 @@ panel JD9165, pero no es parte del componente) vive en
 `main/esp_bsp.c:33-53` y se autoprotege con `_Static_assert` contra un
 cambio de layout privado de IDF.
 
-## El "flash" del banco es la luz, no el firmware (10-nov-2026)
+## El "destello claro" de la pantalla: era la telemetría (13-nov-2026)
 
-En el banco (5 V del cargador) la pantalla da destellos claros; con los 12 V de
-la autocaravana, no. Se midió en vez de suponer: underruns del puente DSI = 0 y
-el duty de la retroiluminación solo cambia cuando lo pide el software. La imagen
-sigue viéndose durante el destello, así que es **eléctrico** (LED y su driver, o
-el contacto del flex), no un fallo del firmware. El aparato reinició una vez con
-motivo `poweron` estando en el cargador.
+**ESTA SECCIÓN CORRIGE A LA ANTERIOR.** Hasta el 12-nov aquí ponía que el
+destello era eléctrico (el LED y su driver) y que no era cosa del firmware. Era
+falso: se había medido con dos sondas que no valían (una pedía volcados de
+1024x600 cuando el buffer de LVGL es de 50 líneas, o sea que no midió nunca; y
+el contador de underruns del DSI no tenía control positivo).
 
-No se queda código para medirlo: la instrumentación que lo demostró vive en el
-histórico (`git -C ~/joint/p4 show 8f4722b`) y se quitó el 11-nov-2026, cuando ya
-no hacía falta.
+Lo que sí se pudo medir, y quedó claro el 13-nov:
+
+- El vídeo del destello (10x ralentizado, `/home/jc/Imágenes/video_flash_p4.mp4`)
+  dice que **es luz, no datos**: durante el destello los píxeles más negros del
+  panel siguen negros (10, 12, 20) y la imagen mantiene el contraste, así que no
+  es el dato de reserva del DSI (0x3FFF, cian claro, que habría dejado esos
+  píxeles en 123/255/255). Dura ~7 ms.
+- Con la pantalla destellando, **ninguna sonda decía nada**: el duty del LEDC
+  estaba donde el firmware lo puso, el pin no se clavaba, LVGL no mandaba ningún
+  fotograma claro y el DSI no daba underruns. El firmware no tocaba la luz.
+- Pasa **sin ningún periférico conectado**, y pasa igual a 12 V con DC/DC que
+  con el USB del banco. La radio, la SD y las escrituras de flash llevan meses
+  ahí sin producir destellos.
+- Lo único nuevo en el camino periódico era la telemetría de `/api/perf`
+  (commit `bb08e10`, 09-nov): cada 10 s llamaba a **`uxTaskGetSystemState()`**,
+  que hace `vTaskSuspendAll()` y recorre las 40 tareas copiando un
+  `TaskStatus_t` de cada una. Ese parón de milisegundos es un escalón de
+  consumo, y en este módulo el 5 V lo hace un solo convertidor del que cuelgan a
+  la vez el boost de la retroiluminación y la bomba (sin regular) que genera la
+  polarización del panel: unos milivoltios se ven como un pulso de luz.
+- **Demostrado con dos placas iguales**: con la llamada (v5.9) la pantalla
+  destella; sin ella (v5.10) no destella ninguna de las dos.
+  En `jantielens/esp32-macropad` (mismo chip, mismo tipo de panel) está
+  documentada como la causa confirmada de sus destellos.
+
+**Regla que queda:** no llamar a `uxTaskGetSystemState()` ni a nada que paralice
+el planificador en un camino periódico de este aparato. El % de CPU del resumen
+sale de los contadores de ralenti de cada núcleo
+(`ulTaskGetIdleRunTimeCounterForCore`), que son dos lecturas de registro; la CPU
+**por tarea** solo se pide a mano en `GET /api/perf`.
 
 Para separar un reinicio del cable de uno de verdad: `reinicio` en `/api/perf` y
 el `MOTIVO ULTIMO REINICIO` del log (grabar por USB deja **usb**; desenchufar la

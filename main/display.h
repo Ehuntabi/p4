@@ -167,11 +167,6 @@ esp_err_t bsp_display_brightness_init(void);
 esp_err_t bsp_display_brightness_set(int brightness_percent);
 /* Ultimo brillo pedido, en % (el duty lleva gamma, no se deduce del LEDC). */
 int       bsp_display_brightness_get(void);
-/* Para la sonda del "flaseo" (perf.c): cuantas veces se ha pedido un brillo y
- * que duty se dejo en el LEDC. Si el duty cambia sin que suba el contador, es
- * que alguien (o algo) mueve el periferico sin pasar por el BSP. */
-uint32_t  bsp_display_brightness_writes(void);
-uint32_t  bsp_display_brightness_duty(void);
 
 #ifdef __cplusplus
 }

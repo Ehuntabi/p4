@@ -23,7 +23,6 @@
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_ldo_regulator.h"
-#include "esp_timer.h"
 #include "esp_lcd_panel_ops.h"
 #include "esp_lcd_mipi_dsi.h"
 #include "hal/mipi_dsi_hal.h"
@@ -198,22 +197,12 @@ esp_err_t bsp_display_brightness_init(void)
  * luego tiene que devolverla al brillo que tuviera el usuario. */
 static int s_brillo_pct = 0;
 
-/* Contador de escrituras y ultimo duty puesto (11-nov-2026). Los usa la sonda
- * del "flaseo" en perf.c: si el duty del LEDC cambia mientras este contador no
- * se mueve, ese cambio no lo ha pedido el firmware. */
-static volatile uint32_t s_brillo_escrituras;
-static volatile uint32_t s_brillo_duty;
-
 esp_err_t bsp_display_brightness_set(int pct)
 {
     if (pct > 100) pct = 100;
     if (pct <   0) pct =   0;
     s_brillo_pct = pct;
-    s_brillo_escrituras++;   /* antes de tocar el LEDC: la sonda mira el duty */
-    /* Con tarea y fecha (11-nov-2026): el "flaseo" de la pantalla puede ser un
-     * golpe de brillo entre dos muestras; saber quien lo pide lo resuelve. */
-    ESP_LOGI(TAG, "Backlight %d%% (tarea %s, %lld us)", pct,
-             pcTaskGetName(NULL), (long long)esp_timer_get_time());
+    ESP_LOGI(TAG, "Backlight %d%%", pct);
     /* Correccion gamma (~2.2): el ojo percibe el brillo de forma logaritmica,
      * no lineal. Sin esto el tramo 5-50% se siente "todo apagado" y 50-100%
      * apenas cambia. pct=0 y pct=100 siguen mapeando a duty 0 y 1023. */
@@ -222,7 +211,6 @@ esp_err_t bsp_display_brightness_set(int pct)
                         TAG, "ledc_set_duty");
     ESP_RETURN_ON_ERROR(ledc_update_duty(LEDC_LOW_SPEED_MODE, BSP_LEDC_CHANNEL_NUM),
                         TAG, "ledc_update_duty");
-    s_brillo_duty = duty;
     return ESP_OK;
 }
 
@@ -232,11 +220,6 @@ int bsp_display_brightness_get(void)
 {
     return s_brillo_pct;
 }
-
-/* Para la sonda del "flaseo": cuantas veces se ha pedido un brillo y que duty
- * quedo en el LEDC. */
-uint32_t bsp_display_brightness_writes(void) { return s_brillo_escrituras; }
-uint32_t bsp_display_brightness_duty(void)   { return s_brillo_duty; }
 
 /* ════════════════════════════════════════════════════════════════════════════
  * LDO interno para el PHY MIPI-DSI (ESP32-P4 específico)

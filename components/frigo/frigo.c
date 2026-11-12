@@ -301,9 +301,7 @@ static void fan_rampa(uint8_t pct)
 static void fan_kick_done_cb(void *arg)
 {
     /* Fin del kickstart: BAJAR EN RAMPA al objetivo (un salto de 100 % al 30 %
-     * tambien pega un escalon de corriente, y el rebote del rail es lo que se
-     * ve como destello). */
-    ESP_LOGI(TAG, "CARGA fan: rampa 100->%u%% (fin de kickstart)", (unsigned)s_kick_target);
+     * tambien pega un escalon de corriente). */
     fan_rampa(s_kick_target);
 }
 
@@ -360,8 +358,6 @@ static void fan_set_percent(uint8_t pct)
          * luego al objetivo. El motor arranca igual (llega a tope), pero el
          * escalon de corriente queda repartido. */
         s_kick_target = pct;
-        ESP_LOGI(TAG, "CARGA fan: rampa 0->100%% (arranque) y luego a %u%%",
-                 (unsigned)pct);
         fan_rampa(100);
         esp_timer_stop(s_kick_timer);   /* por si venia armado */
         esp_timer_start_once(s_kick_timer,
@@ -370,10 +366,6 @@ static void fan_set_percent(uint8_t pct)
         /* Cambio en marcha o parada: si hay un kickstart pendiente, cancelarlo
          * para que no pise este valor. */
         if (s_kick_timer) esp_timer_stop(s_kick_timer);
-        if (pct != s_last_applied) {
-            ESP_LOGI(TAG, "CARGA fan: rampa %u->%u%%",
-                     (unsigned)s_ramp_actual, (unsigned)pct);
-        }
         fan_rampa(pct);
     }
     s_last_applied = pct;
