@@ -538,8 +538,19 @@ static void perf_tick(void *arg)
 {
     (void)arg;
     static uint32_t tics;
-    perf_muestra();   /* igual que en v5.7: se deja el camino que se estudia */
     ++tics;
+    /* NO se muestrea aqui (13-nov-2026): perf_muestra() llama a
+     * uxTaskGetSystemState(), que PARALIZA EL PLANIFICADOR para copiar la lista
+     * de tareas. En el proyecto jantielens/esp32-macropad, con este mismo chip
+     * y este mismo tipo de panel MIPI-DSI, esa llamada esta documentada como la
+     * causa de los destellos (el puente DPI no llega a leer el framebuffer a
+     * tiempo). Aqui entro el 09-nov-2026 y los fogonazos aparecen por primera
+     * vez en el historial ese mismo dia por la tarde. Se quita del camino
+     * periodico y se deja SOLO para cuando alguien pide /api/perf, que es una
+     * accion deliberada y no una vez cada 10 s.
+     *
+     * La foto de CPU por tarea sigue disponible en /api/perf (perf_json la
+     * muestrea si esta vieja). El resumen de cada 10 min ya no la lleva. */
     /* Resumen al log cada 10 min (60 muestras de 10 s). */
     if (tics % 60 == 0) perf_log_ligero();
 }
