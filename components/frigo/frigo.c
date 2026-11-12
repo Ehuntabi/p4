@@ -255,16 +255,17 @@ static void fan_apply_duty(uint8_t pct)
 
 /* ── RAMPA EN VEZ DE ESCALON (13-nov-2026) ────────────────────────────────
  *
- * POR QUE. El destello claro de la pantalla se cazo por fin en el log: callo
- * justo cuando el ventilador arrancaba (18:32:27, kickstart al 100 %), y en esa
- * ventana no salto NINGUNA sonda: ni el duty del LEDC, ni el pin, ni LVGL, ni
- * el DSI. O sea que el firmware no tocaba la luz: la subida venia del ESCALON
- * DE CORRIENTE del ventilador (0,2-1 A de 12 V de golpe) moviendo el rail del
- * que cuelga la retroiluminacion y la polarizacion del panel.
+ * POR QUE. El 13-nov se correlaciono un destello de la pantalla con el arranque
+ * del ventilador (kickstart al 100 % de golpe) y se puso esta rampa para
+ * repartir el escalon de corriente. DESPUES se demostro que la causa del
+ * destello era otra (uxTaskGetSystemState() en la telemetria, ver CLAUDE.md), y
+ * el ventilador quedo descartado: los destellos seguian saliendo sin ningun
+ * periferico conectado. La rampa SE QUEDA igualmente porque es mejor practica:
+ * un escalon de 1 A de 12 V de golpe no le hace bien a ningun rail.
  *
  * El escalon no hace falta: al motor le basta con LLEGAR a tope, no con llegar
  * de un salto. Subiendo en escalones del 10 % cada 15 ms (200 ms de 0 a 100) y
- * bajando igual, el pico de corriente se reparte y el rail no se mueve.
+ * bajando igual, el pico de corriente se reparte.
  * Se conserva el kickstart (700 ms por encima del objetivo) porque es lo que
  * rompe la inercia con el ventilador parado. */
 #define FAN_RAMP_STEP_PCT   10

@@ -252,7 +252,9 @@ esp_err_t bsp_display_new_with_handles(const bsp_display_config_t *config,
     esp_err_t ret = ESP_OK;
 
     ESP_RETURN_ON_ERROR(bsp_display_brightness_init(), TAG, "brightness_init");
-    /* Test backlight al 100% inmediatamente */
+    /* Alimentacion del PHY del MIPI-DSI (LDO interno). El comentario decia
+     * "Test backlight al 100%" y ahi no se toca el backlight: lo puso la
+     * auditoria del 13-nov. El brillo lo fija main.c con bsp_display_brightness_set. */
     ESP_RETURN_ON_ERROR(bsp_enable_dsi_phy_power(),    TAG, "dsi_phy_power");
 
     /* ── 1. Bus MIPI-DSI ─────────────────────────────────────────────────── */
@@ -300,11 +302,15 @@ esp_err_t bsp_display_new_with_handles(const bsp_display_config_t *config,
 
     /* ── 3. Configuración DPI (timing de vídeo) ──────────────────────────── */
     /*
-     * Timings del dtsi oficial JD9165BA:
+     * Timings QUE SE USAN (los de display.h, que es lo que se pasa abajo; el
+     * dtsi oficial del JD9165BA no es esto y NO hay que "alinearlo"):
      *   h_size=1024  v_size=600
-     *   hsync_pulse=24  hbp=136  hfp=160
-     *   vsync_pulse=2   vbp=21   vfp=12
-     *   dotclk=51.2 MHz → 52 MHz
+     *   hsync_pulse=24  hbp=160  hfp=160        (display.h: BSP_LCD_MIPI_HSYNC_BACK_PORCH)
+     *   vsync_pulse=10  vbp=21   vfp=12         (display.h: BSP_LCD_MIPI_VSYNC_PULSE_WIDTH)
+     *   dotclk=51 MHz                           (display.h: BSP_LCD_MIPI_DPI_CLK_MHZ)
+     * OJO: con 52 MHz el panel se quedaba 5 s colgado en el init (display.h:61-64).
+     * Este comentario ponia los valores del dtsi (52 MHz, hbp 136, vsync 2) y mas
+     * de uno habria "arreglado" el codigo para igualarlo: auditoria del 13-nov.
      */
     esp_lcd_dpi_panel_config_t dpi_cfg = {
         .dpi_clk_src        = MIPI_DSI_DPI_CLK_SRC_DEFAULT,

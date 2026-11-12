@@ -128,8 +128,12 @@
 /* 1 = un solo framebuffer. El 09-nov-2026 se probo con 2 + avoid_tearing para
  * quitar unos "fogonazos": NO los quito y ademas DEJABA EL ARRANQUE EN BUCLE
  * (taskLVGL se queda esperando un framebuffer libre y salta el watchdog de
- * tareas a los 13 s). Revertido: con 1 arranca bien. La causa de los fogonazos
- * sigue abierta y apunta a la alimentacion (la placa va por USB del PC). */
+ * tareas a los 13 s; en P4 rev<3.0 no hay VSYNC, ver mipi_dsi_brg_ll.h).
+ * Revertido: con 1 arranca bien.
+ *
+ * LA CAUSA DE LOS FOGONAZOS YA ESTA ENCONTRADA (13-nov-2026) y no era esto ni la
+ * alimentacion: era la telemetria que llamaba a uxTaskGetSystemState() cada 10 s
+ * y paralizaba el planificador. Ver CLAUDE.md y perf.c. */
 #define BSP_LCD_DPI_BUFFER_NUMS   (1)
 
 /* ── LEDC backlight ──────────────────────────────────────────────────────── */

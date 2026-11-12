@@ -242,7 +242,7 @@ size_t perf_json(char *out, size_t n)
  * Antes esta linea llevaba el % de CPU por tarea, y para eso pedia
  * uxTaskGetSystemState() cada 10 s: esa funcion para el planificador en los dos
  * nucleos mientras copia un TaskStatus_t por tarea. En un panel MIPI-DSI eso
- * saca un pulso de luz visible (demonizado y luego demostrado con dos placas
+ * saca un pulso de luz visible (demostrado con dos placas
  * iguales: con la llamada la pantalla destella, sin ella no; en
  * jantielens/esp32-macropad, mismo chip y mismo tipo de panel, esta documentada
  * como la causa de sus destellos).

@@ -27,13 +27,17 @@ extern "C" {
  * vez, despues de crear la pantalla (bsp_display_start). */
 void perf_envuelve_flush(void *disp);
 
-/* Arranca la muestra periodica de CPU y el resumen en el log cada 10 min. */
+/* Arranca las medidas: los contadores de SD/LVGL, el resumen al log cada 10
+ * min (CPU global por contadores de ralenti, heap, SD y LVGL) y el envoltorio
+ * del flush. NO arranca ninguna muestra periodica de tareas: uxTaskGetSystemState
+ * solo se llama desde GET /api/perf (era la causa del destello de la pantalla). */
 void perf_start(void);
 
 /* Construye el JSON de /api/perf en 'out'. Devuelve los bytes escritos. */
 size_t perf_json(char *out, size_t n);
 
-/* Una linea al log con el resumen (la llama perf_start cada 10 min). */
+/* Una linea al log con el resumen, sin tocar el planificador. La llama el tic
+ * de 10 s cada 60 vueltas (cada 10 min). */
 void perf_log(void);
 
 #ifdef __cplusplus
