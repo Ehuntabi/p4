@@ -584,8 +584,10 @@ esp_err_t save_splash_mode(uint8_t mode)
     nvs_handle_t h;
     esp_err_t err = nvs_open(BRIGHTNESS_NAMESPACE, NVS_READWRITE, &h);
     if (err != ESP_OK) return err;
-    nvs_set_u8(h, SPLASH_KEY, mode);
-    err = nvs_commit(h);
+    /* nvs_commit() es no-op en este IDF: el error se mira en el set (arbitraje
+     * 13-nov; este se habia quedado con el patron viejo). */
+    esp_err_t e1 = nvs_set_u8(h, SPLASH_KEY, mode);
+    err = (e1 != ESP_OK) ? e1 : nvs_commit(h);
     nvs_close(h);
     return err;
 }

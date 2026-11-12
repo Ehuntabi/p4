@@ -485,7 +485,13 @@ static bool bh_flush_to_sd_dated(time_t file_date)
         ESP_LOGI(TAG, "Volcadas %d entradas a %s", total_written, path);
     }
     if (s_flush_mutex) xSemaphoreGive(s_flush_mutex);
-    return true;
+    /* NO es un vuelco completo si quedo backlog fuera del snapshot (arbitraje
+     * 13-nov): antes devolvia true igual y quien desmonta la tarjeta creia que
+     * estaba todo, y en el cierre de dia bh_reset_for_new_day() vaciaba el
+     * anillo tirando ese backlog. */
+    bool capped = false;
+    for (int s = 0; s < BH_SRC_COUNT; ++s) if (snapshot_capped[s]) capped = true;
+    return !capped;
 }
 
 /* Misma razon que datalogger.c: fopen/fprintf/fclose no tienen timeout

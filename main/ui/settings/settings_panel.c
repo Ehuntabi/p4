@@ -35,8 +35,6 @@ void create_display_settings_page(ui_state_t *ui, lv_obj_t *page_display);
 #include "esp_idf_version.h"
 #include "esp_app_desc.h"
 #include "esp_vfs_fat.h"
-#include "ff.h"
-#include "camera.h"   /* camera_sd_bus_lock: coordinar SD con el GDMA de la camara */
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "watchdog.h"
@@ -339,7 +337,9 @@ static void sd_trip_timer_cb(lv_timer_t *t)
             lv_label_set_text_fmt(ui->lbl_about_sd, "SD: %u/%u MB libres",
                 (unsigned)libre_mb, (unsigned)total_mb);
         } else {
-            lv_label_set_text(ui->lbl_about_sd, "SD: calculando...");
+            /* Aun no hay medida (la tarea de vuelco la calcula al arrancar). Se
+             * dice "SD: --" y NO "calculando..." eterno (arbitraje 13-nov). */
+            lv_label_set_text(ui->lbl_about_sd, "SD: --");
         }
     }
 }

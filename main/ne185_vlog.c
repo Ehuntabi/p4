@@ -104,18 +104,18 @@ static bool mismo_dia(const char *a, const char *b)
 
 /* Vuelca a la SD. Devuelve sin escribir (conservando las muestras) si la SD no
  * esta montada o si el bus lo tiene ocupado la camara. */
-static void flush_to_sd(void)
+static bool flush_to_sd(void)
 {
-    if (!s_ready) return;
-    if (!datalogger_sd_montada()) return;
+    if (!s_ready) return false;
+    if (!datalogger_sd_montada()) return false;
 
     int pending;
     char first_ts[sizeof s_buf[0].timestamp];
-    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
     pending = s_count;
     if (pending > 0) snprintf(first_ts, sizeof first_ts, "%s", s_buf[0].timestamp);
     xSemaphoreGive(s_mutex);
-    if (pending <= 0) return;
+    if (pending <= 0) return true;
 
     /* Dia destino = el de la muestra mas antigua pendiente. Si el bloque cruza
      * medianoche se escribe solo hasta el corte; el resto sale en el proximo
@@ -126,20 +126,20 @@ static void flush_to_sd(void)
 
     /* Timeout corto a proposito: si la camara tiene el bus, se intenta luego.
      * El stat() de need_header TAMBIEN toca la SD: va DESPUES del cerrojo. */
-    if (!camera_sd_bus_lock(200)) return;
+    if (!camera_sd_bus_lock(200)) return false;
 
     bool need_header = (stat(path, &st) != 0);
     FILE *f = fopen(path, "a");
     if (!f) {
         camera_sd_bus_unlock();
         ESP_LOGW(TAG, "no se pudo abrir %s", path);
-        return;
+        return false;
     }
 
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(200)) != pdTRUE) {
         fclose(f);
         camera_sd_bus_unlock();
-        return;
+        return false;
     }
 
     bool io_error = false;
@@ -191,7 +191,7 @@ static void flush_to_sd(void)
         ESP_LOGW(TAG, "error de escritura en %s (%d escritas): NO descarto las "
                       "muestras, se reintentan en el proximo volcado",
                  path, written);
-        return;
+        return false;
     }
     if (written > 0) {
         if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(200)) == pdTRUE) {
@@ -204,12 +204,12 @@ static void flush_to_sd(void)
              * salir repetidas, ver arriba). */
             ESP_LOGW(TAG, "%d muestras escritas en %s pero no he podido "
                           "descontarlas: se reintentaran", written, path);
-            return;
+            return false;
         }
-        ESP_LOGD(TAG, "%d muestras -> %s", written, path);
+                ESP_LOGD(TAG, "%d muestras -> %s", written, path);
     }
+    return true;   /* no queda nada pendiente */
 }
-
 /* flush_to_sd() hace I/O de SD real. sample_timer_cb corre en la tarea
  * COMPARTIDA de esp_timer (junto con heap log, GPS, RTC, modo noche...);
  * muestrear en RAM es barato y se queda ahi, pero el flush periodico se
@@ -268,10 +268,13 @@ static void sample_timer_cb(void *arg)
     }
 }
 
-void ne185_vlog_flush(void)
+/* Devuelve si el volcado entro (arbitraje 13-nov): este buffer guarda hasta 10
+ * min de muestras en RAM y quien suelta la tarjeta necesita saberlo para no
+ * decir "Todo guardado" cuando el volcado se salto por el bus ocupado. */
+bool ne185_vlog_flush(void)
 {
     s_since_flush = 0;
-    flush_to_sd();
+    return flush_to_sd();
 }
 
 TaskHandle_t ne185_vlog_flush_task_handle(void)

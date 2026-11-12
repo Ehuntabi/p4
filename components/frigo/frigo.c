@@ -45,7 +45,6 @@ static bool s_migrar_umbrales;
 #define SOL_GUARDAR_MS   (5u * 60u * 1000u)
 
 #define READ_INTERVAL_MS   2000
-#define DS18B20_CONV_MS     800
 #define LEDC_CHANNEL       LEDC_CHANNEL_0
 #define LEDC_TIMER         LEDC_TIMER_0
 #define LEDC_RESOLUTION    LEDC_TIMER_10_BIT
@@ -236,7 +235,7 @@ static void nvs_save(void)
 /* ── PWM ─────────────────────────────────────────────────────── */
 /* Ultimo % efectivamente aplicado al LEDC (tras suelo/kickstart). Sirve para
  * detectar el paso de parado->girando y disparar el pulso de arranque. */
-static uint8_t          s_last_applied = 0;
+static volatile uint8_t s_last_applied = 0;   /* la lee la tarea de esp_timer (kick) */
 /* Kickstart no bloqueante: al arrancar de parado damos 100% durante
  * FRIGO_FAN_KICKSTART_MS y una callback de esp_timer baja al objetivo. No se
  * puede usar vTaskDelay porque fan_set_percent se llama con s_mutex tomado
@@ -309,7 +308,11 @@ static void fan_kick_done_cb(void *arg)
      * parado, esto volvia a subirlo y el PWM se quedaba girando con la pantalla
      * diciendo 0 %. s_last_applied es 0 en ese caso, y ese es el testigo: si sigue
      * a 0 es que el ventilador esta mandado parar y no hay nada que bajar. */
-    if (s_last_applied == 0) return;
+    /* Si el objetivo ya no es el de este kickstart, no se toca nada: cubre el
+     * 'parar' (0) y tambien un cambio de objetivo 40 -> 20 mientras el callback
+     * estaba despachado, que subia el ventilador al valor viejo y ahi se quedaba
+     * (arbitraje del 13-nov: el testigo de 0 solo cubria parar). */
+    if (s_last_applied != s_kick_target) return;
     fan_rampa(s_kick_target);
 }
 

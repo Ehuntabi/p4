@@ -874,7 +874,7 @@ void ui_ota_overlay_hide(void)
      * se quedaba sorda hasta cortar la corriente. Ahora se reintenta, acotado,
      * y si de verdad no se puede se deja dicho en el log en vez de callarse. */
     bool borrado = false;
-    for (int intento = 0; intento < 10 && !borrado; intento++) {
+    for (int intento = 0; intento < 3 && !borrado; intento++) {
         if (lvgl_port_lock(300)) {
             if (s_ota_overlay) {
                 lv_obj_del(s_ota_overlay);
@@ -888,7 +888,7 @@ void ui_ota_overlay_hide(void)
         }
     }
     if (!borrado) {
-        ESP_LOGE("VICTRON_LVGL_APP", "no pude quitar el aviso de OTA: LVGL ocupado tras 10 intentos");
+        ESP_LOGE("VICTRON_LVGL_APP", "no pude quitar el aviso de OTA: LVGL ocupado tras 3 intentos");
     }
 }
 

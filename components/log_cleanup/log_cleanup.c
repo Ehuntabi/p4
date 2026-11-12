@@ -145,9 +145,16 @@ static int process_dir(const char *dir, int max_days, bool dry_run, bool count_w
         camera_sd_bus_unlock();
         vTaskDelay(pdMS_TO_TICKS(2));   /* ventana para el GDMA de la camara */
     }
+    /* closedir SIEMPRE (arbitraje del 13-nov): si el cerrojo no se consigue,
+     * cerrar sin el cerrojo es mejor que fugarse el FF_DIR y su buffer de
+     * nombres largos (FF_DIR vive en heap interno y no se libera solo). Es la
+     * regla que ya esta escrita en camera.h: "mejor sin cerrojo que fuga". */
     if (camera_sd_bus_lock(200)) {
         closedir(dp);
         camera_sd_bus_unlock();
+    } else {
+        ESP_LOGW(TAG, "closedir sin cerrojo del bus (ocupado): mejor eso que fugar el DIR");
+        closedir(dp);
     }
     return hits;
 }

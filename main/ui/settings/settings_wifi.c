@@ -592,7 +592,7 @@ static void clave_admin_nueva_do(void)
     }
     refresca_botones();
     /* TEXTO CORTO A PROPOSITO (auditoria 13-nov): este dialogo mide 280 px y
-     * caben 8 lineas; antes pedia 10 y los botones tapaban justo las dos ultimas,
+     * caben 5 lineas de 24 px; antes pedia 10 y los botones tapaban justo las dos ultimas,
      * que eran "Mientras no guardes..." y "Apunta la clave AHORA". O sea que la
      * unica vez que se puede leer la clave nueva, no se leia entera. */
     char msg[520];

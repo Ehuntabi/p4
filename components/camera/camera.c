@@ -1399,14 +1399,12 @@ static bool vig_write_jpeg_sd(uint32_t id, time_t ts, time_t session,
     struct stat stx;
     if (stat(VIG_SD_DIR, &stx) != 0) mkdir(VIG_SD_DIR, 0777);
     if (stat(sess_dir, &stx) != 0) mkdir(sess_dir, 0777);
+    /* REGISTRARSE ANTES DE ABRIR (arbitraje 13-nov): el hueco entre abrir y
+     * registrarse tambien era un sitio por donde entraba el desmontaje. */
+    sd_reader_abrir();
     int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     camera_sd_bus_unlock();
-    if (fd < 0) { ESP_LOGW(TAG, "vig: no abre SD (%s)", path); return false; }
-
-    /* REGISTRARSE COMO LECTOR DE LA SD (13-nov-2026): esta funcion escribe en
-     * trozos soltando el bus, y el desmontaje seguro solo cuenta a los lectores
-     * registrados; sin esto podia desmontar en mitad de una foto. */
-    sd_reader_abrir();
+    if (fd < 0) { sd_reader_cerrar(); ESP_LOGW(TAG, "vig: no abre SD (%s)", path); return false; }
 
     /* Escribir en trozos pequenos SOLTANDO el bus entre cada uno: la camara (GDMA)
      * recupera su ventana y no se bloquean interrupciones >300ms -> sin INT WDT. Con
@@ -1437,8 +1435,6 @@ static bool vig_write_jpeg_sd(uint32_t id, time_t ts, time_t session,
         unlink(path);
         if (got_lock) camera_sd_bus_unlock();
     }
-
-    sd_reader_cerrar();
 
     if (ok) ESP_LOGI(TAG, "vig: guardada en SD %s (%u B, troceada)", path, (unsigned)len);
     else    ESP_LOGW(TAG, "vig: fallo guardando en SD (%s)", path);
@@ -1501,6 +1497,10 @@ static bool vig_write_jpeg_sd(uint32_t id, time_t ts, time_t session,
         const char *base = strrchr(path, '/');
         vig_sesion_apunta(session, base ? base + 1 : path);
     }
+    /* Cerrar el contador AL FINAL, despues de la miniatura y de la rotacion
+     * (arbitraje 13-nov: la miniatura se escribia fuera del contador y un
+     * 'Soltar tarjeta' en ese hueco la dejaba a medias). */
+    sd_reader_cerrar();
     return ok;
 }
 

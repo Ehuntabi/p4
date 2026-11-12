@@ -18,7 +18,8 @@
 esp_err_t ne185_vlog_init(void);
 
 /* Vuelca a la SD lo que quede en RAM. Llamar antes de un reinicio previsto. */
-void ne185_vlog_flush(void);
+/* Devuelve si el volcado entro (false si el bus estaba ocupado o fallo la SD). */
+bool ne185_vlog_flush(void);
 
 /* Handle de la tarea de vuelco a SD. Solo para la medicion de
  * uxTaskGetStackHighWaterMark (ver stack_watch.c) -- nadie mas la necesita. */

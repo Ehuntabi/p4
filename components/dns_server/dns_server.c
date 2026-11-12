@@ -256,7 +256,7 @@ void dns_server_task(void *pvParameters)
             ESP_LOGE(TAG, "Socket unable to bind: errno %d (reintento en 5 s)", errno);
             close(sock);
             vTaskDelay(pdMS_TO_TICKS(5000));
-            break;
+            continue;   /* NO break: asi vuelve a mirar handle->started y reintenta */ 
         }
         ESP_LOGI(TAG, "Socket bound, port %d", DNS_PORT);
 

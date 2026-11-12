@@ -193,12 +193,14 @@ size_t perf_json(char *out, size_t n)
      * documentos que citaban "taskLVGL ~12 %" ya no eran ciertos.
      *
      * Se muestrea al pedir /api/perf (una peticion deliberada, nadie la sondea
-     * periodicamente), y solo si la ultima muestra tiene al menos 5 s: con menos,
-     * el delta del contador es tan pequeno que los porcentajes salen basura.
+     * periodicamente), y solo si la ultima muestra tiene al menos 60 s: con menos,
+     * el delta del contador es tan pequeno que los porcentajes salen basura; y con
+     * mucho menos, un cliente podria sondear el endpoint para reproducir el paron
+     * (y el destello) cada pocos segundos.
      * OJO: perf_muestra() usa uxTaskGetSystemState(), que paraliza el
      * planificador; por eso NO puede volver al camino periodico: es justo lo que
      * causaba el destello de la pantalla (v5.10). */
-    if (s_previa_us == 0 || (esp_timer_get_time() - s_previa_us) >= 5000000LL) {
+    if (s_previa_us == 0 || (esp_timer_get_time() - s_previa_us) >= 60000000LL) {
         perf_muestra();
     }
 

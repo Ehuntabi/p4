@@ -67,11 +67,11 @@ static void do_soltar_tarjeta_action(void)
      * todos, se desmontaba igual y se decia "Todo guardado" aunque alguno se
      * hubiera saltado por no conseguir el bus (200 ms) — lo que quedaba en RAM
      * se tiraba con el desmontaje y el usuario leia que estaba todo. */
-    bool todo_ok = battery_history_flush();   /* historico de corriente/tension/panel */
-    solar_daily_flush();                      /* dia de produccion en curso */
-    ne185_vlog_flush();                       /* comparativa de voltaje NE185 */
-    trip_computer_flush();                    /* contadores a NVS */
-    todo_ok = datalogger_flush() && todo_ok;  /* lo que quede del registro del frigo */
+    bool todo_ok = battery_history_flush();        /* historico de corriente/tension/panel */
+    solar_daily_flush();                           /* dia de produccion (solo NVS) */
+    todo_ok = ne185_vlog_flush() && todo_ok;       /* comparativa NE185 (hasta 10 min en RAM) */
+    trip_computer_flush();                         /* contadores a NVS */
+    todo_ok = datalogger_flush() && todo_ok;       /* lo que quede del registro del frigo */
     if (!todo_ok) {
         ui_show_info_dialog(LV_SYMBOL_WARNING "  No se pudo guardar todo",
             "Algun volcado no ha entrado (la tarjeta estaba\n"
@@ -115,8 +115,9 @@ static void trip_finish_btn_cb(lv_event_t *e)
     char viaje[64];
     if (viaje_abierto_nombre(viaje, sizeof(viaje))) {
         char cuerpo[320];
-        /* 6 lineas: el modal mide 280 px y caben 8 (auditoria 13-nov). Antes
-         * pedia 8 y la ultima instruccion quedaba bajo los botones. */
+        /* 4 lineas: del modal de 280 px quedan 137 px utiles para el mensaje,
+         * o sea 5 lineas de 24 px (arbitraje 13-nov). Antes pedia 8 y la ultima
+         * instruccion quedaba tapada por los botones. */
         snprintf(cuerpo, sizeof(cuerpo),
                  "Hay un viaje ABIERTO (%s).\n\n"
                  "Si sacas la tarjeta, la P4 no puede cerrarlo.\n"

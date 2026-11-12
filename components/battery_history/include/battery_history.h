@@ -65,8 +65,9 @@ const char *battery_history_source_name(bh_source_t src);
 typedef void (*battery_history_heartbeat_cb_t)(void);
 void battery_history_set_heartbeat_cb(battery_history_heartbeat_cb_t cb);
 
+/* true = se volco todo lo pendiente a la SD. */
+bool battery_history_flush(void);
+
 #ifdef __cplusplus
 }
 #endif
-/* true = se volco todo lo pendiente a la SD. */
-bool battery_history_flush(void);

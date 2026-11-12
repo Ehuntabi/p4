@@ -227,6 +227,7 @@ static void log_save_task(void *arg)
             s_save_busy = false;
             continue;
         }
+        bool escritura_ok = true;   /* ver el cierre: si algo falla, se borra */
 
         /* Cabecera con el viaje y el dia. El nombre del fichero ya lo dice,
          * pero esto va DENTRO: si el viaje se renombra al cerrarlo (ver
@@ -237,9 +238,11 @@ static void log_save_task(void *arg)
             if (!viaje_abierto_nombre(vj, sizeof(vj))) snprintf(vj, sizeof(vj), "(sin viaje)");
             time_t ahora = time(NULL);
             struct tm tmc; localtime_r(&ahora, &tmc);
-            fprintf(f, "# viaje: %s\n# dia: %04d-%02d-%02d  guardado: %02d:%02d:%02d\n",
+            if (fprintf(f, "# viaje: %s\n# dia: %04d-%02d-%02d  guardado: %02d:%02d:%02d\n",
                     vj, tmc.tm_year + 1900, tmc.tm_mon + 1, tmc.tm_mday,
-                    tmc.tm_hour, tmc.tm_min, tmc.tm_sec);
+                    tmc.tm_hour, tmc.tm_min, tmc.tm_sec) < 0) {
+                escritura_ok = false;
+            }
         }
         for (size_t i = 0; i < req.snap_count; ++i) {
             size_t idx = (req.snap_head + LOG_CAPTURE_MAX_LINES - req.snap_count + i)
@@ -250,15 +253,30 @@ static void log_save_task(void *arg)
                                 (e->level == ESP_LOG_INFO)    ? 'I' :
                                 (e->level == ESP_LOG_DEBUG)   ? 'D' :
                                 (e->level == ESP_LOG_VERBOSE) ? 'V' : '?';
-            fprintf(f, "%lu [%c] %s: %s\n",
-                    (unsigned long)e->ts_ms, lvl_ch, e->tag, e->msg);
+            if (fprintf(f, "%lu [%c] %s: %s\n",
+                        (unsigned long)e->ts_ms, lvl_ch, e->tag, e->msg) < 0) {
+                escritura_ok = false;
+            }
         }
 
-        fclose(f);
+        /* fclose hace el volcado real; si falla, el fichero NO vale (arbitraje
+         * 13-nov: antes se anunciaba "save completo" sin mirar nada, y quedaba un
+         * log truncado que parecia bueno). */
+        if (fclose(f) != 0) escritura_ok = false;
         camera_sd_bus_unlock();
+        if (!escritura_ok) {
+            /* Borrar el fichero a medias, bajo el bus como todo lo que toca
+             * metadatos. */
+            if (camera_sd_bus_lock(2000)) {
+                unlink(req.path);
+                camera_sd_bus_unlock();
+            }
+            ESP_LOGE(SAVE_TAG, "save INCOMPLETO: %s borrado (tarjeta o I/O)", req.path);
+        } else {
+            ESP_LOGI(SAVE_TAG, "save completo -> %s", req.path);
+        }
         free(req.snap);
         s_save_busy = false;
-        ESP_LOGI(SAVE_TAG, "save completo -> %s", req.path);
     }
 }
 

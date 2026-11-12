@@ -314,7 +314,13 @@ static void format_temp(char *buf, size_t len, float t)
  * estado limpio para el siguiente arranque. */
 esp_err_t datalogger_close_sd(void)
 {
-    (void)datalogger_flush();    /* lo que quede en RAM, al fichero */
+    /* Si el volcado no entra, NO se desmonta (arbitraje 13-nov): desmontar
+     * tiraria lo que queda en RAM y el usuario leeria que esta todo guardado.
+     * El boton de Ajustes ya sabe reintentar (mensaje propio). */
+    if (!datalogger_flush()) {
+        ESP_LOGW(TAG, "quedan muestras sin volcar: no se desmonta la tarjeta");
+        return ESP_ERR_TIMEOUT;
+    }
 
     if (!s_card) {
         return ESP_ERR_INVALID_STATE;
@@ -686,6 +692,10 @@ static void start_flush_timer(void)
     if (esp_timer_create(&args, &s_flush_timer) == ESP_OK) {
         esp_timer_start_periodic(s_flush_timer, (uint64_t)FLUSH_INTERVAL_MS * 1000ULL);
         ESP_LOGI(TAG, "Flush timer iniciado (%d ms)", FLUSH_INTERVAL_MS);
+        /* Primer aviso YA (arbitraje 13-nov): asi el espacio libre de la SD sale
+         * en el arranque y no hasta 60 s despues ("SD: calculando..." eterno si
+         * la tarea no llegara a despertar). */
+        xTaskNotifyGive(s_flush_task_handle);
     }
 }
 
