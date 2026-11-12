@@ -339,6 +339,37 @@ static uint8_t compute_fan(float t_aletas, uint8_t t_min, uint8_t t_max,
 
 /* Un tick de la maquina de estados del modo excedente solar. Se llama en cada
  * iteracion de frigo_task (~1-3 s; MIN_ON=30min tolera esa cadencia). */
+/* FORZADO PARA PROBAR LA SALIDA (12-nov-2026).
+ *
+ * El modo automatico necesita SoC >= 80 % y >= 80 W de panel sostenidos 60 s,
+ * o sea sol de verdad. En casa o en el taller no hay forma de probar el rele
+ * (ni la salida del conector) sin inventarse el sol, asi que hay un modo de
+ * prueba: -1 = automatico, 0 = forzado apagado, 1 = forzado encendido.
+ * Caduca solo a los 10 min para que una prueba olvidada no deje el frigo
+ * tirando de la bateria. Mientras esta forzado NO se acumulan minutos de sol
+ * del dia (eso tiene que seguir contando solo el sol de verdad). */
+static int      s_sol_forzado = -1;
+static uint32_t s_sol_forzado_desde_ms;
+
+#define FRIGO_SOLAR_FORZADO_MAX_MS (10u * 60u * 1000u)
+
+void frigo_solar_forzar(int modo)
+{
+    if (modo > 1) modo = 1;
+    if (modo < -1) modo = -1;
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
+    s_sol_forzado = modo;
+    s_sol_forzado_desde_ms = (uint32_t)(esp_timer_get_time() / 1000);
+    xSemaphoreGive(s_mutex);
+    ESP_LOGW(TAG, "SOLAR: salida de excedente %s", modo < 0 ? "en AUTOMATICO" :
+             (modo ? "FORZADA ENCENDIDA (prueba)" : "FORZADA APAGADA (prueba)"));
+}
+
+int frigo_solar_get_forzado(void)
+{
+    return s_sol_forzado;
+}
+
 static void frigo_solar_tick(void)
 {
     bool relay;
@@ -359,7 +390,21 @@ static void frigo_solar_tick(void)
         .soc_off_pct = s_sol_off_pct, .now_ms = now,
     };
     bool prev = s_sol_sm.active;
-    relay = frigo_solar_eval(&in, &s_sol_sm);
+
+    /* Caducidad del forzado (10 min). */
+    if (s_sol_forzado >= 0 &&
+        (uint32_t)(now - s_sol_forzado_desde_ms) >= FRIGO_SOLAR_FORZADO_MAX_MS) {
+        s_sol_forzado = -1;
+        ESP_LOGW(TAG, "SOLAR: la prueba forzada caduco (10 min), vuelve el automatico");
+    }
+
+    if (s_sol_forzado >= 0) {
+        relay = (s_sol_forzado != 0);
+        s_sol_sm.active = relay;     /* que el log de cambio lo vea */
+        s_sol_sm.arming = false;
+    } else {
+        relay = frigo_solar_eval(&in, &s_sol_sm);
+    }
 
     /* Acumulado de hoy. Se suma el intervalo anterior (por eso mira prev, el
      * estado con el que ha estado el rele durante ese rato, no el nuevo). El
@@ -369,7 +414,7 @@ static void frigo_solar_tick(void)
         /* Tope de 30 s: la vuelta del frigo puede tardar ~6 s (enumeracion del
          * bus con el bus muerto) y un atasco mayor no debe inventar minutos. */
         if (delta > 30000u) delta = 30000u;
-        if (prev) s_sol_ms_hoy += delta;
+        if (prev && s_sol_forzado < 0) s_sol_ms_hoy += delta;
     }
     s_sol_last_ms = now;
     /* Corte de dia: solo cuando el RTC da una fecha creible (tm_year > 100).

@@ -155,6 +155,10 @@ uint8_t  frigo_solar_get_soc_on(void);
 uint8_t  frigo_solar_get_soc_off(void);
 /* Estado ON real (rele activado por excedente). Para el indicador principal. */
 bool     frigo_solar_get_active(void);
+/* Prueba de la salida: -1 = automatico, 0 = forzado apagado, 1 = forzado
+ * encendido. Caduca a los 10 min. Sirve para comprobar el rele/salida sin sol. */
+void     frigo_solar_forzar(int modo);
+int      frigo_solar_get_forzado(void);
 /* Segundos que el frigo lleva hoy alimentado por excedente solar (acumula
  * mientras el rele esta cerrado; se pone a cero al cambiar de dia). */
 uint32_t frigo_solar_get_seg_hoy(void);

@@ -265,9 +265,19 @@ static esp_err_t handle_control(httpd_req_t *req) {
         else if (strstr(params,"mode=auto")) m = FRIGO_MODE_AUTO;
         frigo_set_mode(m);
         httpd_resp_sendstr(req, "ok fan");
+    } else if (strstr(params, "dev=sol")) {
+        /* Prueba de la SALIDA DE EXCEDENTE SOLAR sin sol (12-nov-2026).
+         * El modo automatico pide SoC >= 80 % y 80 W de panel 60 s seguidos,
+         * que en casa no se puede simular. Esto fuerza el rele 10 min como
+         * maximo y luego vuelve solo al automatico. No acumula minutos de sol
+         * del dia. Uso: /control?dev=sol&mode=on | off | auto */
+        if      (strstr(params, "mode=on"))   frigo_solar_forzar(1);
+        else if (strstr(params, "mode=off"))  frigo_solar_forzar(0);
+        else                                  frigo_solar_forzar(-1);
+        httpd_resp_sendstr(req, "ok sol");
     } else {
         httpd_resp_set_status(req, "400 Bad Request");
-        httpd_resp_sendstr(req, "dev? (luz_int|luz_ext|bomba|fan)");
+        httpd_resp_sendstr(req, "dev? (luz_int|luz_ext|bomba|fan|sol)");
     }
     return ESP_OK;
 }
@@ -1198,6 +1208,11 @@ esp_err_t config_server_start(void) {
     registrar(server, &uri_ausente);
     httpd_uri_t uri_control = { .uri = "/control", .method = HTTP_POST, .handler = handle_control };
     registrar(server, &uri_control);
+    /* Tambien por GET: la prueba de la salida de excedente se hace desde el
+     * navegador del movil sin mas herramienta que la barra de direcciones
+     * (el navegador pide usuario y clave y ya esta). */
+    static httpd_uri_t uri_control_get = { .uri = "/control", .method = HTTP_GET, .handler = handle_control };
+    registrar(server, &uri_control_get);
     /* Apuntes del satelite 3.5" (inicio/fin de viaje y, mas adelante, los
      * registros). Ver main/portal/config_server_viaje.c. */
     httpd_uri_t uri_viaje = { .uri = "/api/viaje", .method = HTTP_POST, .handler = handle_api_viaje };
