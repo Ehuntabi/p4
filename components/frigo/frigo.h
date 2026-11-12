@@ -9,16 +9,23 @@
  * conector — sólo eran selecciones sobre el papel. */
 #define FRIGO_ONEWIRE_GPIO    4    /* JP1 pin 13 — DS18B20 1-Wire (pullup 4.7 kΩ a 3.3 V) */
 #define FRIGO_FAN_GPIO        5    /* JP1 pin 15 — PWM ventilador (LEDC) */
-/* Ataque del ventilador: P4 -> optoacoplador PC817 -> MOSFET IRLR7843, con
- * resistencia en serie en puerta, resistencia de pull-down y diodo 1N4148 de
- * rueda libre.
- * 18 kHz queda fuera del oido de la mayoria de adultos, pero los oidos jovenes
- * (limite ~19-20 kHz) SI pueden oirlo.
- * NO subir la frecuencia sin tocar el hardware: el limite lo pone el PC817, que
- * conmuta en microsegundos (el apagado es el peor). A 25 kHz el ciclo baja a
- * 40 us y el control se degrada a duty bajo. Ver "Pendientes activos" 4 en
- * CLAUDE.md. */
-#define FRIGO_FAN_FREQ_HZ  18000
+/* Ataque del ventilador en la PCB NUEVA (12-nov-2026): el GPIO5 va DIRECTO a
+ * la puerta del IRLR7843 a traves de R3 (100 ohmios), con R4 (10k) de
+ * pull-down, D2 de rueda libre y C2 100 uF. **Ya NO hay PC817**: el
+ * optoacoplador era el cuello de botella (conmutaba en microsegundos y a duty
+ * bajo ni llegaba a conmutar), y era lo que impedia subir de 18 kHz.
+ *
+ * Con ataque directo el limite pasa a ser el LEDC (10 bits, 80 MHz de APB: da
+ * hasta ~78 kHz) y el propio MOSFET, que conmuta en nanosegundos. Asi que:
+ *   - 18 kHz funcionaba y sigue valiendo;
+ *   - 25 kHz es mejor: por encima de 20 kHz no lo oye NADIE (los oidos jovenes
+ *     llegan a ~19-20 kHz) y es la frecuencia tipica de los ventiladores.
+ * No bajar a frecuencias audibles (1-5 kHz): se oye el zumbido.
+ *
+ * Ojo al probarlo en el frigo de verdad: (1) que arranca desde parado (hay
+ * kickstart del 100 % durante 700 ms y suelo de duty del 30 %) y (2) que el
+ * MOSFET no calienta. Si arranca peor, volver a 18000. */
+#define FRIGO_FAN_FREQ_HZ  25000
 #define FRIGO_FAN_MIN_DUTY_PCT 30  /* suelo: con PWM sobre alimentacion (MOSFET), por debajo el fan no gira. 0=apagado */
 #define FRIGO_FAN_KICKSTART_MS 700 /* pulso 100% al arrancar de parado para romper la inercia */
 #define FRIGO_MAX_SENSORS     3

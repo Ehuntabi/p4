@@ -272,7 +272,15 @@ absoluta. Lo que decide de verdad es el hook, que mira lo que SE VA A COMMITEAR.
    - `SIM_OVERVIEW_ENABLE` a `1` en `main/sim_overview.h`
    - descomentar `sim_overview_start();` en `main/main.c`
 
-2. **PWM del ventilador a 25 kHz — NO es solo cambiar la línea** (27-jul-2026).
+2. **PWM del ventilador a 25 kHz — RESUELTO por hardware el 12-nov-2026.** La PCB
+   nueva quita el PC817 y ataca el IRLR7843 **directo** desde GPIO5 (R3 100 Ω serie,
+   R4 10k de pull-down, D2 de rueda libre, C2 100 µF). Con eso el cuello de botella
+   del opto desaparece y la frecuencia se sube a **25000 Hz** en `frigo.h`. Queda
+   pendiente comprobarlo en el frigo real (arranque desde parado y temperatura del
+   MOSFET); si arranca peor, volver a 18000. El texto de abajo se deja como
+   histórico del motivo por el que estuvo en 18 kHz tanto tiempo.
+
+   (Histórico) **PWM del ventilador a 25 kHz — NO es solo cambiar la línea** (27-jul-2026).
    Ahora está a 18 kHz (`FRIGO_FAN_FREQ_HZ` en `components/frigo/frigo.h`): inaudible
    para adultos, pero **NO para oídos jóvenes** (su límite ronda los 19-20 kHz). Por
    encima de 20 kHz no lo oye nadie.
