@@ -82,6 +82,33 @@ Para separar un reinicio del cable de uno de verdad: `reinicio` en `/api/perf` y
 el `MOTIVO ULTIMO REINICIO` del log (grabar por USB deja **usb**; desenchufar la
 pantalla, **poweron**).
 
+## La sonda de aletas "a veces fallaba" (13-nov-2026)
+
+Síntoma: el frigo **detectaba** la sonda de aletas (rol asignado, dirección
+válida) pero cada tanto el ciclo se quedaba sin dato. Como es la que manda sobre
+el ventilador, el ventilador se paraba en seco — y en el log **no quedaba ni
+rastro**, porque solo se avisaba al cambiar el porcentaje.
+
+Qué se cambió (v5.15, `components/frigo/frigo.c`):
+
+- **Dos intentos** de lectura del scratchpad por ciclo: releerlo son 9 bytes, y
+  el error suelto de CRC desaparece.
+- Un fallo **no borra la sonda**: se aguanta el **último valor bueno** hasta
+  **3 ciclos (~3 s)**. Pasado ese plazo sí se da por perdida y el ventilador se
+  para, que sigue siendo lo seguro.
+- Lecturas fuera de **-120..125 °C** se tratan como error (85,0 es el valor de
+  power-on del DS18B20; -127 es "sin dato").
+- **Aviso en el log con tope de uno por minuto**, con la dirección y el nombre
+  del error.
+
+Si vuelve a pasar, buscar en el log:
+
+    frigo: sonda 0 (28:AA:BB:CC:DD:EE:FF:01) no lee: ESP_ERR_INVALID_CRC (seguidos 2, aguanto el ultimo valor)
+
+Rachas cortas que se recuperan = ruido en el bus (cable, pull-up de 4,7 k,
+longitud). `seguidos` que no para de subir = esa sonda o su cableado. La
+dirección dice **cuál** de las tres es.
+
 ## Límite conocido: la pantalla parpadea mientras se graba flash (OTA)
 
 No es un fallo del código y **no tiene arreglo por software en esta placa**: el
