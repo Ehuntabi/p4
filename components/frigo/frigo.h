@@ -27,7 +27,10 @@
  * MOSFET no calienta. Si arranca peor, volver a 18000. */
 #define FRIGO_FAN_FREQ_HZ  25000
 #define FRIGO_FAN_MIN_DUTY_PCT 30  /* suelo: con PWM sobre alimentacion (MOSFET), por debajo el fan no gira. 0=apagado */
-#define FRIGO_FAN_KICKSTART_MS 700 /* pulso 100% al arrancar de parado para romper la inercia */
+/* La rampa del ventilador (componentes/frigo/frigo.c) arranca DESDE EL SUELO y
+ * sube de 0 a 100 % en 5 s; ya no hay pulso de arranque al 100 %: el primer paso
+ * va al minimo util (FRIGO_FAN_MIN_DUTY_PCT) porque por debajo el motor no gira,
+ * y de ahi sube 1 % cada 50 ms. Al parar, la misma rampa. */
 #define FRIGO_MAX_SENSORS     3
 
 /* Dos cabeceras declaran el mismo tope por separado (frigo_sondas.h no puede

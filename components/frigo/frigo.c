@@ -236,12 +236,6 @@ static void nvs_save(void)
 /* Ultimo % efectivamente aplicado al LEDC (tras suelo/kickstart). Sirve para
  * detectar el paso de parado->girando y disparar el pulso de arranque. */
 static volatile uint8_t s_last_applied = 0;   /* la lee la tarea de esp_timer (kick) */
-/* Kickstart no bloqueante: al arrancar de parado damos 100% durante
- * FRIGO_FAN_KICKSTART_MS y una callback de esp_timer baja al objetivo. No se
- * puede usar vTaskDelay porque fan_set_percent se llama con s_mutex tomado
- * (congelaria UI/HTTP, que leen el estado bajo el mismo mutex). */
-static esp_timer_handle_t s_kick_timer = NULL;
-static volatile uint8_t   s_kick_target = 0;
 
 /* Duty crudo al LEDC (0-100% -> 0-1023 en 10 bits). SIN log: las marcas de
  * carga se ponen una vez por rampa, no por escalon (ver fan_rampa). */
@@ -252,23 +246,32 @@ static void fan_apply_duty(uint8_t pct)
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL);
 }
 
-/* ── RAMPA EN VEZ DE ESCALON (13-nov-2026) ────────────────────────────────
+/* ── RAMPA LARGA DEL VENTILADOR (13-nov-2026, alargada a peticion del dueno) ─
  *
- * POR QUE. El 13-nov se correlaciono un destello de la pantalla con el arranque
- * del ventilador (kickstart al 100 % de golpe) y se puso esta rampa para
- * repartir el escalon de corriente. DESPUES se demostro que la causa del
- * destello era otra (uxTaskGetSystemState() en la telemetria, ver CLAUDE.md), y
- * el ventilador quedo descartado: los destellos seguian saliendo sin ningun
- * periferico conectado. La rampa SE QUEDA igualmente porque es mejor practica:
- * un escalon de 1 A de 12 V de golpe no le hace bien a ningun rail.
+ * De 0 al objetivo a 20 %/s: **0 -> 100 en 5 SEGUNDOS**, en pasos del 1 % cada
+ * 50 ms. Antes eran 200 ms (10 % cada 15 ms) precedidos de un pulso al 100 %
+ * durante 700 ms (el "kickstart"). Aquello se puso el mismo 13-nov cuando se
+ * creia que el escalon de corriente del ventilador causaba el destello de la
+ * pantalla; despues se demostro que el destello era la telemetria, asi que el
+ * ventilador ya no necesita arrancar "de golpe" y se puede suavizar.
  *
- * El escalon no hace falta: al motor le basta con LLEGAR a tope, no con llegar
- * de un salto. Subiendo en escalones del 10 % cada 15 ms (200 ms de 0 a 100) y
- * bajando igual, el pico de corriente se reparte.
- * Se conserva el kickstart (700 ms por encima del objetivo) porque es lo que
- * rompe la inercia con el ventilador parado. */
-#define FAN_RAMP_STEP_PCT   10
-#define FAN_RAMP_STEP_MS    15
+ * POR QUE ASI Y NO UN SALTO AL 100 %. Una rampa lenta reduce la corriente de
+ * arranque (el pico de un motor parado es el mayor que va a pedir), el golpe en
+ * el rail de 12 V y el ruido del arranque.
+ *
+ * EL SUELO SI VA DE GOLPE, y es a proposito: por debajo del minimo util (30 %,
+ * ajustable en Ajustes) el ventilador no gira, asi que la rampa EMPIEZA ahi y
+ * sube desde ahi. Ese primer paso (0 -> 30 %) es un sexto del escalon de antes.
+ *
+ * LA MISMA RAMPA PARA ARRANCAR Y PARA PARAR (peticion del dueno): 1 % cada
+ * 50 ms en los dos sentidos, o sea 5 s de 0 a 100 y 3,5 s de 100 a 30. Al parar
+ * el motor se acompania hasta 0 en vez de cortarle la corriente de golpe (eso
+ * ultimo es lo que mas castiga al MOSFET y al rail: cortar 1 A de 12 V de un
+ * tajo). Tarda un poco mas en quedarse quieto, y da igual: el ventilador del
+ * frigo no tiene ninguna prisa por pararse.
+ */
+#define FAN_RAMP_STEP_PCT   1     /* % por paso, subiendo y bajando */
+#define FAN_RAMP_STEP_MS    50    /* y cada cuanto: 1 %/50 ms = 20 %/s */
 static esp_timer_handle_t s_ramp_timer = NULL;
 static volatile uint8_t   s_ramp_actual;
 static volatile uint8_t   s_ramp_fin;
@@ -287,33 +290,25 @@ static void fan_ramp_cb(void *arg)
     fan_apply_duty(a);
 }
 
-/* Lleva el ventilador al pct pedido en rampa (o de golpe si no hay temporizador). */
+/* Lleva el ventilador al pct pedido en rampa (o de golpe si no hay temporizador).
+ * Se llama SIEMPRE con s_mutex tomado (fan_set_percent), asi que leer s_state es
+ * seguro; el callback de la rampa no entra aqui. */
 static void fan_rampa(uint8_t pct)
 {
     if (!s_ramp_timer) { fan_apply_duty(pct); s_ramp_actual = pct; return; }
     if (pct == s_ramp_actual && s_ramp_actual == s_ramp_fin) return;
+
+    /* Parado -> girando: el PRIMER paso va al minimo util. Por debajo de el no
+     * gira, y pasar por ahi despacio solo calienta el motor sin mover aire. */
+    if (s_ramp_actual == 0 && pct > 0) {
+        uint8_t piso = s_state.fan_min_pct ? s_state.fan_min_pct : FRIGO_FAN_MIN_DUTY_PCT;
+        if (piso > pct) piso = pct;
+        s_ramp_actual = piso;
+        fan_apply_duty(piso);
+    }
     s_ramp_fin = pct;
     esp_timer_stop(s_ramp_timer);
     esp_timer_start_periodic(s_ramp_timer, (uint64_t)FAN_RAMP_STEP_MS * 1000);
-}
-
-/* Fin del pulso de arranque: baja del 100% al objetivo real. */
-static void fan_kick_done_cb(void *arg)
-{
-    /* Fin del kickstart: BAJAR EN RAMPA al objetivo (un salto de 100 % al 30 %
-     * tambien pega un escalon de corriente).
-     *
-     * OJO (auditoria 13-nov): esp_timer_stop() NO cancela un callback que ya esta
-     * despachado. Si entre el despacho y esta linea alguien manda el ventilador a
-     * parado, esto volvia a subirlo y el PWM se quedaba girando con la pantalla
-     * diciendo 0 %. s_last_applied es 0 en ese caso, y ese es el testigo: si sigue
-     * a 0 es que el ventilador esta mandado parar y no hay nada que bajar. */
-    /* Si el objetivo ya no es el de este kickstart, no se toca nada: cubre el
-     * 'parar' (0) y tambien un cambio de objetivo 40 -> 20 mientras el callback
-     * estaba despachado, que subia el ventilador al valor viejo y ahi se quedaba
-     * (arbitraje del 13-nov: el testigo de 0 solo cubria parar). */
-    if (s_last_applied != s_kick_target) return;
-    fan_rampa(s_kick_target);
 }
 
 static void fan_pwm_init(void)
@@ -337,14 +332,6 @@ static void fan_pwm_init(void)
     };
     ledc_channel_config(&ch);
 
-    const esp_timer_create_args_t kick = {
-        .callback = fan_kick_done_cb,
-        .name     = "fan_kick",
-    };
-    if (esp_timer_create(&kick, &s_kick_timer) != ESP_OK) {
-        ESP_LOGW(TAG, "kickstart timer no creado; arranque sin pulso");
-        s_kick_timer = NULL;
-    }
     const esp_timer_create_args_t ramp = {
         .callback = fan_ramp_cb,
         .name     = "fan_ramp",
@@ -364,21 +351,10 @@ static void fan_set_percent(uint8_t pct)
     uint8_t floor_pct = s_state.fan_min_pct;
     if (pct > 0 && pct < floor_pct) pct = floor_pct;
 
-    if (s_kick_timer && s_last_applied == 0 && pct > 0) {
-        /* Parado -> girando: se SUBE EN RAMPA hasta el 100 % y la callback baja
-         * luego al objetivo. El motor arranca igual (llega a tope), pero el
-         * escalon de corriente queda repartido. */
-        s_kick_target = pct;
-        fan_rampa(100);
-        esp_timer_stop(s_kick_timer);   /* por si venia armado */
-        esp_timer_start_once(s_kick_timer,
-                             (uint64_t)FRIGO_FAN_KICKSTART_MS * 1000);
-    } else {
-        /* Cambio en marcha o parada: si hay un kickstart pendiente, cancelarlo
-         * para que no pise este valor. */
-        if (s_kick_timer) esp_timer_stop(s_kick_timer);
-        fan_rampa(pct);
-    }
+    /* SIN KICKSTART desde el 13-nov-2026: el arranque es la rampa larga (que
+     * empieza en el minimo util y de ahi sube 20 %/s). Una rampa en curso se
+     * sustituye por esta, que es lo que se pide. */
+    fan_rampa(pct);
     s_last_applied = pct;
 }
 
