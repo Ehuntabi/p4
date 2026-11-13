@@ -72,6 +72,16 @@ static frigo_update_cb_t  s_cb    = NULL;
 static frigo_heartbeat_cb_t s_hb_cb = NULL;
 static onewire_bus_handle_t s_bus  = NULL;
 static ds18b20_device_handle_t s_devs[FRIGO_MAX_SENSORS] = {0};
+/* Ultimo valor bueno de cada sonda y fallos seguidos. Sin esto, UN error de CRC
+ * en la lectura del scratchpad dejaba el ciclo sin dato: la sonda se pintaba
+ * vacia y, si era la de aletas (la que manda sobre el ventilador), el ventilador
+ * se paraba en seco. Caso real del 13-nov-2026 con la sonda de aletas: la
+ * detectaba y "a veces fallaba". */
+static float    s_ultimo_bueno[FRIGO_MAX_SENSORS]    = {-127.0f, -127.0f, -127.0f};
+static uint8_t  s_fallos_seguidos[FRIGO_MAX_SENSORS] = {0, 0, 0};
+static int64_t  s_ultimo_aviso_us = 0;
+#define SONDAS_FALLOS_TOLERADOS  3    /* ciclos (~3 s) aguantando el ultimo valor */
+#define SONDAS_AVISO_CADA_US     (60LL * 1000000LL)   /* y un aviso por minuto como mucho */
 /* Config del bus guardada: hace falta para poder recrearlo en caliente. */
 static onewire_bus_config_t s_bus_cfg = { .bus_gpio_num = FRIGO_ONEWIRE_GPIO };
 static onewire_bus_rmt_config_t s_rmt_cfg = { .max_rx_bytes = 10 };
@@ -80,6 +90,10 @@ static onewire_bus_rmt_config_t s_rmt_cfg = { .max_rx_bytes = 10 };
 static uint8_t s_scan_flags = 0;
 /* La UI pide escaneo desde otro hilo; frigo_task lo atiende. */
 static volatile bool s_rescan_req = false;
+/* Una lectura fuera de este margen no es una temperatura: es un error disfrazado
+ * (85.0 es el valor de power-on del DS18B20 y -127 el "sin dato"). */
+static bool temp_valida(float t) { return t >= -120.0f && t <= 125.0f; }
+
 /* Definida mas abajo (junto al resto del escaneo), pero frigo_task la usa antes. */
 static void escanear_y_aplicar(bool recuperar);
 /* Cuando el sim inyecta datos (banco sin sondas), frigo_task deja de escribir
@@ -582,9 +596,46 @@ static void frigo_task(void *arg)
         if (s_hb_cb) s_hb_cb();   /* latido: la lectura puede tardar casi 1 s */
 
         for (int i = 0; i < s_state.n_sensors; i++) {
-            float t;
-            if (s_devs[i] && ds18b20_get_temperature(s_devs[i], &t) == ESP_OK)
+            float t = -127.0f;
+            esp_err_t err = ESP_ERR_INVALID_STATE;
+            if (s_devs[i]) {
+                /* DOS intentos: la lectura del scratchpad son 9 bytes, repetirla
+                 * cuesta microsegundos y evita perder el ciclo por un CRC suelto
+                 * (la sonda de aletas "a veces fallaba", 13-nov-2026). */
+                for (int intento = 0; intento < 2; intento++) {
+                    err = ds18b20_get_temperature(s_devs[i], &t);
+                    if (err == ESP_OK) break;
+                }
+            }
+            if (err == ESP_OK && temp_valida(t)) {
                 temps[i] = t;
+                s_ultimo_bueno[i] = t;
+                if (s_fallos_seguidos[i] > 0) {
+                    ESP_LOGI(TAG, "sonda %d vuelve a leer bien (%.1f)", i, t);
+                    s_fallos_seguidos[i] = 0;
+                }
+            } else {
+                if (s_fallos_seguidos[i] < 255) s_fallos_seguidos[i]++;
+                /* Un fallo suelto no borra la sonda: se aguanta el ultimo valor
+                 * bueno unos ciclos (~3 s). Pasado ese plazo si se da por
+                 * perdida, y con la de aletas el ventilador se para, que es lo
+                 * seguro. */
+                if (s_fallos_seguidos[i] <= SONDAS_FALLOS_TOLERADOS) {
+                    temps[i] = s_ultimo_bueno[i];
+                }
+                int64_t ahora = esp_timer_get_time();
+                if (ahora - s_ultimo_aviso_us > SONDAS_AVISO_CADA_US) {
+                    s_ultimo_aviso_us = ahora;
+                    char dir[24] = "?";
+                    if (i < FRIGO_MAX_SENSORS) {
+                        frigo_addr_to_str(&s_state.sensors[i], dir, sizeof(dir));
+                    }
+                    ESP_LOGW(TAG, "sonda %d (%s) no lee: %s (seguidos %u, %s)",
+                             i, dir, esp_err_to_name(err), (unsigned)s_fallos_seguidos[i],
+                             s_fallos_seguidos[i] <= SONDAS_FALLOS_TOLERADOS
+                                 ? "aguanto el ultimo valor" : "sin dato");
+                }
+            }
         }
 
         if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
