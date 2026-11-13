@@ -324,7 +324,8 @@ absoluta. Lo que decide de verdad es el hook, que mira lo que SE VA A COMMITEAR.
        el P4 puede atacarlo directo con la R serie (la opción más simple);
    (c) quedarse en 18 kHz.
    Al cambiarlo, comprobar en el frigo real: (1) que **sigue arrancando desde parado**
-   (hay kickstart 700 ms al 100 % y suelo de duty 30 %) y (2) que el MOSFET no calienta.
+   (desde v5.14 no hay kickstart: la rampa de 5 s arranca en el suelo de duty, 30 %, y
+   sube 20 %/s; el mismo camino al parar) y (2) que el MOSFET no calienta.
    Si arranca peor, volver a 18 kHz.
    (Histórico: antes del IRLR7843 había un módulo D4184, limitado a ≤20 kHz. Ese límite
    ya no aplica, pero apareció el del opto.)
