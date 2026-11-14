@@ -44,6 +44,19 @@ static const char *TAG = "slave_ota";
 /* Las primitivas del componente esp_hosted 0.0.27. No estan en su cabecera
  * publica (esa solo ofrece rpc_ota(), que quiere una URL o un fichero), asi que
  * se declaran aqui. */
+/* En esp_hosted 2.x el `rpc_ota_end` YA NO activa la particion nueva: hay que
+ * llamar aparte a esp_hosted_slave_ota_activate() (API publica, ver
+ * esp_hosted_ota.h). Con el host 2.x, si no se activa, la imagen se escribe
+ * entera, el log dice "100 %" y el C6 sigue arrancando la vieja: es lo que pasó
+ * el 14-nov-2026 grabando la 2.13.1. En la 0.0.27 (host viejo) el end sí
+ * activaba, y esa cabecera no existe: por eso va condicional. */
+#if __has_include("esp_hosted_ota.h")
+  #include "esp_hosted_ota.h"
+  #define SLAVE_OTA_HAY_ACTIVATE 1
+#else
+  #define SLAVE_OTA_HAY_ACTIVATE 0
+#endif
+
 extern int rpc_ota_begin(void);
 extern int rpc_ota_write(uint8_t *ota_data, uint32_t ota_data_len);
 extern int rpc_ota_end(void);
@@ -281,6 +294,18 @@ static void slave_ota_task(void *arg)
         vTaskDelete(NULL);
         return;
     }
+
+#if SLAVE_OTA_HAY_ACTIVATE
+    /* Paso que en 2.x va aparte: sin esto la imagen queda escrita pero el C6
+     * sigue arrancando la anterior. */
+    if (esp_hosted_slave_ota_activate() != ESP_OK) {
+        ESP_LOGE(TAG, "el C6 no acepta la activacion: se queda con la de antes");
+        s_en_curso = false;
+        vTaskDelete(NULL);
+        return;
+    }
+    ESP_LOGW(TAG, "activacion del C6 pedida (2.x)");
+#endif
 
     ESP_LOGW(TAG, "==== C6 grabado. Reiniciando los dos en 5 s ====");
     ESP_LOGW(TAG, "==== Si has visto '10%%'..'100%%' sin errores, la radio quedo "
