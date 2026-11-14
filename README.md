@@ -58,7 +58,7 @@ Port realizado por **[Ehuntabi](https://github.com/Ehuntabi)**.
 | **RTC** | RX8025T (I²C 0x32, SDA=7 / SCL=8 compartido con GT911 y ES8311) + pila CR1220 |
 | **microSD** | **SDMMC** (slot 0 IOMUX: CLK=43, CMD=44, D0..D3=39..42; LDO interno canal 4 a 3,3 V), ver `components/datalogger/datalogger.c:241` |
 | **Sensores temperatura** | DS18B20 1-Wire en **GPIO 4** (JP1 pin 13, pullup 4.7 kΩ) |
-| **Ventilador frigo** | PWM LEDC en **GPIO 5** (JP1 pin 15), **25 kHz**, con **rampa de 5 s** (20 %/s, igual al arrancar que al parar). El pin 15 ataca un MOSFET **IRLR7843TRPBF** (R3 de 100 Ω en serie en puerta, R4 de 10 k de pull-down, D2 **1N5819** de rueda libre, C2 de 100 µF) |
+| **Ventilador frigo** | PWM LEDC en **GPIO 5** (JP1 pin 15), **25 kHz**, con **rampa de 10 %/s** (10 s de 0 a 100; igual al arrancar que al parar). El pin 15 ataca un MOSFET **IRLR7843TRPBF** (R3 de 100 Ω en serie en puerta, R4 de 10 k de pull-down, D2 **1N5819** de rueda libre, C2 de 100 µF) |
 | **Audio** | Codec ES8311 + amplificador NS4150 (PA_CTRL=11, I²S MCLK=13/BCLK=12/LRCK=10/DOUT=9) |
 | **Cámara** | OmniVision **OV02C10** (MIPI-CSI 2 lanes, RAW10 1928x1092, ~37 fps, JPEG por HW). Comparte el I²C (SDA=7 / SCL=8); sin pines reset/pwdn dedicados |
 | **NE185 (autocaravana)** | RS-485 con el cuadro Nordelettronica NE185 vía MAX485 (U8), **UART1 TX=GPIO 26 / RX=GPIO 27**, 38400 8N1, conector J4 (DE/RE automático) |
@@ -96,7 +96,7 @@ Páginas con cards de borde de color, dropdown scrollable cuando hay overflow, s
 - **Pantalla** (cyan): card combinada **Brillo pantalla + Salvapantallas**; card **Modo nocturno** en una línea (switch + Inicio/Fin + brillo nocturno, brillo aplicado automáticamente entre las horas configuradas según RTC); **Pantalla de bienvenida** (logo furgo o sin splash).
 - **Tarjeta SD** (azul): carrusel de capturas y visor de imágenes de la SD.
 - **Sonido y alertas** (rojo): volumen, switch silenciar avisos, umbrales SoC y temperatura del frigorífico.
-- **Autocaravana** (rosa): agrupa lo propio del vehículo — **Opciones Frigo** (sensores DS18B20, control PWM del ventilador según T_Aletas con rampa de 5 s, umbrales y aprovechamiento de excedente solar), **Victron Keys** (MAC + clave AES por dispositivo, hasta 8), **Modo ausente**, **Energía del viaje** (kWh/Ah cargados/consumidos y horas del viaje en curso), **Bombonas** (botón de *cambio de bombona* y estadística de cuánto dura cada una) y **Auto-encendido** de luz interior + bomba al arrancar.
+- **Autocaravana** (rosa): agrupa lo propio del vehículo — **Opciones Frigo** (sensores DS18B20, control PWM del ventilador según T_Aletas con rampa de 10 %/s, umbrales y aprovechamiento de excedente solar), **Victron Keys** (MAC + clave AES por dispositivo, hasta 8), **Modo ausente**, **Energía del viaje** (kWh/Ah cargados/consumidos y horas del viaje en curso), **Bombonas** (botón de *cambio de bombona* y estadística de cuánto dura cada una) y **Auto-encendido** de luz interior + bomba al arrancar.
 - **Acerca de** (gris): uptime, RAM libre, IP del AP, chip, versión IDF, **Backup configuración** (exportar/importar a `/sdcard/config_backup.json`), **Último reset** + contador de resets por watchdog/panic, botón Reboot con confirmación.
 
 #### Barra inferior
@@ -239,7 +239,7 @@ scripts/grabar.sh /dev/ttyACM0   # graba lo PUBLICADO (y comprueba que lo esta)
   pantalla se pone en hora sola. Indicador en la barra inferior y página propia
   en Ajustes → GPS con las tramas en crudo.
 - **DS18B20** ✅ — bus 1-Wire en GPIO 4 (JP1 pin 13). Pullup 4.7 kΩ a 3.3 V externo. El bus necesita resets de warm-up antes de enumerar.
-- **Ventilador** — PWM 25 kHz en GPIO 5 (JP1 pin 15), con rampa de 5 s de 0 a 100 % y de vuelta.
+- **Ventilador** — PWM 25 kHz en GPIO 5 (JP1 pin 15), con rampa de 10 %/s: 10 s de 0 a 100 % y otros 10 s de vuelta.
 
 ### Créditos
 
@@ -265,7 +265,7 @@ Ported by **[Ehuntabi](https://github.com/Ehuntabi)**.
 | **RTC** | RX8025T (I²C 0x32, SDA=7 / SCL=8 shared with GT911 and ES8311) + CR1220 cell |
 | **microSD** | SDMMC slot 0 IOMUX (CLK=43, CMD=44, D0..D3=39..42), internal LDO ch 4 (3.3 V) |
 | **Temp sensors** | DS18B20 1-Wire on **GPIO 4** (JP1 pin 13, 4.7 kΩ pull-up) |
-| **Fridge fan** | LEDC PWM on **GPIO 5** (JP1 pin 15), **25 kHz**, with a **5 s ramp** (20 %/s, same up and down). Pin 15 drives an **IRLR7843TRPBF** MOSFET (R3 100 Ω series gate resistor, R4 10 k pull-down, D2 **1N5819** flyback, C2 100 µF) |
+| **Fridge fan** | LEDC PWM on **GPIO 5** (JP1 pin 15), **25 kHz**, with a **10 %/s ramp** (10 s from 0 to 100; same up and down). Pin 15 drives an **IRLR7843TRPBF** MOSFET (R3 100 Ω series gate resistor, R4 10 k pull-down, D2 **1N5819** flyback, C2 100 µF) |
 | **Audio** | ES8311 codec + NS4150 amp (PA_CTRL=11, I²S MCLK=13/BCLK=12/LRCK=10/DOUT=9) |
 | **Camera** | OmniVision **OV02C10** (MIPI-CSI 2 lanes, RAW10 1928x1092, ~37 fps, HW JPEG). Shares I²C (SDA=7 / SCL=8); no dedicated reset/pwdn pins |
 | **NE185 (camper)** | RS-485 to the Nordelettronica NE185 panel via MAX485 (U8), **UART1 TX=GPIO 26 / RX=GPIO 27**, 38400 8N1, J4 connector (automatic DE/RE) |
@@ -303,7 +303,7 @@ Pages with role-coloured cards, scrollbar visible on overflow, separators betwee
 - **Display** (cyan): combined **Brightness + Screensaver** card; single-line **Night mode** card (switch + start/end + night brightness, auto-applied within the time window by RTC); **Splash screen** (camper logo or none).
 - **SD card** (blue): screenshot carousel and SD image viewer.
 - **Sound & alerts** (red): volume, mute switch, SoC and freezer temperature thresholds.
-- **Motorhome** (pink): groups everything vehicle-specific — **Fridge options** (DS18B20 sensors, PWM fan based on T_Fins with a 5 s ramp, thresholds and solar-surplus usage), **Victron Keys** (MAC + AES key per device, up to 8), **Away mode**, **Energía del viaje** (kWh/Ah charged/discharged and hours for the current trip), **Bombonas** (gas-bottle *change* button plus how long each one lasts) and **Auto switch-on** of the interior light + pump at wake.
+- **Motorhome** (pink): groups everything vehicle-specific — **Fridge options** (DS18B20 sensors, PWM fan based on T_Fins with a 10 %/s ramp, thresholds and solar-surplus usage), **Victron Keys** (MAC + AES key per device, up to 8), **Away mode**, **Energía del viaje** (kWh/Ah charged/discharged and hours for the current trip), **Bombonas** (gas-bottle *change* button plus how long each one lasts) and **Auto switch-on** of the interior light + pump at wake.
 - **About** (gray): uptime, free RAM, AP IP, chip, IDF version, **Configuration backup** (export/import to `/sdcard/config_backup.json`), **Last reset** + WDT/panic reset counter, Reboot button.
 
 #### Bottom bar
@@ -422,7 +422,7 @@ scripts/grabar.sh /dev/ttyACM0   # graba lo PUBLICADO (y comprueba que lo esta)
 - **OV02C10 camera** ✅ — MIPI-CSI with hardware ISP. Shares GDMA with the SD card: capture on demand, never continuous streaming.
 - **NE185 (RS-485)** ✅ — MAX485 on UART1, in use as master of the distribution panel.
 - **DS18B20** ✅ — 1-Wire bus on GPIO 4 (JP1 pin 13). External 4.7 kΩ pull-up to 3.3 V. The bus needs warm-up resets before enumerating.
-- **Fan** — 25 kHz PWM on GPIO 5 (JP1 pin 15), with a 5 s ramp from 0 to 100 % and back.
+- **Fan** — 25 kHz PWM on GPIO 5 (JP1 pin 15), with a 10 %/s ramp: 10 s from 0 to 100 % and another 10 s back.
 
 ### Credits
 

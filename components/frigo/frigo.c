@@ -260,14 +260,13 @@ static void fan_apply_duty(uint8_t pct)
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL);
 }
 
-/* ── RAMPA LARGA DEL VENTILADOR (13-nov-2026, alargada a peticion del dueno) ─
+/* ── RAMPA LARGA DEL VENTILADOR (14-nov-2026: alargada otra vez) ────────────
  *
- * De 0 al objetivo a 20 %/s: **0 -> 100 en 5 SEGUNDOS**, en pasos del 1 % cada
- * 50 ms. Antes eran 200 ms (10 % cada 15 ms) precedidos de un pulso al 100 %
- * durante 700 ms (el "kickstart"). Aquello se puso el mismo 13-nov cuando se
- * creia que el escalon de corriente del ventilador causaba el destello de la
- * pantalla; despues se demostro que el destello era la telemetria, asi que el
- * ventilador ya no necesita arrancar "de golpe" y se puede suavizar.
+ * De 0 al objetivo a **10 %/s**: 1 % cada 100 ms, o sea **0 -> 100 en 10
+ * segundos** (7 s de verdad, porque los primeros 30 % van de golpe al suelo).
+ * Antes eran 200 ms (10 % cada 15 ms) con un pulso al 100 % de 700 ms (el
+ * "kickstart"), luego 20 %/s (1 % cada 50 ms). Se alarga por gusto: no hay
+ * prisa y el arranque queda escalonado, sin escalones que se oigan.
  *
  * POR QUE ASI Y NO UN SALTO AL 100 %. Una rampa lenta reduce la corriente de
  * arranque (el pico de un motor parado es el mayor que va a pedir), el golpe en
@@ -278,14 +277,15 @@ static void fan_apply_duty(uint8_t pct)
  * sube desde ahi. Ese primer paso (0 -> 30 %) es un sexto del escalon de antes.
  *
  * LA MISMA RAMPA PARA ARRANCAR Y PARA PARAR (peticion del dueno): 1 % cada
- * 50 ms en los dos sentidos, o sea 5 s de 0 a 100 y 3,5 s de 100 a 30. Al parar
+ * 100 ms en los dos sentidos, o sea 10 s de 0 a 100, 7 s de 30 a 100 y 10 s de
+ * 100 a 0. Al parar
  * el motor se acompania hasta 0 en vez de cortarle la corriente de golpe (eso
  * ultimo es lo que mas castiga al MOSFET y al rail: cortar 1 A de 12 V de un
  * tajo). Tarda un poco mas en quedarse quieto, y da igual: el ventilador del
  * frigo no tiene ninguna prisa por pararse.
  */
 #define FAN_RAMP_STEP_PCT   1     /* % por paso, subiendo y bajando */
-#define FAN_RAMP_STEP_MS    50    /* y cada cuanto: 1 %/50 ms = 20 %/s */
+#define FAN_RAMP_STEP_MS    100   /* y cada cuanto: 1 %/100 ms = 10 %/s */
 static esp_timer_handle_t s_ramp_timer = NULL;
 static volatile uint8_t   s_ramp_actual;
 static volatile uint8_t   s_ramp_fin;
@@ -366,7 +366,7 @@ static void fan_set_percent(uint8_t pct)
     if (pct > 0 && pct < floor_pct) pct = floor_pct;
 
     /* SIN KICKSTART desde el 13-nov-2026: el arranque es la rampa larga (que
-     * empieza en el minimo util y de ahi sube 20 %/s). Una rampa en curso se
+     * empieza en el minimo util y de ahi sube 10 %/s). Una rampa en curso se
      * sustituye por esta, que es lo que se pide. */
     fan_rampa(pct);
     s_last_applied = pct;
