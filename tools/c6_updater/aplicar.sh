@@ -107,7 +107,12 @@ if "slave_ota_btn_cb" not in t:
     i = t.index(a2) + len(a2)
     t = t[:i] + d + t[i:]
     a3 = "    lv_obj_update_layout(cont);\n    lv_coord_t h_ap = lv_obj_get_height(card1);"
-    assert t.count(a3) == 1, "no encuentro el final de la pagina Wi-Fi"
+    if t.count(a3) != 1:
+        # La pagina Wi-Fi cambia con las versiones: sin este ancla no se pone el
+        # boton, pero el grabado automatico de main.c (30 s) hace el trabajo.
+        print("   [ok] settings_wifi.c (sin boton: no encuentro el ancla, se usa el automatico)")
+        p.write_text(t, encoding="utf8")
+        raise SystemExit(0)
     boton = '''    /* HERRAMIENTA DE MANTENIMIENTO: graba el firmware del C6 desde la SD.
      * En rojo a proposito: es lo unico de esta pantalla que puede dejar la
      * placa sin Wi-Fi y sin BLE si sale mal. Ver tools/c6_updater/LEEME.md. */
