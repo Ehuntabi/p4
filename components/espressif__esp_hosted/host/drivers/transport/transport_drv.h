@@ -142,9 +142,6 @@ void bus_deinit_internal(void *bus_handle);
 
 void process_priv_communication(interface_buffer_handle_t *buf_handle);
 
-esp_err_t send_slave_config(uint8_t host_cap, uint8_t firmware_chip_id,
-		uint8_t raw_tp_direction, uint8_t low_thr_thesh, uint8_t high_thr_thesh);
-
 uint8_t is_transport_rx_ready(void);
 uint8_t is_transport_tx_ready(void);
 
@@ -168,6 +165,26 @@ void check_if_max_freq_used(uint8_t chip_type);
 
 int bus_inform_slave_host_power_save_start(void);
 int bus_inform_slave_host_power_save_stop(void);
+
+#if H_TRANSPORT_IN_USE == H_TRANSPORT_SPI_HD
+/* reconfigure the SPI-HD interface based on the number of SPI-HD data
+   lines configured on the co-processor and host
+ */
+int bus_spi_hd_reconfigure_interface(uint32_t ext_cap);
+#endif
+
+#if H_TRANSPORT_IN_USE == H_TRANSPORT_SDIO
+/* re-allocate the required buffer(s)
+ * Expected to be called one-time, after the INIT event is received from the co-processor
+ * and we know the size of the buffer(s) to pre-allocate
+ *
+ * Buffer size allocated depends on the SDIO mode on the co-processor
+ */
+int bus_sdio_set_rx_buffer_size(uint8_t tx_queue_size, uint8_t sdio_mode);
+
+/* checks whether the SDIO mode of the slave is compatible with that of the host */
+int bus_sdio_check_mode(uint8_t slave_mode);
+#endif
 
 #ifdef __cplusplus
 }

@@ -14,6 +14,7 @@
 #include "endian.h"
 #include "esp_hosted_transport.h"
 #include "esp_hosted_transport_spi_hd.h"
+#include "esp_hosted_transport_init.h"
 #include "stats.h"
 #include "transport_drv.h"
 
@@ -26,6 +27,7 @@
 #include "esp_hosted_transport_config.h"
 #include "esp_hosted_bt.h"
 #include "port_esp_hosted_host_os.h"
+#include "esp_hosted_event.h"
 
 #include "mempool.h"
 #include "transport_util.h"
@@ -86,6 +88,9 @@ static void * spi_hd_bus_lock;
 #define SPI_HD_DRV_UNLOCK()
 #endif
 
+#define SPI_HD_BLOCK_SIZE         MAX_SPI_HD_BUFFER_SIZE
+#define SPI_HD_ALIGNMENT_IN_BYTES HOSTED_MEM_ALIGNMENT
+
 #define BUFFER_AVAILABLE                  1
 #define BUFFER_UNAVAILABLE                0
 
@@ -117,8 +122,14 @@ static uint32_t spi_hd_tx_buf_count = 0;
 /* Counter to hold the amount of bytes already received from spi hd slave */
 static uint32_t spi_hd_rx_byte_count = 0;
 
+/* current transfer size */
+static size_t curr_transfer_size = SPI_HD_BLOCK_SIZE;
+
 // one-time trigger to start write thread
 static bool spi_hd_start_write_thread = false;
+
+// TX_BUF_LEN no longer matches spi_hd_rx_byte_count; rx stays stopped until re-init
+static bool spi_hd_rx_desync = false;
 
 static void spi_hd_write_task(void const* pvParameters);
 static void spi_hd_read_task(void const* pvParameters);
@@ -134,8 +145,8 @@ static inline void spi_hd_mempool_create(int tx_q_size, int rx_q_size)
 		.pre_allocated_mem_size = 0,
 		// allocate enough blocks to handle full RX and possible peak tx requests
 		.num_blocks = rx_q_size + MIN_MEMPOOL_REQ,
-		.block_size = MAX_SPI_HD_BUFFER_SIZE,
-		.alignment_in_bytes = HOSTED_MEM_ALIGNMENT_64,
+		.block_size = SPI_HD_BLOCK_SIZE,
+		.alignment_in_bytes = SPI_HD_ALIGNMENT_IN_BYTES,
 		.malloc = transport_util_malloc,
 		.calloc = transport_util_calloc,
 		.memset = g_h.funcs->_h_memset,
@@ -156,7 +167,7 @@ static inline void spi_hd_mempool_destroy(void)
 
 static inline void *spi_hd_buffer_alloc(uint need_memset)
 {
-	MEMPOOL_ALLOC(buf_mp_g, MAX_SPI_HD_BUFFER_SIZE, need_memset);
+	MEMPOOL_ALLOC(buf_mp_g, curr_transfer_size, need_memset);
 }
 
 static inline void spi_hd_buffer_free(void *buf)
@@ -297,9 +308,9 @@ static int spi_hd_write_packet(interface_buffer_handle_t *buf_handle)
 		free_func = buf_handle->free_buf_handle;
 	}
 
-	if (buf_handle->payload_len > MAX_SPI_HD_BUFFER_SIZE - sizeof(struct esp_payload_header)) {
+	if (buf_handle->payload_len > curr_transfer_size - sizeof(struct esp_payload_header)) {
 		ESP_LOGE(TAG, "Pkt len [%u] > Max [%u]. Drop",
-				buf_handle->payload_len, MAX_SPI_HD_BUFFER_SIZE - sizeof(struct esp_payload_header));
+				buf_handle->payload_len, curr_transfer_size - sizeof(struct esp_payload_header));
 		result = ESP_FAIL;
 		goto done;
 	}
@@ -336,8 +347,8 @@ static int spi_hd_write_packet(interface_buffer_handle_t *buf_handle)
 		sizeof(struct esp_payload_header) + len));
 #endif
 
-	buf_needed = (len + sizeof(struct esp_payload_header) + MAX_SPI_HD_BUFFER_SIZE - 1)
-		/ MAX_SPI_HD_BUFFER_SIZE;
+	buf_needed = (len + sizeof(struct esp_payload_header) + curr_transfer_size - 1)
+		/ curr_transfer_size;
 
 	SPI_HD_DRV_LOCK();
 
@@ -573,6 +584,9 @@ static void spi_hd_read_task(void const* pvParameters)
 #endif
 		ESP_LOGV(TAG, "spi_hd_read_task: data ready intr received");
 
+		if (spi_hd_rx_desync)
+			continue;
+
 		SPI_HD_DRV_LOCK();
 
 		res = g_h.funcs->_h_spi_hd_read_reg(SPI_HD_REG_TX_BUF_LEN, &curr_rx_value, POLLING_READ, ACQUIRE_LOCK);
@@ -628,11 +642,17 @@ static void spi_hd_read_task(void const* pvParameters)
 		}
 
 		/* Validate transfer size to prevent buffer overflow */
-		if (size_to_xfer > MAX_SPI_HD_BUFFER_SIZE) {
-			ESP_LOGE(TAG, "read_bytes[%"PRIu32"] > MAX_SPI_HD_BUFFER_SIZE[%d]. Ignoring read request",
-					size_to_xfer, MAX_SPI_HD_BUFFER_SIZE);
-
+		if (size_to_xfer > curr_transfer_size) {
+			ESP_LOGE(TAG, "TX_BUF_LEN desync: cp[0x%06"PRIx32"] host[0x%06"PRIx32"] diff[%"PRIu32"] > max[%u]",
+					curr_rx_value, spi_hd_rx_byte_count, size_to_xfer, (unsigned)curr_transfer_size);
+			spi_hd_rx_desync = true;
 			SPI_HD_DRV_UNLOCK();
+			g_h.funcs->_h_event_post(ESP_HOSTED_EVENT,
+					ESP_HOSTED_EVENT_TRANSPORT_FAILURE,
+					NULL, 0, HOSTED_BLOCK_MAX);
+#if H_TRANSPORT_RESTART_ON_FAILURE
+			g_h.funcs->_h_restart_host();
+#endif
 			continue;
 		}
 
@@ -774,6 +794,9 @@ static void spi_hd_process_rx_task(void const* pvParameters)
 void * bus_init_internal(void)
 {
 	uint8_t prio_q_idx = 0;
+
+	curr_transfer_size = SPI_HD_BLOCK_SIZE;
+	spi_hd_rx_desync = false;
 
 	SPI_HD_DRV_LOCK_CREATE();
 
@@ -984,6 +1007,43 @@ int ensure_slave_bus_ready(void *bus_handle)
 		stop_host_power_save();
 	}
 
+	return res;
+}
+
+int bus_spi_hd_reconfigure_interface(uint32_t ext_cap)
+{
+	int res = ESP_FAIL;
+
+	// reconfigure SPI_HD interface based on host and co-processor capabilities
+	if (H_SPI_HD_HOST_NUM_DATA_LINES == 4) {
+		if (ext_cap & ESP_SPI_HD_INTERFACE_SUPPORT_4_DATA_LINES) {
+			ESP_LOGI(TAG, "configure SPI_HD interface to use 4 data lines");
+			res = g_h.funcs->_h_spi_hd_set_data_lines(H_SPI_HD_CONFIG_4_DATA_LINES);
+		} else if (ext_cap & ESP_SPI_HD_INTERFACE_SUPPORT_2_DATA_LINES) {
+			ESP_LOGI(TAG, "co-processor supports 2 data lines, downgrading from 4");
+			res = g_h.funcs->_h_spi_hd_set_data_lines(H_SPI_HD_CONFIG_2_DATA_LINES);
+		} else {
+			ESP_LOGI(TAG, "co-processor supports 1 data line, downgrading from 4");
+			res = g_h.funcs->_h_spi_hd_set_data_lines(H_SPI_HD_CONFIG_1_DATA_LINE);
+		}
+	} else if (H_SPI_HD_HOST_NUM_DATA_LINES == 2) {
+		if (ext_cap & ESP_SPI_HD_INTERFACE_SUPPORT_4_DATA_LINES) {
+			ESP_LOGI(TAG, "co-processor supports 4 data lines, downgrading to 2");
+			res = g_h.funcs->_h_spi_hd_set_data_lines(H_SPI_HD_CONFIG_2_DATA_LINES);
+		} else if (ext_cap & ESP_SPI_HD_INTERFACE_SUPPORT_2_DATA_LINES) {
+			ESP_LOGI(TAG, "configure SPI_HD interface to use 2 data lines");
+			res = g_h.funcs->_h_spi_hd_set_data_lines(H_SPI_HD_CONFIG_2_DATA_LINES);
+		} else {
+			ESP_LOGI(TAG, "co-processor supports 1 data line, downgrading from 2");
+			res = g_h.funcs->_h_spi_hd_set_data_lines(H_SPI_HD_CONFIG_1_DATA_LINE);
+		}
+	} else if (H_SPI_HD_HOST_NUM_DATA_LINES == 1) {
+		ESP_LOGI(TAG, "configure SPI_HD interface to use 1 data line");
+		res = g_h.funcs->_h_spi_hd_set_data_lines(H_SPI_HD_CONFIG_1_DATA_LINE);
+	} else {
+		ESP_LOGE(TAG, "invalid number of data lines in SPI_HD interface");
+		res = ESP_FAIL;
+	}
 	return res;
 }
 

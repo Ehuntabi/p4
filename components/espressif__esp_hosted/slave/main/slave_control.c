@@ -176,7 +176,7 @@ static esp_err_t req_ota_begin_handler (Rpc *req,
 	}
 
 	ESP_LOGI(TAG, "Prepare partition for OTA\n");
-	ret = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &handle);
+	ret = esp_ota_begin(update_partition, OTA_WITH_SEQUENTIAL_WRITES, &handle);
 	if (ret) {
 		ESP_LOGE(TAG, "OTA begin failed[%d]", ret);
 		goto err;
@@ -912,7 +912,7 @@ esp_err_t esp_hosted_send_custom_data(uint32_t msg_id_to_send, const uint8_t *da
 	size_t total_len = sizeof(msg_id_to_send) + data_len_to_send;
 	uint8_t *buf = malloc(total_len);
 	if (!buf) {
-		ESP_LOGE(TAG, "Failed to allocate %zu bytes", total_len);
+		ESP_LOGE(TAG, "Failed to allocate %u bytes", (unsigned)total_len);
 		return ESP_ERR_NO_MEM;
 	}
 

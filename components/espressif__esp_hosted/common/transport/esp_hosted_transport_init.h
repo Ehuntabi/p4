@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: 2025 Espressif Systems (Shanghai) CO LTD
+ * SPDX-FileCopyrightText: 2025-2026 Espressif Systems (Shanghai) CO LTD
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -65,6 +65,18 @@ typedef enum {
 	ESP_PRIV_CAP_EXT, // extended capability (4 bytes)
 	ESP_PRIV_FIRMWARE_VERSION,
 	ESP_PRIV_TRANS_SDIO_MODE,
+	/* held by ESP-Hosted 3.x: feat_caps, RPC version, SDIO buf config */
+	ESP_PRIV_RESERVED_0x19 = 0x19,
+	ESP_PRIV_RESERVED_0x1A = 0x1A,
+	ESP_PRIV_RESERVED_0x1B = 0x1B,
+	ESP_PRIV_TRANSFER_SIZE = 0x1C,
 } ESP_PRIV_TAG_TYPE;
 
+// values should fit in a uint8_t type
+typedef enum {
+	ESP_SDIO_MODE_PACKET = 0,
+	ESP_SDIO_MODE_STREAMING = 1,
+	ESP_SDIO_MODE_MAX,
+	ESP_SDIO_MODE_UNKNOWN = 0xFF
+} ESP_SDIO_MODE_TYPE;
 #endif

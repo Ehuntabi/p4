@@ -95,7 +95,7 @@ dependencies:
     source:
       path: components/espressif__esp_hosted
       type: local
-    version: 2.12.13
+    version: 2.13.1
   espressif/esp_ipa:
     component_hash: 80871ce076e8fce944e4f7d86a8b16e12d93c57e5e37064ec38eb9b123b6d769
     dependencies:
@@ -307,6 +307,6 @@ direct_dependencies:
 - espressif/onewire_bus
 - idf
 - lvgl/lvgl
-manifest_hash: d3639a64b93405547b7a637f0a5934f19ac58206be65447ee2726e9ad7861dfe
+manifest_hash: 9e6fa4f2a4a99ea47ed70c947881b7622a200b117901e767c19424ed7d635120
 target: esp32p4
 version: 2.0.0

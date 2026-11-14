@@ -3,6 +3,26 @@
 
 # Releases
 
+# $${\color{green} \text{2.13.1}}$$
+
+- when using SDIO Streaming mode, pre-allocate required Rx buffers on host to prevent transport failures due to failure to allocate memory during run-time
+  - transport is halted if there is not enough memory to pre-allocate the required Rx buffers
+  - required size of Rx buffers on host is set by the number of SDIO Tx buffers on the co-processor
+- added Kconfig option to disable Rx double buffering on host to save heap memory in SDIO Streaming Mode if required
+- host SPI-HD: report a Tx byte-count desync once as `ESP_HOSTED_EVENT_TRANSPORT_FAILURE` instead of logging it forever
+- slave SPI-HD: act on host power-save flags only after the length and checksum checks. A corrupted frame could reset the Tx byte count and stall host rx
+- host: stop the RPC threads before `esp_hosted_deinit()` frees the queues and semaphores they wait on. This removes a heap corruption on every deinit, and a stuck lock when a thread was deleted while it held one
+
+# $${\color{green} \text{2.13.0}}$$
+
+- remove the use of `strlen` in RPC calls to data that are not C strings in STA and AP configs
+- do OTA using `OTA_WITH_SEQUENTIAL_WRITES` instead of `OTA_SIZE_UNKNOWN`. This removes the pause at start of OTA (pause while erasing flash partition) giving a 'smoother' OTA experience
+- remove C99 formatting features (`%z`) not supported by Newlib Nano library
+- add support for 128 byte L2 cache line size
+  - host transport size is now set to 1536 bytes
+  - older co-processors with transport size of 1600 bytes (SPI, UART transports) can still operate with new host code
+  - update the co-processors to reduce the transport size to 1536 bytes, saving some memory
+
 # $${\color{green} \text{2.12.13}}$$
 
 - host: protected access to sync and async response tables and uid incrementing with mutex locks

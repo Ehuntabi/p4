@@ -162,6 +162,8 @@ static void * sdio_bus_lock;
 #define SDIO_DRV_UNLOCK()
 #endif
 
+#define SDIO_BLOCK_SIZE         MAX_SDIO_BUFFER_SIZE
+
 #if DO_COMBINED_REG_READ
 // read data from ESP_SLAVE_INT_RAW_REG to ESP_SLAVE_PACKET_LEN_REG
 // plus 4 for the len of the register
@@ -177,6 +179,12 @@ static uint8_t *reg_buf = NULL;
 #if H_USE_MEMPOOL
 /* Create mempool for cache mallocs */
 static hosted_mempool_t * buf_mp_g;
+#endif
+
+#if H_SDIO_HOST_RX_MODE != H_SDIO_HOST_STREAMING_MODE
+  #define H_DOUBLE_BUF_FREE(p)  sdio_buffer_free(p)
+#else
+  #define H_DOUBLE_BUF_FREE(p)  g_h.funcs->_h_free_align(p)
 #endif
 
 extern transport_channel_t *chan_arr[ESP_MAX_IF];
@@ -227,8 +235,15 @@ static double_buf_t double_buf = {
 	.read_index = -1,
 };
 
+static size_t curr_transfer_size = SDIO_BLOCK_SIZE;
+
 // sem to trigger sdio_data_to_rx_buf_task()
 static semaphore_handle_t sem_double_buf_xfer_data;
+#if !H_SDIO_RX_DOUBLE_BUFFERING
+// sem to trigger sdio_read_task() from sdio_data_to_rx_buf_task()
+// signals that buffer is free to receive more data
+static semaphore_handle_t sem_double_buf_read_data;
+#endif
 
 static void * sdio_rx_buf_thread;
 static void sdio_data_to_rx_buf_task(void const* pvParameters);
@@ -247,8 +262,8 @@ static inline void sdio_mempool_create(int tx_q_size, int rx_q_size)
 		.pre_allocated_mem_size = 0,
 		// allocate enough blocks to handle full RX and possible peak tx requests
 		.num_blocks = rx_q_size + MIN_MEMPOOL_REQ,
-		.block_size = MAX_SDIO_BUFFER_SIZE,
-		.alignment_in_bytes = HOSTED_MEM_ALIGNMENT_64,
+		.block_size = SDIO_BLOCK_SIZE,
+		.alignment_in_bytes = HOSTED_MEM_ALIGNMENT,
 		.malloc = transport_util_malloc,
 		.calloc = transport_util_calloc,
 		.memset = g_h.funcs->_h_memset,
@@ -270,7 +285,7 @@ static inline void sdio_mempool_destroy(void)
 
 static inline void *sdio_buffer_alloc(uint need_memset)
 {
-	MEMPOOL_ALLOC(buf_mp_g, MAX_SDIO_BUFFER_SIZE, need_memset);
+	MEMPOOL_ALLOC(buf_mp_g, curr_transfer_size, need_memset);
 }
 
 static inline void sdio_buffer_free(void *buf)
@@ -347,6 +362,12 @@ void bus_deinit_internal(void *bus_handle)
 		g_h.funcs->_h_destroy_semaphore(sem_double_buf_xfer_data);
 		sem_double_buf_xfer_data = NULL;
 	}
+#if !H_SDIO_RX_DOUBLE_BUFFERING
+	if (sem_double_buf_read_data) {
+		g_h.funcs->_h_destroy_semaphore(sem_double_buf_read_data);
+		sem_double_buf_read_data = NULL;
+	}
+#endif
 
 #if DO_COMBINED_REG_READ
     if (reg_buf) {
@@ -363,11 +384,6 @@ void bus_deinit_internal(void *bus_handle)
 #endif
 
 	// free memory allocated in double buffering structs
-#if H_SDIO_HOST_RX_MODE != H_SDIO_HOST_STREAMING_MODE
-#  define H_DOUBLE_BUF_FREE(p)  sdio_buffer_free(p)
-#else
-#  define H_DOUBLE_BUF_FREE(p)  g_h.funcs->_h_free_align(p)
-#endif
 	if (double_buf.buffer[0].buf) {
 		ESP_LOGI(TAG, "free buffer[0] %p", double_buf.buffer[0].buf);
 		H_DOUBLE_BUF_FREE(double_buf.buffer[0].buf);
@@ -380,7 +396,6 @@ void bus_deinit_internal(void *bus_handle)
 		double_buf.buffer[1].buf = NULL;
 		double_buf.buffer[1].buf_size = 0;
 	}
-#undef H_DOUBLE_BUF_FREE
 	/* Reset double_buf state for clean reinitialization */
 	double_buf.read_index = -1;
 	double_buf.read_data_len = 0;
@@ -682,9 +697,9 @@ static void sdio_write_task(void const* pvParameters)
 			mempool_oom_logged = false;
 		}
 
-		if (buf_handle.payload_len > MAX_SDIO_BUFFER_SIZE - sizeof(struct esp_payload_header)) {
+		if (buf_handle.payload_len > curr_transfer_size - sizeof(struct esp_payload_header)) {
 			ESP_LOGE(TAG, "Pkt len [%u] > Max [%u]. Drop",
-					buf_handle.payload_len, MAX_SDIO_BUFFER_SIZE - sizeof(struct esp_payload_header));
+					buf_handle.payload_len, curr_transfer_size - sizeof(struct esp_payload_header));
 			goto done;
 		}
 
@@ -752,7 +767,6 @@ static void sdio_write_task(void const* pvParameters)
 			 * slave.
 			 */
 			uint32_t block_send_len = ((len_to_send + ESP_BLOCK_SIZE - 1) / ESP_BLOCK_SIZE) * ESP_BLOCK_SIZE;
-
 			ret = g_h.funcs->_h_sdio_write_block(sdio_handle, ESP_SLAVE_CMD53_END_ADDR - data_left,
 				pos, block_send_len, ACQUIRE_LOCK);
 #else
@@ -957,6 +971,7 @@ static esp_err_t sdio_push_data_to_queue(uint8_t * buf, uint32_t buf_len)
 }
 #else // H_SDIO_HOST_STREAMING_MODE
 // SDIO streaming mode
+
 // return a buffer big enough to contain the data
 static uint8_t * sdio_rx_get_buffer(uint32_t len)
 {
@@ -970,15 +985,11 @@ static uint8_t * sdio_rx_get_buffer(uint32_t len)
 	uint8_t ** buf = &double_buf.buffer[index].buf;
 
 	if (len > double_buf.buffer[index].buf_size) {
-		/* Allocate the larger buffer BEFORE freeing the old one. On a transient
-		 * heap shortage we degrade gracefully — keep the old buffer, leave the
-		 * slot consistent, and return NULL so the caller drops this read (the
-		 * slave resends / the RPC retries). This mirrors the mempool OOM
-		 * handling in sdio_push_data_to_queue() and replaces a hard assert that
-		 * crashed the host on transient memory pressure. */
-		uint8_t *newbuf = (uint8_t *)g_h.funcs->_h_malloc_align(len, HOSTED_MEM_ALIGNMENT_64);
+		ESP_LOGD(TAG, "len required: %" PRIu32, len);
+		/* Allocate the larger buffer BEFORE freeing the old one.*/
+		uint8_t *newbuf = (uint8_t *)g_h.funcs->_h_malloc_align(len, HOSTED_MEM_ALIGNMENT);
 		if (!newbuf) {
-			ESP_LOGW(TAG, "RX buffer alloc failed (len=%lu); dropping read", (unsigned long)len);
+			ESP_LOGW(TAG, "RX buffer alloc of len %" PRIu32 " failed", len);
 			return NULL;
 		}
 		if (*buf) {
@@ -1072,6 +1083,10 @@ static void sdio_data_to_rx_buf_task(void const* pvParameters)
 
 		if (double_buf.read_index < 0) {
 			ESP_LOGE(TAG, "invalid double buf read_index");
+#if !H_SDIO_RX_DOUBLE_BUFFERING
+			// trigger task to transfer data from co-processor
+			g_h.funcs->_h_post_semaphore(sem_double_buf_read_data);
+#endif
 			continue;
 		}
 
@@ -1086,6 +1101,10 @@ static void sdio_data_to_rx_buf_task(void const* pvParameters)
 #endif
 		// finished sending data: reset read_index
 		double_buf.read_index = -1;
+#if !H_SDIO_RX_DOUBLE_BUFFERING
+		// trigger task to transfer data from co-processor
+		g_h.funcs->_h_post_semaphore(sem_double_buf_read_data);
+#endif
 	}
 }
 
@@ -1164,7 +1183,7 @@ static void sdio_read_task(void const* pvParameters)
 
 #if DO_COMBINED_REG_READ
     if (!reg_buf) {
-	    reg_buf = g_h.funcs->_h_malloc_align(REG_BUF_LEN, HOSTED_MEM_ALIGNMENT_64);
+	    reg_buf = g_h.funcs->_h_malloc_align(REG_BUF_LEN, HOSTED_MEM_ALIGNMENT);
 	    assert(reg_buf);
     }
 #endif
@@ -1285,14 +1304,40 @@ static void sdio_read_task(void const* pvParameters)
 		}
 #endif
 
+#if !H_SDIO_RX_DOUBLE_BUFFERING
+		SDIO_DRV_UNLOCK();
+		// wait until data has been read from the buffer
+		g_h.funcs->_h_get_semaphore(sem_double_buf_read_data, HOSTED_BLOCK_MAX);
+		SDIO_DRV_LOCK();
+#endif
+
+#if H_SDIO_HOST_RX_MODE != H_SDIO_HOST_STREAMING_MODE
+retry_rx_get_buffer:
+#endif
+
 		/* Allocate rx buffer */
 		rxbuff = sdio_rx_get_buffer(len_from_slave);
+
+#if H_SDIO_HOST_RX_MODE == H_SDIO_HOST_STREAMING_MODE
+		if (unlikely(!rxbuff)) {
+			SDIO_DRV_UNLOCK();
+			// since we now preallocate a buffer, failure to get a buffer means there is a heap issue
+			ESP_LOGE(TAG, "unable to get buffer to store data: no more heap space");
+			assert(0);
+			while (true) {
+				g_h.funcs->_h_msleep(5000);
+			}
+		}
+#else
 		if (!rxbuff) {
+			// momentary failure to get memory: retry
 			pending = true;
 			SDIO_DRV_UNLOCK();
 			g_h.funcs->_h_msleep(SDIO_RX_ALLOC_RETRY_MS);
-			continue;
+			SDIO_DRV_LOCK();
+			goto retry_rx_get_buffer;
 		}
+#endif
 
 		data_left = len_from_slave;
 		pos = rxbuff;
@@ -1335,13 +1380,20 @@ static void sdio_read_task(void const* pvParameters)
 		pending = true;
 #endif
 
-		if (unlikely(ret))
+		if (unlikely(ret)) {
+#if !H_SDIO_RX_DOUBLE_BUFFERING
+			g_h.funcs->_h_post_semaphore(sem_double_buf_read_data);
+#endif
 			continue;
+		}
 
 		if (double_buf.read_index < 0) {
 			double_buf.read_index = double_buf.write_index;
 			double_buf.read_data_len = len_from_slave;
+#if H_SDIO_RX_DOUBLE_BUFFERING
+			// can only switch index in double buffering
 			double_buf.write_index = (double_buf.write_index) ? 0 : 1;
+#endif
 			// trigger task to copy data to queue
 			g_h.funcs->_h_post_semaphore(sem_double_buf_xfer_data);
 		} else {
@@ -1349,6 +1401,9 @@ static void sdio_read_task(void const* pvParameters)
 			sdio_rx_free_buffer(rxbuff);
 			ESP_LOGE(TAG, "task still writing Rx data to queue!");
 			// don't send data to task, or update write_index
+#if !H_SDIO_RX_DOUBLE_BUFFERING
+			g_h.funcs->_h_post_semaphore(sem_double_buf_read_data);
+#endif
 		}
 	}
 }
@@ -1467,6 +1522,8 @@ void *bus_init_internal(void)
 {
 	uint8_t prio_q_idx = 0;
 
+	curr_transfer_size = SDIO_BLOCK_SIZE;
+
 	int tx_queue_size = DEFAULT_TO_SLAVE_QUEUE_SIZE;
 	int rx_queue_size = DEFAULT_FROM_SLAVE_QUEUE_SIZE;
 
@@ -1538,6 +1595,11 @@ void *bus_init_internal(void)
 	sem_double_buf_xfer_data = g_h.funcs->_h_create_semaphore(1);
 	assert(sem_double_buf_xfer_data);
 	g_h.funcs->_h_get_semaphore(sem_double_buf_xfer_data, 0);
+#if !H_SDIO_RX_DOUBLE_BUFFERING
+	// create also gives the semaphore, so ready to be taken on first pass through `sdio_read_task()`
+	sem_double_buf_read_data = g_h.funcs->_h_create_semaphore(1);
+	assert(sem_double_buf_read_data);
+#endif
 
 	sdio_rx_buf_thread = g_h.funcs->_h_thread_create("sdio_rx_buf",
 		DFLT_TASK_PRIO, RX_BUF_TASK_STACK_SIZE, sdio_data_to_rx_buf_task, NULL);
@@ -1606,7 +1668,6 @@ int esp_hosted_tx(uint8_t iface_type, uint8_t iface_num,
 
 	g_h.funcs->_h_queue_item(to_slave_queue[pkt_prio], &buf_handle, HOSTED_BLOCK_MAX);
 	g_h.funcs->_h_post_semaphore(sem_to_slave_queue);
-
 
 	return ESP_OK;
 }
@@ -1714,6 +1775,11 @@ int ensure_slave_bus_ready(void *bus_handle)
 		if (sem_double_buf_xfer_data) {
 			while (g_h.funcs->_h_get_semaphore(sem_double_buf_xfer_data, 0) == ESP_OK);
 		}
+#if !H_SDIO_RX_DOUBLE_BUFFERING
+		// drain and post to reset single buffer implementation
+		while (g_h.funcs->_h_get_semaphore(sem_double_buf_read_data, 0) == ESP_OK);
+		g_h.funcs->_h_post_semaphore(sem_double_buf_read_data);
+#endif
 
 		res = transport_card_init(bus_handle, CARD_INIT_TIMEOUT_MS);
 		if (res) {
@@ -1738,6 +1804,104 @@ int ensure_slave_bus_ready(void *bus_handle)
 	}
 #endif
 	return res;
+}
+
+int bus_sdio_check_mode(uint8_t slave_mode)
+{
+	if (slave_mode >= ESP_SDIO_MODE_MAX) {
+		ESP_LOGE(TAG, "ERROR: co-processor is in an unknown SDIO mode");
+		return ESP_FAIL;
+	}
+#if H_SDIO_HOST_RX_MODE == H_SDIO_HOST_STREAMING_MODE
+	// host is in streaming mode: co-processor can be in packet or streaming mode
+#else
+	// host is in packet mode: co-processor must be in packet mode
+	if (slave_mode != ESP_SDIO_MODE_PACKET) {
+		ESP_LOGE(TAG, "SDIO mode mismatch: host is in packet mode, but co-processor is in streaming-mode");
+		return ESP_FAIL;
+	}
+#endif
+	return ESP_OK;
+}
+
+#if H_SDIO_HOST_RX_MODE == H_SDIO_HOST_STREAMING_MODE
+static int realloc_rx_buffer(buf_info_t *ptr, uint32_t new_buf_size)
+{
+	// if new size is the same, we don't reallocate and don't display a warning.
+	if (new_buf_size == ptr->buf_size)
+		return ESP_OK;
+	if (new_buf_size < ptr->buf_size) {
+		ESP_LOGW(TAG, "new_buf_size %" PRIu32 " is smaller than current buf size %" PRIu32 ": not reallocating",
+				new_buf_size, ptr->buf_size);
+		return ESP_OK;
+	}
+
+	// alloc a new buffer
+	uint8_t *buf = (uint8_t *)g_h.funcs->_h_malloc_align(new_buf_size, HOSTED_MEM_ALIGNMENT);
+	if (!buf) {
+		ESP_LOGE(TAG, "failed to allocate buffer for rx buffer");
+		return ESP_FAIL;
+	}
+
+	g_h.funcs->_h_free_align(ptr->buf);
+	ptr->buf = buf;
+	ptr->buf_size = new_buf_size;
+
+	return ESP_OK;
+}
+#endif // H_SDIO_HOST_RX_MODE == H_SDIO_HOST_STREAMING_MODE
+
+int bus_sdio_set_rx_buffer_size(uint8_t cp_tx_queue_size, uint8_t cp_sdio_mode)
+{
+#if H_SDIO_HOST_RX_MODE == H_SDIO_HOST_STREAMING_MODE
+	if (!cp_tx_queue_size) {
+		/* we don't know the co-processor's number of Tx buffers */
+		ESP_LOGW(TAG, "co-processor's number of Tx buffers is not known");
+		ESP_LOGW(TAG, "rx buffers on host will be dynamically allocated: allocation attempt may fail");
+		return ESP_OK;
+	}
+
+	uint32_t buf_size = 0;
+
+	if (cp_sdio_mode == ESP_SDIO_MODE_STREAMING) {
+		// allocate buffer space for maximum streaming size
+		buf_size = MAX_SDIO_BUFFER_SIZE * cp_tx_queue_size;
+	} else  {
+		// only need to allocate buffer for one packet
+		buf_size = ESP_TRANSPORT_MAX_BUF_SIZE;
+	}
+
+	// trigger lock so sdio read thread doesn't access the double buffers while we realloc
+	SDIO_DRV_LOCK();
+
+	int res;
+
+	ESP_LOGD(TAG, "trying to allocate %" PRIu32 " bytes for first rx buffer", buf_size);
+	res = realloc_rx_buffer(&double_buf.buffer[0], buf_size);
+	if (res != ESP_OK) {
+		ESP_LOGE(TAG, "failed to allocate buffer for slot 0 in double_buf");
+		SDIO_DRV_UNLOCK();
+		return ESP_FAIL;
+	}
+
+#if H_SDIO_RX_DOUBLE_BUFFERING
+	ESP_LOGD(TAG, "trying to allocate %" PRIu32 " bytes for second rx buffer", buf_size);
+	res = realloc_rx_buffer(&double_buf.buffer[1], buf_size);
+	if (res != ESP_OK) {
+		ESP_LOGE(TAG, "failed to allocate buffer for slot 1 in double_buf");
+		SDIO_DRV_UNLOCK();
+		return ESP_FAIL;
+	}
+#endif // H_SDIO_RX_DOUBLE_BUFFERING
+
+	SDIO_DRV_UNLOCK();
+#else // H_SDIO_HOST_RX_MODE == H_SDIO_HOST_STREAMING_MODE
+	// in packet mode, buffers are allocated from the mempool, so we shouldn't do allocation
+	// parameters are unused
+	(void)cp_tx_queue_size;
+	(void)cp_sdio_mode;
+#endif
+	return ESP_OK;
 }
 
 int bus_inform_slave_host_power_save_start(void)
