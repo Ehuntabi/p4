@@ -130,13 +130,13 @@ Páginas con cards de borde de color, dropdown scrollable cuando hay overflow, s
 - Controlable desde la UI (Overview) y por `POST /control`. Encendido automático de cargas al despertar (configurable, NVS).
 
 #### Display satélite de cabina (UDP + HTTP)
-- El satélite es la **3,5" de la cabina** (`~/joint/35cabina`).
+- El satélite es la **5" de la cabina** (`~/joint/cabina5`). La 3,5" (`~/joint/35cabina`) está retirada desde el 09-nov-2026.
 - Broadcast **UDP** (1 Hz) desde el AP del 7" (`192.168.4.255:4242`). Payload compacto (**40 bytes, versión 5**, CRC32) con SoC/V/A de batería, canal auxiliar del shunt (batería motor), frigo (temperatura + ventilador), aguas del NE185, `epoch_local` (el reloj, que el satélite no tiene) y `gps_estado`. Protocolo compartido en `main/net/mini_proto.h`, **byte a byte idéntico** en los dos firmwares. Es "plan B" porque `esp_hosted` no exporta ESP-NOW.
 - **Solo se manda lo FRESCO** (`bat_fresh`, `dcdc_fresh`, `cd.fresh`), no lo que hubo alguna vez: si el SmartShunt deja de hablar, a los 30 s se manda el centinela de "no hay dato" y el satélite lo enseña apagado. Mandar el último valor conocido sería un dato viejo con pinta de actual, que es peor que no tener dato.
 - **La vuelta va por HTTP**, no por UDP: el satélite le manda a la P4 los apuntes del cuaderno con `POST /api/viaje` (ver abajo). Por TCP se sabe con certeza que han llegado.
 
 #### Cuaderno de viaje (`POST /api/viaje`)
-- La 3,5" de la cabina abre y cierra viajes y le manda los apuntes; la P4 es la dueña de los datos: crea `/sdcard/viajes/AAAA-MM-DD_Destino/`, escribe el diario, un **CSV por tipo** (`repostajes.csv`, `paradas.csv`, `pernoctas.csv`, `aguas.csv`, `itvs.csv`…) y, al cerrar, un `resumen.txt` en castellano llano.
+- La 5" de la cabina abre y cierra viajes y le manda los apuntes; la P4 es la dueña de los datos: crea `/sdcard/viajes/AAAA-MM-DD_Destino/`, escribe el diario, un **CSV por tipo** (`repostajes.csv`, `paradas.csv`, `pernoctas.csv`, `aguas.csv`, `itvs.csv`…) y, al cerrar, un `resumen.txt` en castellano llano.
 - **Totales del viaje**: combustible y litros, peajes, gas, mantenimiento (con la ITV dentro), **aguas** y **alojamiento** (precio por noche × noches, más los servicios que se paguen aparte). Si aparece más de una moneda, el resumen **avisa** en vez de dar un total que parece bueno y no lo es.
 - **El cuentakilómetros del cuadro, al salir y al llegar**: la cabina los pide al empezar y al cerrar el viaje (campo opcional `km_cuadro` del `inicio` y del `fin`; 0 = no apuntado) y el resumen escribe las dos lecturas y su diferencia frente al recorrido del GPS. Es el número que dice lo que ha hecho el viaje **de verdad**: si el GPS midió menos, se perdió un tramo (un túnel, un parking cubierto), y si al llegar marcan menos que al salir el resumen lo dice en vez de restar. Los dos viven en la NVS del viaje y se borran con sus totales.
 - Los apuntes **sin viaje** (una salida puntual: repostar, ITV, taller) van al historial del vehículo en `/sdcard/vehiculo`, no a un viaje.
@@ -339,7 +339,7 @@ Pages with role-coloured cards, scrollbar visible on overflow, separators betwee
 - Controllable from the UI (Overview) and via `POST /control`. Automatic load switch-on on wake (configurable, NVS).
 
 #### Cabin satellite display (UDP + HTTP)
-- The satellite is the **3.5" cabin display** (`~/joint/35cabina`).
+- The satellite is the **5" cabin display** (`~/joint/cabina5`). The 3.5" (`~/joint/35cabina`) was retired on 2026-11-09.
 - **UDP** broadcast (1 Hz) from the 7" AP (`192.168.4.255:4242`). Compact payload (**40 bytes, version 5**, CRC32) with battery SoC/V/A, shunt aux channel (starter battery), fridge (temperature + fan), NE185 water levels, `epoch_local` (the clock the satellite doesn't have) and `gps_estado`. Shared protocol in `main/net/mini_proto.h`, **byte-for-byte identical** in both firmwares. It's "plan B" because `esp_hosted` doesn't export ESP-NOW.
 - **Only FRESH data is sent** (`bat_fresh`, `dcdc_fresh`, `cd.fresh`), never "we had it once": if the SmartShunt goes quiet, after 30 s the no-data sentinel is sent and the satellite greys it out. Sending the last known value would be stale data wearing a current-data face, which is worse than no data at all.
 - **The return path is HTTP**, not UDP: the satellite posts trip notes to the P4 with `POST /api/viaje` (see below). Over TCP you know for certain they arrived.
