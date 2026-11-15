@@ -146,6 +146,7 @@ Páginas con cards de borde de color, dropdown scrollable cuando hay overflow, s
 
 #### GPS (NEO-M9N)
 - Solo escucha NMEA a 38400 (lo de fábrica en la serie M9; los M8 venían a 9600, y probar a 9600 y no ver nada es el despiste clásico). No se le manda nada por UBX.
+- **La brújula no está en la P4**: la lleva la 5" en su vista de inclinación (IMU BNO055 en un I2C propio). Aquí solo hay GPS, que da posición y hora, no rumbo.
 - **Pone el reloj en hora solo**, y únicamente con trama válida (`A`): el módulo da una hora aproximada de su reloj interno antes de fijar, y usarla sería empeorar la que ya tiene el RTC.
 - **Pantalla propia en Ajustes → GPS**, con los tres estados diciendo QUÉ HACER: rojo *"sin señal del módulo"* (con el recordatorio de que RX/TX van cruzados), ámbar *"buscando satélites"* con los que ve, verde *"posición fijada"* con latitud, longitud y altitud. Debajo, las **últimas tramas en crudo** para diagnosticar.
 - **El icono de la barra se toca y lleva a esa página.** Un indicador que avisa de que algo va mal y no lleva a donde se mira obliga a buscarlo por los menús.
