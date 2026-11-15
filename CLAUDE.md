@@ -327,7 +327,7 @@ absoluta. Lo que decide de verdad es el hook, que mira lo que SE VA A COMMITEAR.
 
 2. **PWM del ventilador a 25 kHz — RESUELTO por hardware el 12-nov-2026.** La PCB
    nueva quita el PC817 y ataca el IRLR7843 **directo** desde GPIO5 (R3 100 Ω serie,
-   R4 10k de pull-down, D2 de rueda libre, C2 100 µF). Con eso el cuello de botella
+   R4 10k de pull-down, D2 de recirculación (flyback), C2 100 µF). Con eso el cuello de botella
    del opto desaparece y la frecuencia se sube a **25000 Hz** en `frigo.h`. Queda
    pendiente comprobarlo en el frigo real (arranque desde parado y temperatura del
    MOSFET); si arranca peor, volver a 18000. El texto de abajo se deja como
@@ -339,7 +339,7 @@ absoluta. Lo que decide de verdad es el hook, que mira lo que SE VA A COMMITEAR.
    encima de 20 kHz no lo oye nadie.
    **⚠️ EL CUELLO DE BOTELLA ES EL PC817, NO EL MOSFET.** El ataque actual es
    P4 → **optoacoplador PC817** → **IRLR7843** (R serie en puerta + R pull-down + diodo
-   1N4148 de rueda libre). El IRLR7843 conmuta en ns y LEDC llega a ~39 kHz con los
+   1N4148 de recirculación, en la revisión vieja). El IRLR7843 conmuta en ns y LEDC llega a ~39 kHz con los
    10 bits actuales (sin perder finura), pero el **PC817 tarda microsegundos**, y el
    apagado bastante más que el encendido. A 18 kHz el ciclo son 55 µs y a 25 kHz solo
    40 µs, así que las transiciones del opto se comen una fracción cada vez mayor.

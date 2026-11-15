@@ -58,7 +58,7 @@ Port realizado por **[Ehuntabi](https://github.com/Ehuntabi)**.
 | **RTC** | RX8025T (I²C 0x32, SDA=7 / SCL=8 compartido con GT911 y ES8311) + pila CR1220 |
 | **microSD** | **SDMMC** (slot 0 IOMUX: CLK=43, CMD=44, D0..D3=39..42; LDO interno canal 4 a 3,3 V), ver `components/datalogger/datalogger.c:241` |
 | **Sensores temperatura** | DS18B20 1-Wire en **GPIO 4** (JP1 pin 13, pullup 4.7 kΩ) |
-| **Ventilador frigo** | PWM LEDC en **GPIO 5** (JP1 pin 15), **25 kHz**, con **rampa de 10 %/s** (10 s de 0 a 100; igual al arrancar que al parar). El pin 15 ataca un MOSFET **IRLR7843TRPBF** (R3 de 100 Ω en serie en puerta, R4 de 10 k de pull-down, D2 **1N5819** de rueda libre, C2 de 100 µF) |
+| **Ventilador frigo** | PWM LEDC en **GPIO 5** (JP1 pin 15), **25 kHz**, con **rampa de 10 %/s** (10 s de 0 a 100; igual al arrancar que al parar). El pin 15 ataca un MOSFET **IRLR7843TRPBF** (R3 de 100 Ω en serie en puerta, R4 de 10 k de pull-down, D2 **1N5819** de recirculación (*flyback*), C2 de 100 µF) |
 | **Audio** | Codec ES8311 + amplificador NS4150 (PA_CTRL=11, I²S MCLK=13/BCLK=12/LRCK=10/DOUT=9) |
 | **Cámara** | OmniVision **OV02C10** (MIPI-CSI 2 lanes, RAW10 1928x1092, ~37 fps, JPEG por HW). Comparte el I²C (SDA=7 / SCL=8); sin pines reset/pwdn dedicados |
 | **NE185 (autocaravana)** | RS-485 con el cuadro Nordelettronica NE185 vía MAX485 (U8), **UART1 TX=GPIO 26 / RX=GPIO 27**, 38400 8N1, conector J4 (DE/RE automático) |
