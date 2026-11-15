@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-/* Vista Overview estilo Venus OS: diagrama de flujo de energía
+/* Vista Overview inspirada en la de Venus OS: diagrama de flujo de energía
  * (Solar → Bat ← Loads) con SOC grande en card inferior. */
 ui_device_view_t *ui_overview_view_create(ui_state_t *ui, lv_obj_t *parent);
 

@@ -68,7 +68,7 @@ Port realizado por **[Ehuntabi](https://github.com/Ehuntabi)**.
 
 ### Funcionalidades
 
-#### UI estilo Venus OS
+#### UI inspirada en la vista Overview de Venus OS
 - Cards oscuras con borde de color por rol (cyan/verde/naranja/rojo/púrpura), métricas con número grande + unidad pequeña, pills de estado, gauges circulares para SOC y sombras suaves.
 - **Iconos PNG propios** en headers de cards (batería de coche, panel solar, conversor DC/DC, casa) generados como `lv_img_dsc_t` embebidos en flash.
 - Helpers reutilizables (`main/ui/ui_card.h`): `ui_card_create`, `ui_card_set_title_img`, `ui_metric_create_compact/_large`, `ui_pill_create`, `ui_arc_soc_create`, `ui_card_pulse`, paleta semántica `UI_COLOR_*`.
@@ -245,7 +245,7 @@ scripts/grabar.sh /dev/ttyACM0   # graba lo PUBLICADO (y comprueba que lo esta)
 
 - Proyecto original: VictronSolarDisplayEsp por wytr.
 - Fork multi-device: victronsolardisplayesp por CamdenSutherland.
-- Port ESP32-P4 / Guition JC1060P470C_I + UI estilo Venus OS + extensiones: Ehuntabi.
+- Port ESP32-P4 / Guition JC1060P470C_I + UI inspirada en la vista Overview de Venus OS + extensiones: Ehuntabi.
 
 ---
 
@@ -275,7 +275,7 @@ Ported by **[Ehuntabi](https://github.com/Ehuntabi)**.
 
 ### Features
 
-#### Venus-OS-style UI
+#### UI inspired by the Venus OS Overview
 - Dark cards with role-coloured borders (cyan/green/orange/red/purple), big-number metrics, status pills, circular SOC gauges, soft shadows.
 - **Custom PNG icons** in headers (car battery, solar panel, DC/DC, house) embedded as `lv_img_dsc_t`.
 - Reusable helpers in `main/ui/ui_card.h`: `ui_card_create`, `ui_card_set_title_img`, `ui_metric_create_compact/_large`, `ui_pill_create`, `ui_arc_soc_create`, `ui_card_pulse`, palette `UI_COLOR_*`.
@@ -428,6 +428,6 @@ scripts/grabar.sh /dev/ttyACM0   # graba lo PUBLICADO (y comprueba que lo esta)
 
 - Original project: VictronSolarDisplayEsp by wytr.
 - Multi-device fork: victronsolardisplayesp by CamdenSutherland.
-- ESP32-P4 / Guition JC1060P470C_I port + Venus-OS-style UI + extensions: Ehuntabi.
+- ESP32-P4 / Guition JC1060P470C_I port + UI inspired by the Venus OS Overview + extensions: Ehuntabi.
 
 This project keeps the same license as the original. See LICENSE.
