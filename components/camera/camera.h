@@ -63,9 +63,15 @@ void camera_sd_bus_init(void);
  * luego). Si el cerrojo no esta creado (arranque) permite siempre.
  *
  * unlock COMPRUEBA QUE LO TIENE QUIEN LO SUELTA (16-oct-2026): soltar un mutex
- * que no se posee es un configASSERT (panic) en FreeRTOS, y ademas cuenta la
- * profundidad, asi que un lock/unlock anidado del mismo dueno no suelta el bus
- * antes de tiempo. */
+ * que no se posee es un configASSERT (panic) en FreeRTOS.
+ *
+ * NO ES RECURSIVO Y NO SE PUEDE PEDIR DOS VECES (15-nov-2026): si la tarea que
+ * ya lo tiene vuelve a pedirlo, camera_sd_bus_lock() dice NO (false) y lo apunta
+ * en el log. Antes lo mandaba a FreeRTOS, y FreeRTOS contesta a eso con un
+ * panic ("vTaskPriorityDisinheritAfterTimeout") o, peor, dejando el cerrojo
+ * tomado para siempre. Ningun camino del firmware debe anidar estas llamadas;
+ * si el log dice "cerrojo del bus SD recursivo", hay un fallo que arreglar en
+ * quien llama (fue justo lo que paso con log_cleanup). */
 bool camera_sd_bus_lock(uint32_t timeout_ms);
 void camera_sd_bus_unlock(void);
 
@@ -85,6 +91,12 @@ bool camera_sd_bus_lock_wait(uint32_t total_timeout_ms);
  * si esta libre. Sirve para saber a quien hay que mirar cuando un .tar contesta
  * "la tarjeta esta ocupada" durante minutos (diagnostico del 15-nov-2026). */
 const char *camera_sd_bus_dueno(void);
+
+/* Cuanto lleva retenido el cerrojo, en microsegundos (0 = libre, o tomado sin
+ * marca). Lo consulta el vigilante (watchdog.c): minutos con el cerrojo tomado
+ * = quien lo tiene esta dentro de una llamada a FatFs que no vuelve, y eso solo
+ * se arregla reiniciando. */
+int64_t camera_sd_bus_held_us(void);
 
 /* ── LECTORES DE SD QUE SUELTAN EL CERROJO A MITAD (16-oct-2026) ─────────────
  *

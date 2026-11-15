@@ -307,6 +307,6 @@ direct_dependencies:
 - espressif/onewire_bus
 - idf
 - lvgl/lvgl
-manifest_hash: 9e6fa4f2a4a99ea47ed70c947881b7622a200b117901e767c19424ed7d635120
+manifest_hash: eeef37fe46cbaa969a149df7f3c9e4696643801aed52348c10b79eccb1747cfa
 target: esp32p4
 version: 2.0.0

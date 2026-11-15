@@ -9,12 +9,14 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "display.h"
+#include "camera.h"      /* camera_sd_bus_held_us/dueno: cerrojo del bus SD atascado */
 
 static const char *TAG = "WD";
 static const char *NVS_NS = "wd";
 static const char *KEY_COUNT = "count";
 /* Motivo del reset FORZADO por el monitor SW (esp_restart -> aparece como ESP_RST_SW,
- * indistinguible de un reboot planificado). 0=ninguno 1=LVGL congelada 2=tarea muda. */
+ * indistinguible de un reboot planificado). 0=ninguno 1=LVGL congelada 2=tarea muda
+ * 4=cerrojo del bus SD atascado (3 esta cogido por WD_FORCED_PEDIDO). */
 static const char *KEY_FORCED = "forced";
 /* Epoch del ultimo arranque "de verdad" (los de reprogramar no se apuntan). */
 static const char *KEY_BOOT = "boot";
@@ -36,6 +38,13 @@ typedef struct { uint32_t epoch; uint8_t motivo; } wd_arranque_nvs_t;
 #define WD_FORCED_LVGL    1   /* el monitor SW reinicio por UI/LVGL congelada */
 #define WD_FORCED_TAREA   2   /* ... o por una tarea sin latido */
 #define WD_FORCED_PEDIDO  3   /* lo pidio el aparato: OTA o boton Reiniciar */
+#define WD_FORCED_SD      4   /* ... o por el cerrojo del bus SD atascado (15-nov-2026) */
+
+/* Cuanto puede estar tomado el cerrojo del bus SD antes de darlo por atascado.
+ * Largo a proposito: lo mas lento que lo toma el firmware son segundos (leer la
+ * imagen del C6 o un f_getfree de tarjeta grande), asi que un minuto entero no
+ * puede ser I/O sano. Ver el comentario del monitor. */
+#define WD_SD_CERROJO_MAX_US  (60LL * 1000000LL)
 
 /* Por debajo de esto no hay hora creible (1-ene-2021). */
 #define WD_EPOCH_MINIMO   1609459200UL
@@ -46,6 +55,7 @@ typedef struct { uint32_t epoch; uint8_t motivo; } wd_arranque_nvs_t;
  * justo la confusion que se queria evitar. Auditoria del 13-sep-2026. */
 #define WD_RST_UI_COLGADA  0x10
 #define WD_RST_TAREA_MUDA  0x11
+#define WD_RST_SD_TRABADA  0x12
 
 static uint32_t s_reset_count = 0;
 static const char *s_reason_str = "Unknown";
@@ -270,6 +280,7 @@ static const char *reason_to_str(esp_reset_reason_t r)
      * porque no forman parte del enum esp_reset_reason_t de ESP-IDF. */
     if ((int)r == WD_RST_UI_COLGADA) return "Watchdog SW (UI congelada)";
     if ((int)r == WD_RST_TAREA_MUDA) return "Watchdog SW (tarea muda)";
+    if ((int)r == WD_RST_SD_TRABADA) return "Watchdog SW (SD trabada)";
     switch (r) {
         case ESP_RST_POWERON:   return "Power-on";
         case ESP_RST_EXT:       return "External pin";
@@ -372,6 +383,27 @@ static void wd_monitor_task(void *arg)
                 wd_force_reset(2);   /* motivo 2 = tarea muda */
             }
         }
+
+        /* ── Cerrojo del bus SD retenido demasiado rato (15-nov-2026) ─────────
+         * Un cerrojo tomado durante minutos significa que su dueno esta DENTRO
+         * de una llamada a FatFs que no vuelve (tarjeta en mal estado, I/O que
+         * no responde, bucle en un directorio corrupto). Eso no se puede
+         * arreglar desde aqui: el mutex no se le puede quitar a nadie sin
+         * corromper el estado de FatFs. Se reinicia A PROPOSITO, sin flush (el
+         * flush necesita justo ese cerrojo), y se apunta el motivo y quien lo
+         * tenia -- que es lo unico que permite diagnosticarlo despues.
+         *
+         * El plazo es MUY largo a proposito: la I/O de SD mas lenta del
+         * firmware (leer la imagen del C6 de 1,2 MB bajo el cerrojo, o un
+         * f_getfree de una tarjeta grande) tarda segundos, no un minuto. */
+        const int64_t sd_held_us = camera_sd_bus_held_us();
+        if (sd_held_us > WD_SD_CERROJO_MAX_US) {
+            const char *quien = camera_sd_bus_dueno();
+            ESP_LOGE(TAG, "el cerrojo del bus SD lleva %lld s con '%s' — reset controlado "
+                          "(la SD no se puede recuperar de otra forma)",
+                     (long long)(sd_held_us / 1000000), quien ? quien : "?");
+            wd_force_reset(WD_FORCED_SD);
+        }
     }
 }
 
@@ -440,14 +472,17 @@ esp_err_t watchdog_init(void)
         ESP_LOGW(TAG, "arranque tras un reinicio pedido (OTA o boton)");
         s_reason_str = "Reinicio pedido";
     } else if (forced) {
-        ESP_LOGW(TAG, "Reset FORZADO por watchdog SW: %s",
-                 forced == WD_FORCED_LVGL ? "UI/LVGL congelada" : "tarea sin latido");
+        const char *que = (forced == WD_FORCED_LVGL) ? "UI/LVGL congelada" :
+                          (forced == WD_FORCED_SD)   ? "cerrojo del bus SD atascado" :
+                                                       "tarea sin latido";
+        ESP_LOGW(TAG, "Reset FORZADO por watchdog SW: %s", que);
         /* Y que se vea tambien en Ajustes -> Acerca de. Sin esto el motivo se
          * quedaba SOLO en el log: esp_reset_reason() devuelve ESP_RST_SW para un
          * esp_restart forzado por el monitor, o sea "Software", indistinguible de
          * un reinicio pedido a proposito. Diagnosticar por que se reiniciaba la
          * placa obligaba a rescatar el log de la SD. */
         s_reason_str = (forced == WD_FORCED_LVGL) ? "Watchdog SW (UI congelada)"
+                     : (forced == WD_FORCED_SD)   ? "Watchdog SW (SD trabada)"
                                                   : "Watchdog SW (tarea muda)";
     }
     /* La ultima fecha apuntada (de un arranque que no fue de reprogramar) */
@@ -562,6 +597,7 @@ void watchdog_anota_arranque(void)
     uint8_t motivo = (uint8_t)s_reason_code;
     if (s_forced_code == WD_FORCED_LVGL)       motivo = WD_RST_UI_COLGADA;
     else if (s_forced_code == WD_FORCED_TAREA) motivo = WD_RST_TAREA_MUDA;
+    else if (s_forced_code == WD_FORCED_SD)    motivo = WD_RST_SD_TRABADA;
 
     /* Sin hora creible se apunta el MOTIVO igual (con fecha 0): antes se
      * descartaba todo y el diagnostico de ese arranque se perdia para siempre

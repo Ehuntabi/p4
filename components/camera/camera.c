@@ -1190,6 +1190,15 @@ static SemaphoreHandle_t s_sd_bus = NULL;
  * quitado junto con la promesa del comentario de que el anidamiento se contaba. */
 static TaskHandle_t s_sd_bus_dueno = NULL;
 
+/* Cuando lo tomo el dueno actual (0 = libre). Es lo que mira el vigilante para
+ * saber si el cerrojo lleva retenido demasiado rato (ver
+ * camera_sd_bus_held_us y watchdog.c). Va bajo cerrojo de verdad (portMUX) y no
+ * como un int64 suelto: son 8 bytes que una tarea escribe y otra lee, y en el
+ * P4 (32 bits) una lectura partida daria una antiguedad de siglos -> reset
+ * injustificado. */
+static portMUX_TYPE s_sd_bus_mux = portMUX_INITIALIZER_UNLOCKED;
+static volatile int64_t s_sd_bus_desde_us = 0;
+
 /* El cerrojo se crea UNA SOLA VEZ desde app_main, antes de que exista nada que
  * toque la tarjeta.
  *
@@ -1222,8 +1231,34 @@ void camera_sd_bus_init(void)
 bool camera_sd_bus_lock(uint32_t timeout_ms)
 {
     if (!s_sd_bus) return true;
+    /* ── Si ya lo tengo YO, negarse; no volver a pedirlo ─────────────────────
+     * Esto era un panic garantizado (15-nov-2026). El mutex NO es recursivo, y
+     * FreeRTOS no perdona un segundo xSemaphoreTake de la misma tarea: cuando
+     * vence el plazo, xQueueSemaphoreTake() llama a
+     * vTaskPriorityDisinheritAfterTimeout() con dueno = la propia tarea y salta
+     *     assert failed: vTaskPriorityDisinheritAfterTimeout
+     *     (pxTCB != pxCurrentTCBs[xPortGetCoreID()])
+     * -> panic + reinicio. Se vio asi en la P4, con el backtrace entrando en
+     * camera_sd_bus_lock() desde log_cleanup (process_dir() tomaba el cerrojo
+     * para el opendir, se lo dejaba tomado y volvia a pedirlo en la primera
+     * vuelta del bucle). Y en los arranques en los que el assert NO saltaba el
+     * resultado era el otro final posible: el cerrojo se quedaba tomado para
+     * siempre (el camino que falla no suelta), la SD entera muda hasta el
+     * siguiente reinicio (datalogger y .tar contestando "tarjeta ocupada").
+     *
+     * Negarse aqui no arregla el fallo de quien llama -- eso se arregla donde
+     * esta (log_cleanup.c) -- pero convierte los dos finales malos en un "no"
+     * limpio que todo el firmware ya sabe tratar: omitir esa I/O. */
+    if (xSemaphoreGetMutexHolder(s_sd_bus) == xTaskGetCurrentTaskHandle()) {
+        ESP_LOGE(TAG, "cerrojo del bus SD recursivo: '%s' ya lo tiene y lo vuelve a pedir; NO se lo doy",
+                 pcTaskGetName(NULL));
+        return false;
+    }
     if (xSemaphoreTake(s_sd_bus, pdMS_TO_TICKS(timeout_ms)) != pdTRUE) return false;
     s_sd_bus_dueno = xTaskGetCurrentTaskHandle();
+    portENTER_CRITICAL(&s_sd_bus_mux);
+    s_sd_bus_desde_us = esp_timer_get_time();
+    portEXIT_CRITICAL(&s_sd_bus_mux);
     return true;
 }
 
@@ -1238,18 +1273,46 @@ bool camera_sd_bus_lock(uint32_t timeout_ms)
  *    simetria del que llama, y dejarlo pasar es lo que corrompe la
  *    serializacion o provoca el panic);
  *  - y no hay contador de profundidad: el mutex no es recursivo, asi que quien lo
- *    tiene lo tiene UNA vez (ver el comentario de s_sd_bus_dueno). */
+ *    tiene lo tiene UNA vez (ver el comentario de s_sd_bus_dueno).
+ *
+ * LA COMPROBACION SE HACE CONTRA EL MUTEX, NO CONTRA s_sd_bus_dueno (15-nov-2026):
+ * el global lo escribe el que toma el cerrojo, asi que si alguna vez se queda
+ * apuntando a otra tarea, su dueno de verdad NO puede soltarlo (se lo impide
+ * justo esta comprobacion) y el bus se queda tomado para siempre, sin nadie que
+ * lo tenga. Preguntandoselo al mutex eso no puede pasar; el global se queda solo
+ * como apunte para el log y para /api/perf. */
 void camera_sd_bus_unlock(void)
 {
     if (!s_sd_bus) return;
     TaskHandle_t yo = xTaskGetCurrentTaskHandle();
-    if (s_sd_bus_dueno != yo) {
+    TaskHandle_t dueno = xSemaphoreGetMutexHolder(s_sd_bus);
+    if (dueno != yo) {
         ESP_LOGE(TAG, "unlock del bus SD sin tenerlo (dueno=%p, yo=%p): NO lo suelto",
-                 (void *)s_sd_bus_dueno, (void *)yo);
+                 (void *)dueno, (void *)yo);
         return;
     }
     s_sd_bus_dueno = NULL;
+    portENTER_CRITICAL(&s_sd_bus_mux);
+    s_sd_bus_desde_us = 0;
+    portEXIT_CRITICAL(&s_sd_bus_mux);
     xSemaphoreGive(s_sd_bus);
+}
+
+/* Cuanto lleva retenido el cerrojo del bus SD, en microsegundos (0 = libre).
+ * Lo usa el vigilante (watchdog.c): un cerrojo retenido minutos significa que su
+ * dueno esta dentro de una llamada a FatFs que no vuelve, y eso no se puede
+ * recuperar sin reiniciar. */
+int64_t camera_sd_bus_held_us(void)
+{
+    if (!s_sd_bus) return 0;
+    if (xSemaphoreGetMutexHolder(s_sd_bus) == NULL) return 0;
+    int64_t desde;
+    portENTER_CRITICAL(&s_sd_bus_mux);
+    desde = s_sd_bus_desde_us;
+    portEXIT_CRITICAL(&s_sd_bus_mux);
+    if (desde == 0) return 0;   /* tomado pero sin marca: no se inventa */
+    const int64_t ahora = esp_timer_get_time();
+    return (ahora > desde) ? (ahora - desde) : 0;
 }
 
 /* Handle de la tarea de streaming, para que operaciones externas que se sabe

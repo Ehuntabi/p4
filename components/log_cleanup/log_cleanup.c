@@ -1,6 +1,7 @@
 #include "log_cleanup.h"
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_attr.h"        /* RTC_NOINIT_ATTR: marca de barrido en curso (ver barrido_marca) */
 #include "camera.h"          /* camera_sd_bus_lock: serializar el barrido con la camara */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -31,6 +32,36 @@ static const char *DIRS[] = { "/sdcard/frigo", "/sdcard/bateria", "/sdcard/ne185
 /* Retencion propia de las sesiones de vigilancia (0 = la misma que los datos).
    Vive aqui arriba porque log_cleanup_run_now() la consulta. */
 static int s_max_days_vig = 0;
+
+/* ── "El barrido se quedo a medias" (15-nov-2026) ────────────────────────────
+ * Marca en memoria RTC (no toca la flash y sobrevive al reinicio, tambien al de
+ * un panic) de que hay un barrido EN CURSO. Si al arrancar esta puesta, el
+ * barrido anterior no llego a terminar: la placa se reinicio a mitad. Entonces
+ * ESTE arranque no barre, para que la SD quede para el registro de datos; el
+ * barrido se reintenta en el disparo diario.
+ *
+ * POR QUE: el 15-nov-2026 un barrido que se quedo con el cerrojo del bus SD dejo
+ * la tarjeta tomada 0,4 s despues de inicializarse en CADA arranque. El
+ * datalogger no pudo volcar ni una muestra y no habia forma de bajar los .tar;
+ * la unica salida era reiniciar, y el reinicio volvia a caer en lo mismo. Una
+ * limpieza de logs que no es urgente no puede costar eso: mejor un arranque sin
+ * barrer que una placa que no graba. Con el bug de process_dir() arreglado esto
+ * no deberia hacer falta nunca; es el cinturon para la proxima vez que un
+ * barrido se atasque. */
+#define LIMPIEZA_MAGIC 0x4c494d31u   /* "LIM1": marca la memoria RTC ya escrita */
+RTC_NOINIT_ATTR static uint32_t s_barrido_magic;
+RTC_NOINIT_ATTR static uint32_t s_barrido_en_curso;   /* basura al encender: ver el magic */
+/* Decision tomada en log_cleanup_init() y consumida en el primer disparo. */
+static bool s_saltar_primer_barrido = false;
+
+static void barrido_marca(bool en_curso)
+{
+    if (s_barrido_magic != LIMPIEZA_MAGIC) {
+        s_barrido_magic = LIMPIEZA_MAGIC;    /* primer arranque: se estrena */
+        s_barrido_en_curso = 0;
+    }
+    s_barrido_en_curso = en_curso ? 1u : 0u;
+}
 
 /* ── Espacio libre ──────────────────────────────────────────────────────────
  * La retencion por dias no basta: una temporada de salidas largas puede llenar la
@@ -103,6 +134,20 @@ static int process_dir(const char *dir, int max_days, bool dry_run, bool count_w
         ESP_LOGD(TAG, "%s no abre (probablemente no montado)", dir);
         return 0;
     }
+    /* SUELTA el cerrojo del opendir ANTES del bucle (15-nov-2026). Aqui faltaba
+     * este unlock: la funcion tomaba el cerrojo para el opendir y la primera
+     * vuelta del bucle lo volvia a pedir SIN haberlo soltado. Resultado en la
+     * P4, en cada arranque, 0,4 s despues de inicializarse:
+     *   - el segundo take vencia el plazo y la tarea se quedaba con el cerrojo
+     *     del bus SD para siempre -> datalogger, bateria, viaje y TODOS los
+     *     .tar mudos (contestaban "la tarjeta esta ocupada"), y
+     *   - en los arranques en los que el kernel se ponia a tiro, un panic de
+     *     verdad (assert de vTaskPriorityDisinheritAfterTimeout dentro de
+     *     xQueueSemaphoreTake) -> reinicio. El backtrace del 15-nov-2026:
+     *     camera_sd_bus_lock <- borrar_sesiones_dir / process_dir.
+     * Lo metio la auditoria del 13-nov al pasar a "un cerrojo por entrada": se
+     * anadio el par de dentro del bucle y se quedo sin pareja el de fuera. */
+    camera_sd_bus_unlock();
     int hits = 0;
     /* EL CERROJO SE SUELTA ENTRE ENTRADAS (auditoria 13-nov). Antes se tomaba
      * UNA vez para opendir + todos los readdir + TODOS los remove() de la
@@ -351,6 +396,9 @@ static int vig_libera_espacio(void)
 
 int log_cleanup_run_now(int max_days_keep)
 {
+    /* Si este barrido se queda a medias (la placa se reinicia a mitad), la marca
+     * se queda puesta y el proximo arranque no barre: ver barrido_marca(). */
+    barrido_marca(true);
     int total = 0;
     for (size_t i = 0; i < NUM_DIRS; ++i) {
         total += process_dir(DIRS[i], max_days_keep, false, false);
@@ -365,6 +413,7 @@ int log_cleanup_run_now(int max_days_keep)
      * se guarda nada (ni vigilancia ni datos). Va despues, para que la antiguedad
      * mande y esto solo actue cuando de verdad aprieta. */
     vig_libera_espacio();
+    barrido_marca(false);
     if (total > 0) ESP_LOGI(TAG, "Borrados %d ficheros antiguos", total);
     return total;
 }
@@ -401,9 +450,14 @@ static void cleanup_task(void *arg)
     if (s_hb_cb) s_hb_cb();
     /* Aviso ANTES del primer barrido: cuanto se va a borrar por antiguedad.
      * (Aqui si: esta tarea tiene 6144 B y el recorrido de directorios es de lo
-     * mas hambriento de pila que hay; llamarlo desde main_task reventaba.) */
-    {
+     * mas hambriento de pila que hay; llamarlo desde main_task reventaba.)
+     *
+     * Se salta si el barrido ANTERIOR no llego a terminar (ver barrido_marca):
+     * ese aviso tambien toma el cerrojo del bus SD y tambien puede atascarse. */
+    if (!s_saltar_primer_barrido) {
+        barrido_marca(true);
         int pend = log_cleanup_files_pending_warning(s_max_days_cached > 0 ? s_max_days_cached : 120);
+        barrido_marca(false);
         if (pend > 0) {
             ESP_LOGW(TAG, "se borraran %d ficheros con mas de %d dias en el primer barrido "
                           "(esto es solo el aviso, todavia no borra nada)",
@@ -412,6 +466,13 @@ static void cleanup_task(void *arg)
     }
     while (1) {
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (s_saltar_primer_barrido) {
+            /* Se decidio en log_cleanup_init(): el barrido anterior se quedo a
+             * medias. Se salta ESTE (el inicial) y se deja el diario. */
+            s_saltar_primer_barrido = false;
+            ESP_LOGW(TAG, "primer barrido saltado a proposito: el anterior no termino");
+            continue;
+        }
         if (s_hb_cb) s_hb_cb();   /* latido watchdog: ver log_cleanup_set_heartbeat_cb */
         log_cleanup_run_now(s_max_days_cached);
     }
@@ -443,6 +504,18 @@ void log_cleanup_set_vigilancia_days(int max_days)
 void log_cleanup_init(int max_days_keep)
 {
     s_max_days_cached = max_days_keep;
+
+    /* ¿El barrido anterior se quedo a medias? Se decide AQUI (sincrono, antes de
+     * que la tarea y los timers empiecen a disparar) y se consume en el primer
+     * disparo. La marca se limpia ya: la decision queda en RAM. Ver
+     * barrido_marca(). */
+    s_saltar_primer_barrido = (s_barrido_magic == LIMPIEZA_MAGIC) && (s_barrido_en_curso != 0);
+    barrido_marca(false);
+    if (s_saltar_primer_barrido) {
+        ESP_LOGW(TAG, "el barrido anterior no llego a terminar (la placa se reinicio a mitad): "
+                      "este arranque NO barro, para que la SD quede para el registro de datos. "
+                      "Se reintenta en el barrido diario.");
+    }
 
     /* 3072 causo un bootloop real en bh_flush_task (mismo patron, misma SD)
      * el 08-sep-2026: la SD (fopen/fprintf/fclose, y aqui ademas recorrer
