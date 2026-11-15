@@ -104,6 +104,8 @@ Páginas con cards de borde de color, dropdown scrollable cuando hay overflow, s
   - 🔵 BLE — gris si no hay datos en 5 s.
   - 🔊 / 🔇 Volumen — tap = mute/unmute.
   - 📶 Wi-Fi — tap = toggle AP on/off en caliente. Verde: portal web accesible. Azul: la web no responde (se rearma sola). Gris: Wi-Fi deshabilitado.
+  - 📡 **GPS** — gris: el módulo no manda nada; naranja: llegan tramas pero **sin fix**; verde: con posición. Tap = Ajustes → GPS.
+  - 💾 **SD** — verde: tarjeta montada y escribiendo; naranja/triángulo rojo: no está montada o lleva fallos de escritura seguidos (el detalle, en Ajustes → Tarjeta SD).
   - ⚙ / 🏠 — navega entre Live y Settings.
   - 🌡 **Exterior: +26.0 °C** — temperatura del DS18B20 exterior, siempre visible a la derecha.
 
@@ -311,6 +313,8 @@ Pages with role-coloured cards, scrollbar visible on overflow, separators betwee
   - 🔵 BLE — grey if no data for 5 s.
   - 🔊 / 🔇 Volume — tap to mute/unmute.
   - 📶 Wi-Fi — tap to toggle the AP live. Green: web portal reachable. Blue: web not answering (it re-arms itself). Grey: Wi-Fi disabled.
+  - 📡 **GPS** — grey: the module sends nothing; orange: frames arriving but **no fix**; green: position. Tap = Settings → GPS.
+  - 💾 **SD** — green: card mounted and writing; orange/red triangle: not mounted or repeated write failures (details in Settings → SD card).
   - ⚙ / 🏠 — navigate between Live and Settings.
   - 🌡 **Exterior: +26.0 °C** — outdoor DS18B20 reading, always visible on the right.
 

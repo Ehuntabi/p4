@@ -473,10 +473,8 @@ void ui_init(void) {
     lv_obj_add_event_cb(ui->lbl_wifi, wifi_btn_event_cb, LV_EVENT_CLICKED, ui);
     /* Icono GPS — mismo tamano y forma que el de Wi-Fi, justo al lado.
      *
-     * NO es pulsable, a diferencia del de Wi-Fi: es un indicador y nada mas. En
-     * un tactil dentro de un vehiculo en marcha, cualquier cosa que reaccione al
-     * roce acaba activandose sin querer (ya paso con el selector de orientacion
-     * del nivel en la 3.5"). */
+     * SI es pulsable (se pone a proposito debajo): abre Ajustes -> GPS. El
+     * comentario viejo decia que no lo era y ya no era cierto. */
     ui->lbl_gps = lv_label_create(ui->bottom_bar);
     lv_obj_set_style_text_font(ui->lbl_gps, &lv_font_montserrat_24_es, 0);
     lv_obj_set_style_bg_opa(ui->lbl_gps, LV_OPA_50, 0);
