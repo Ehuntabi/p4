@@ -1258,6 +1258,16 @@ void camera_sd_bus_unlock(void)
  * watchdog_suspend() ya hace con el watchdog SW propio del proyecto. */
 static TaskHandle_t s_cam_stream_task = NULL;
 
+/* El dueno segun FreeRTOS, no el global s_sd_bus_dueno: el global puede quedarse
+ * apuntando a otra tarea y entonces nadie suelta el mutex (ver el comentario de
+ * camera_sd_bus_unlock). Este se pregunta al propio mutex. */
+const char *camera_sd_bus_dueno(void)
+{
+    if (!s_sd_bus) return NULL;
+    TaskHandle_t h = xSemaphoreGetMutexHolder(s_sd_bus);
+    return h ? pcTaskGetName(h) : NULL;
+}
+
 bool camera_sd_bus_lock_wait(uint32_t total_timeout_ms)
 {
     int64_t deadline_us = esp_timer_get_time() + (int64_t)total_timeout_ms * 1000;

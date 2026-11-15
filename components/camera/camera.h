@@ -81,6 +81,11 @@ void camera_sd_bus_unlock(void);
  * auditando el 08-sep-2026. */
 bool camera_sd_bus_lock_wait(uint32_t total_timeout_ms);
 
+/* Quien tiene el cerrojo del bus SD AHORA MISMO, por su nombre de tarea, o NULL
+ * si esta libre. Sirve para saber a quien hay que mirar cuando un .tar contesta
+ * "la tarjeta esta ocupada" durante minutos (diagnostico del 15-nov-2026). */
+const char *camera_sd_bus_dueno(void);
+
 /* ── LECTORES DE SD QUE SUELTAN EL CERROJO A MITAD (16-oct-2026) ─────────────
  *
  * Los que leen un fichero GRANDE (el .tar de un viaje, un JPEG de vigilancia)

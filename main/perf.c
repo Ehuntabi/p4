@@ -24,6 +24,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "datalogger.h"
+#include "camera.h"   /* camera_sd_bus_dueno: quien tiene el cerrojo de la SD */
 #include "lvgl.h"
 
 static const char *TAG = "perf";
@@ -217,7 +218,8 @@ size_t perf_json(char *out, size_t n)
     w += (size_t)snprintf(out + w, (w < n) ? n - w : 0,
         "{\"ver\":\"%s\",\"uptime_s\":%lld,\"reinicio\":\"%s\","
         "\"heap\":{\"libre\":%u,\"mayor\":%u,\"minimo\":%u},"
-        "\"sd\":{\"n\":%u,\"fallos\":%u,\"media_us\":%lld,\"max_us\":%lld},"
+        "\"sd\":{\"n\":%u,\"fallos\":%u,\"media_us\":%lld,\"max_us\":%lld,"
+        "\"cerrojo\":\"%s\"},"
         "\"lvgl\":{\"bloques\":%u,\"media_us\":%lld,\"max_us\":%lld},"
         "\"tareas\":[",
         esp_app_get_description()->version,
@@ -226,6 +228,7 @@ size_t perf_json(char *out, size_t n)
         (unsigned)heap_libre, (unsigned)heap_mayor, (unsigned)heap_minimo,
         (unsigned)s_sd_n, (unsigned)s_sd_fallos,
         (long long)(s_sd_n ? s_sd_suma_us / s_sd_n : 0), (long long)s_sd_max_us,
+        camera_sd_bus_dueno() ? camera_sd_bus_dueno() : "libre",
         (unsigned)s_flush_n,
         (long long)(s_flush_n ? s_flush_suma_us / s_flush_n : 0), (long long)s_flush_max_us);
 
