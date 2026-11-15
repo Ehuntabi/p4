@@ -109,6 +109,53 @@ Rachas cortas que se recuperan = ruido en el bus (cable, pull-up de 4,7 k,
 longitud). `seguidos` que no para de subir = esa sonda o su cableado. La
 dirección dice **cuál** de las tres es.
 
+## La SD muda y "reinicio por panic" cada rato (15-nov-2026)
+
+Síntoma: desde el firmware del 13-nov la placa **reiniciaba sola** cada pocos
+minutos y, en los arranques en que no reiniciaba, todo lo que toca la tarjeta se
+quedaba mudo: el datalogger no escribía ni una muestra y **los `.tar` contestaban
+"la tarjeta esta ocupada"**. `/api/perf` decía `sd.cerrojo: "log_cleanup_tas"`.
+
+Causa (`components/log_cleanup/log_cleanup.c`, `process_dir()`): tomaba el
+cerrojo del bus SD para el `opendir()` y **no lo soltaba**. La primera vuelta del
+bucle lo volvía a pedir; como el mutex **no es recursivo**, ese segundo `take`
+vencía su plazo y la tarea se quedaba con el cerrojo para siempre. En algunos
+arranques, además, FreeRTOS no perdona ese caso y tumba la placa:
+
+    assert failed: vTaskPriorityDisinheritAfterTimeout tasks.c:5270
+    (pxTCB != pxCurrentTCBs[ xPortGetCoreID() ])
+
+Backtrace: `camera_sd_bus_lock <- borrar_sesiones_dir:249 / process_dir:97`.
+Lo metió la auditoría del 13-nov (f4cd20a) al pasar a "un cerrojo por entrada":
+se añadió el par de dentro del bucle y se quedó sin pareja el de fuera. Desde
+entonces **no se escribió nada en la tarjeta** (último CSV de frigo: 12-nov
+22:45; el CSV de batería aún más viejo, pero eso era el shunt BLE sin conectar,
+`"battery":{"has":false}`).
+
+Qué se cambió (v5.20):
+
+- **El `unlock()` que faltaba**, justo después del `opendir()`.
+- `camera_sd_bus_lock()`: si la tarea que lo pide **ya lo tiene**, dice que no y
+  lo apunta en el log, en vez de dejar que FreeRTOS tumbe la placa o de quedarse
+  el cerrojo tomado. (Ojo: esto **no arregla** el fallo de quien llama, solo
+  evita el panic y la tarjeta muda; el fallo hay que arreglarlo donde está.)
+- `camera_sd_bus_unlock()`: comprueba el dueño contra el mutex
+  (`xSemaphoreGetMutexHolder`), no contra el global `s_sd_bus_dueno`. Si el
+  global se queda apuntando a otra tarea, el dueño de verdad **no podía
+  soltarlo nunca**.
+- **Vigilante**: cerrojo tomado más de **60 s** → apunta quién lo tiene y
+  reinicia (motivo nuevo `Watchdog SW (SD trabada)`). Un cerrojo así solo se
+  recupera reiniciando, y sin volcar a SD (el volcado necesita ese cerrojo).
+- **Red de seguridad**: si el barrido anterior no terminó (marca en memoria RTC),
+  ese arranque **no barre**: la tarjeta se queda para el registro de datos y se
+  reintenta en el barrido diario. Una limpieza que no corre prisa no puede costar
+  que la placa deje de grabar.
+
+Regla que sale de aquí: **el cerrojo del bus SD se toma y se suelta en el mismo
+sitio, con el mismo camino de salida**; nada de tomarlo "un poco antes" y
+soltarlo al final; y **nunca** se pide dos veces desde la misma tarea. Si en el
+log sale "cerrojo del bus SD recursivo", hay un fallo de simetría que arreglar.
+
 ## Límite conocido: la pantalla parpadea mientras se graba flash (OTA)
 
 No es un fallo del código y **no tiene arreglo por software en esta placa**: el
