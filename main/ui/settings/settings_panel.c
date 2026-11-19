@@ -25,6 +25,7 @@ void create_display_settings_page(ui_state_t *ui, lv_obj_t *page_display);
 #include "datalogger.h"
 #include "battery_history.h"
 #include "esp_system.h"
+#include "ui/settings/restart_flush.h"
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 #include "ui/views/frigo_panel.h"
@@ -1348,6 +1349,27 @@ static void backup_export_cb(lv_event_t *e)
     }
 }
 
+/* Reinicio 2 s despues de importar (19-nov-2026). Sin esto la pantalla seguia
+ * enseñando los valores VIEJOS hasta que el usuario apagase: la importacion
+ * escribe la NVS y la RAM, pero no repinta los widgets ya construidos, asi que
+ * la pantalla y el aparato no decian lo mismo -- la misma clase de fallo que el
+ * del panel del frigo. Se le dejan 2 s para leer el mensaje. */
+static void reinicio_tras_importar_cb(lv_timer_t *t)
+{
+    (void)t;
+    ESP_LOGW(TAG_SETTINGS, "config importada: reinicio para aplicar todo");
+    /* MISMO CONTRATO QUE LOS DEMAS CAMINOS DE REINICIO (boton Reiniciar,
+     * escalera del AP y OTA; ver restart_flush.h): volcar antes y marcar el
+     * reinicio como pedido. Sin esto, este reinicio se llevaba por
+     * delante hasta ~5 min de contadores de viaje, el dia de solar y el vlog
+     * del NE185, y ademas el arranque siguiente lo apuntaba como reinicio NO
+     * pedido en Acerca de (auditoria del 19-nov-2026). */
+    watchdog_marca_reinicio_pedido();
+    ui_flush_all_before_restart();
+    vTaskDelay(pdMS_TO_TICKS(200));
+    esp_restart();
+}
+
 static void backup_import_cb(lv_event_t *e)
 {
     lv_obj_t *btn = lv_event_get_target(e);
@@ -1355,10 +1377,26 @@ static void backup_import_cb(lv_event_t *e)
     esp_err_t err = config_backup_import(CONFIG_BACKUP_PATH);
     if (status) {
         lv_label_set_text(status, err == ESP_OK
-            ? "Importado. Reinicia para aplicar todos los cambios."
+            ? "Importado. Reiniciando para aplicar todos los cambios..."
             : "ERROR importando (¿fichero existe?)");
         lv_obj_set_style_text_color(status,
             err == ESP_OK ? UI_COLOR_GREEN : UI_COLOR_RED_DARK, 0);
+    }
+    if (err == ESP_OK) {
+        /* Un solo reinicio pendiente: dos importaciones seguidas no tienen que
+         * dejar dos temporizadores (inofensivo, pero es gratis evitarlo). */
+        static bool s_reinicio_programado = false;
+        if (s_reinicio_programado) return;
+        s_reinicio_programado = true;
+        lv_timer_t *t = lv_timer_create(reinicio_tras_importar_cb, 2000, NULL);
+        if (t) {
+            lv_timer_set_repeat_count(t, 1);
+        } else {
+            /* Sin timer (heap LVGL) el mensaje "Reiniciando..." mentiria: se
+             * reinicia ya, con el mismo volcado previo. */
+            ESP_LOGE(TAG_SETTINGS, "sin timer para el reinicio: reinicio en el acto");
+            reinicio_tras_importar_cb(NULL);
+        }
     }
 }
 

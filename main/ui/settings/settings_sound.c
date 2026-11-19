@@ -172,6 +172,10 @@ lv_obj_t *create_ausente_card(lv_obj_t *cont)
      * que se crea antes que el titulo y la tarjeta no crece. */
     lv_obj_t *aus_sw = lv_switch_create(card_aus);
     lv_obj_set_style_bg_color(aus_sw, UI_COLOR_CYAN, LV_STATE_CHECKED | LV_PART_INDICATOR);
+    /* La posicion inicial tiene que ser la REAL: antes se creaba siempre en OFF
+     * y, si el modo ausente ya estaba activo, el interruptor mentia (auditoria
+     * del 19-nov-2026; hoy el overlay tapa la pantalla, pero el dato es el dato). */
+    if (ausente_is_active()) lv_obj_add_state(aus_sw, LV_STATE_CHECKED);
     lv_obj_add_event_cb(aus_sw, ausente_switch_cb, LV_EVENT_VALUE_CHANGED, NULL);
     s_ausente_sw = aus_sw;   /* para sincronizarlo al salir por gesto (U1) */
 

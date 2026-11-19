@@ -731,6 +731,24 @@ static void init_sd_rtc_frigo(void)
          * debe decidirse -- el contrato correcto es "solo late lo que existe".
          * Detectado auditando el 07-sep-2026. */
         frigo_set_heartbeat_cb(frigo_heartbeat);
+
+        /* La pestana del frigo se construyo en ui_init() (mucho antes: linea
+         * ~589), con el estado todavia SIN cargar de la NVS. Hasta el primer
+         * ciclo de la tarea (~2 s) la pantalla ensenaria los valores de fabrica
+         * mientras el control ya usa los guardados. Un refresco aqui, con la
+         * NVS ya leida, deja pantalla y control de acuerdo desde el primer
+         * fotograma. Detectado el 19-nov-2026.
+         *
+         * Se llama SOLO al repintado del panel (ui_frigo_panel_update), no al
+         * callback entero: frigo_update_cb lleva la alarma del congelador
+         * (que depende de alerts_init(), mas abajo) y el log a SD (que
+         * depende del datalogger). Repintar no depende de nada de eso. */
+        frigo_state_t st_boot;
+        frigo_get_state_copy(&st_boot);
+        if (lvgl_port_lock(200)) {
+            ui_frigo_panel_update(s_ui, &st_boot);
+            lvgl_port_unlock();
+        }
     }
 
     /* Crear el mutex de dashboard_state antes de arrancar httpd/BLE/sim,

@@ -91,8 +91,20 @@ static uint8_t s_scan_flags = 0;
 /* La UI pide escaneo desde otro hilo; frigo_task lo atiende. */
 static volatile bool s_rescan_req = false;
 /* Una lectura fuera de este margen no es una temperatura: es un error disfrazado
- * (85.0 es el valor de power-on del DS18B20 y -127 el "sin dato"). */
-static bool temp_valida(float t) { return t >= -120.0f && t <= 125.0f; }
+ * (85.0 es el valor de power-on del DS18B20 y -127 el "sin dato").
+ *
+ * Y 85.0 EXACTO tampoco vale, aunque caiga dentro del margen: es lo que devuelve
+ * el DS18B20 que aun no ha convertido (registro de power-on). Con el margen a
+ * secas se colaba como temperatura buena y, si era la sonda de aletas, ponia el
+ * ventilador al 100 % (85 > T_max). Un frigo no esta nunca a 85 grados; si
+ * algun dia hiciera falta ese valor, que venga de una conversion de verdad, no
+ * del registro de arranque. Detectado el 19-nov-2026 junto con el desfase de la
+ * pantalla del panel del frigo. */
+static bool temp_valida(float t)
+{
+    if (t == 85.0f) return false;
+    return t >= -120.0f && t <= 125.0f;
+}
 
 /* Definida mas abajo (junto al resto del escaneo), pero frigo_task la usa antes. */
 static void escanear_y_aplicar(bool recuperar);
@@ -1114,9 +1126,15 @@ bool frigo_solar_get_enabled(void)
 uint8_t frigo_solar_get_soc_on(void)
 {
     if (!s_mutex) return 95;
-    uint8_t v = 95;
+    /* ULTIMO VALOR BUENO, no el de fabrica: si el cerrojo esta ocupado no se
+     * puede devolver 95, porque un export de la configuracion guardaria 95/80
+     * en el fichero y al restaurarlo se perderia el ajuste del usuario
+     * (auditoria del 19-nov-2026). */
+    static uint8_t s_last_on = 95;
+    uint8_t v = s_last_on;
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         v = s_sol_on_pct;
+        s_last_on = v;
         xSemaphoreGive(s_mutex);
     }
     return v;
@@ -1125,9 +1143,32 @@ uint8_t frigo_solar_get_soc_on(void)
 uint8_t frigo_solar_get_soc_off(void)
 {
     if (!s_mutex) return 80;
-    uint8_t v = 80;
+    static uint8_t s_last_off = 80;
+    uint8_t v = s_last_off;
     if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
         v = s_sol_off_pct;
+        s_last_off = v;
+        xSemaphoreGive(s_mutex);
+    }
+    return v;
+}
+
+/* Estado CRUDO del rele del excedente: cerrado o abierto, sin el AND con el
+ * interruptor. Existe para que la pantalla no mienta cuando la salida se fuerza
+ * desde /control?dev=sol&mode=on (prueba): antes decia "Modo solar desactivado"
+ * con el rele cerrado (auditoria del 19-nov-2026). */
+bool frigo_solar_get_rele(void)
+{
+    if (!s_mutex) return false;
+    /* ULTIMO VALOR BUENO (mismo patron que get_active/get_enabled, 4-nov-2026):
+     * si el cerrojo esta ocupado no se puede inventar un "rele abierto", porque
+     * la pantalla pasaria de verde a ambar y volveria (parpadeo) y diria "en
+     * espera" mientras esta alimentando. */
+    static bool s_last_rele = false;
+    bool v = s_last_rele;
+    if (xSemaphoreTake(s_mutex, pdMS_TO_TICKS(50)) == pdTRUE) {
+        v = s_sol_sm.active;
+        s_last_rele = v;
         xSemaphoreGive(s_mutex);
     }
     return v;

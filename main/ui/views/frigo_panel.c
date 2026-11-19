@@ -56,6 +56,11 @@ static lv_obj_t *s_dot_sol        = NULL;
 static bool      s_sol_est_act    = false;
 static bool      s_sol_est_en     = false;
 static uint32_t  s_sol_est_min    = 0xFFFFFFFFu;
+/* Si la salida esta forzada (prueba desde el portal). Forma parte de la clave
+ * del "no ha cambiado nada": si no, el paso de "forzada" a "automatico" no
+ * repintaba el chivato. */
+static bool      s_sol_est_forz   = false;
+static bool      s_sol_est_forzada = false;
 
 static ui_state_t *s_ui = NULL;
 
@@ -117,12 +122,12 @@ static void refresh_dd_selections(void)
     frigo_get_state_copy(&st_copy);
     const frigo_state_t *st = &st_copy;
     s_suppress_dd_cb = true;
-    /* Un rol sin sonda presente vale FRIGO_SONDA_AUSENTE (0xFF): no se le puede
-     * pasar tal cual al dropdown. Se ensenia la primera opcion; que ese rol no
-     * tiene dato ya se ve en su temperatura ("-- C") y en el aviso emergente. */
+    /* Un rol sin sonda (FRIGO_SONDA_AUSENTE = 0xFF) se pinta con la ultima
+     * opcion, "sin sonda", que vale justo n_sensors. Antes caia en 0 (S0) y
+     * parecia asignado. */
     #define SEL(dd, slot) \
         if (dd) lv_dropdown_set_selected((dd), \
-            st->assignment[(slot)] < st->n_sensors ? st->assignment[(slot)] : 0)
+            st->assignment[(slot)] < st->n_sensors ? st->assignment[(slot)] : st->n_sensors)
     SEL(s_dd_aletas,     FRIGO_SLOT_ALETAS);
     SEL(s_dd_congelador, FRIGO_SLOT_CONGELADOR);
     SEL(s_dd_exterior,   FRIGO_SLOT_EXTERIOR);
@@ -162,27 +167,47 @@ static void apply_assignment_with_swap(frigo_slot_t target, uint8_t new_idx)
     refresh_dd_selections();
 }
 
+/* Aplica la seleccion de un desplegable, salvo la opcion "sin sonda", que es
+ * SIEMPRE la ultima de la lista y no asigna nada: el rol se queda como estaba y
+ * se repinta.
+ *
+ * Se comprueba contra el numero de opciones del PROPIO desplegable, no contra
+ * una copia fresca de n_sensors: entre que se construyo la lista y el clic puede
+ * haber un reescaneo (ventana de hasta un ciclo, ~2,8 s) y entonces los indices
+ * ya no significan lo mismo -- un clic en "sin sonda" (indice n_old) colaba como
+ * sonda valida si habia aparecido una nueva, y ataba la sonda equivocada.
+ * Auditoria del 19-nov-2026 (N1). */
+static void dd_aplicar(frigo_slot_t slot, lv_obj_t *dd, uint16_t idx)
+{
+    uint16_t n_opciones = (uint16_t)lv_dropdown_get_option_cnt(dd);
+    if (n_opciones == 0 || idx + 1 >= n_opciones) {
+        refresh_dd_selections();
+        return;
+    }
+    apply_assignment_with_swap(slot, (uint8_t)idx);
+}
+
 /* ── Callbacks ───────────────────────────────────────────────── */
 static void dd_aletas_cb(lv_event_t *e)
 {
     if (s_suppress_dd_cb) return;
     if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
     uint16_t idx = lv_dropdown_get_selected(lv_event_get_target(e));
-    apply_assignment_with_swap(FRIGO_SLOT_ALETAS, (uint8_t)idx);
+    dd_aplicar(FRIGO_SLOT_ALETAS, lv_event_get_target(e), idx);
 }
 static void dd_congelador_cb(lv_event_t *e)
 {
     if (s_suppress_dd_cb) return;
     if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
     uint16_t idx = lv_dropdown_get_selected(lv_event_get_target(e));
-    apply_assignment_with_swap(FRIGO_SLOT_CONGELADOR, (uint8_t)idx);
+    dd_aplicar(FRIGO_SLOT_CONGELADOR, lv_event_get_target(e), idx);
 }
 static void dd_exterior_cb(lv_event_t *e)
 {
     if (s_suppress_dd_cb) return;
     if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
     uint16_t idx = lv_dropdown_get_selected(lv_event_get_target(e));
-    apply_assignment_with_swap(FRIGO_SLOT_EXTERIOR, (uint8_t)idx);
+    dd_aplicar(FRIGO_SLOT_EXTERIOR, lv_event_get_target(e), idx);
 }
 /* Repinta AMBAS etiquetas min/max desde el estado REAL (validado). Clave del
  * fix: frigo_set_thresholds rechaza min>=max sin tocar el estado, asi que
@@ -281,7 +306,13 @@ static void sw_solar_cb(lv_event_t *e)
 {
     lv_obj_t *sw = lv_event_get_target(e);
     bool on = lv_obj_has_state(sw, LV_STATE_CHECKED);
-    frigo_solar_set_enabled(on);
+    /* Si el ajuste NO se aplica (cerrojo ocupado, NVS), el switch volveria a
+     * enseñar una posicion que no es la real hasta el siguiente refresco. Se
+     * devuelve en el acto a donde esta el estado de verdad. */
+    if (frigo_solar_set_enabled(on) != ESP_OK) {
+        if (on) lv_obj_clear_state(sw, LV_STATE_CHECKED);
+        else    lv_obj_add_state(sw, LV_STATE_CHECKED);
+    }
 }
 static void refresh_solon_label(void)
 {
@@ -303,8 +334,20 @@ static void refresh_sol_estado_label(void)
     bool     en  = frigo_solar_get_enabled();
     /* El verde exige las DOS cosas (08-nov-2026): la maquina puede tardar una
      * vuelta en apagar su bandera al quitar el interruptor, y la pantalla no
-     * puede decir "alimentando por solar" con el modo apagado. */
-    bool     act = en && frigo_solar_get_active();
+     * puede decir "alimentando por solar" con el modo apagado.
+     *
+     * El estado del rele se lee CRUDO (frigo_solar_get_rele), no con el AND de
+     * get_active(): asi la salida forzada desde el portal se puede enseñar tal
+     * cual en vez de decir "Modo solar desactivado" con el rele cerrado
+     * (auditoria del 19-nov-2026).
+     *
+     * Y el forzado MANDA sobre el verde: con el interruptor puesto, un rele
+     * cerrado por la prueba no es "alimentando por solar" -- es una prueba
+     * (N5). Si no, se disfrazaba de solar. */
+    bool     rel     = frigo_solar_get_rele();
+    bool     forz    = (frigo_solar_get_forzado() >= 0);
+    bool     forzada = forz && rel;      /* rele cerrado por la prueba */
+    bool     act     = !forzada && en && rel;
     uint32_t min = seg / 60u;
 
     /* El interruptor se pone en su sitio SIEMPRE, antes del atajo de "no ha
@@ -315,10 +358,16 @@ static void refresh_sol_estado_label(void)
         else    lv_obj_clear_state(s_sw_solar, LV_STATE_CHECKED);
     }
 
-    if (act == s_sol_est_act && en == s_sol_est_en && min == s_sol_est_min) return;
-    s_sol_est_act = act;
-    s_sol_est_en  = en;
-    s_sol_est_min = min;
+    /* La clave incluye forzada (que depende de rel): sin ella, el paso de "rele
+     * abierto" a "rele cerrado por el forzado" no repintaba y el texto azul no
+     * aparecia en toda la prueba (N4). */
+    if (act == s_sol_est_act && en == s_sol_est_en && min == s_sol_est_min &&
+        forz == s_sol_est_forz && forzada == s_sol_est_forzada) return;
+    s_sol_est_act     = act;
+    s_sol_est_en      = en;
+    s_sol_est_min     = min;
+    s_sol_est_forz    = forz;
+    s_sol_est_forzada = forzada;
 
     char tiempo[28];
     if (seg >= 3600u) {
@@ -329,7 +378,10 @@ static void refresh_sol_estado_label(void)
     }
 
     uint32_t col;
-    if (act) {
+    if (forzada) {
+        lv_label_set_text_fmt(s_lbl_sol_estado, "SALIDA FORZADA (prueba)  (hoy: %s)", tiempo);
+        col = 0x1E9BE0;   /* azul: el rele esta cerrado a mano, no por sol */
+    } else if (act) {
         lv_label_set_text_fmt(s_lbl_sol_estado, "ALIMENTANDO POR SOLAR  (hoy: %s)", tiempo);
         col = 0x00C851;   /* verde: el frigo come del panel */
     } else if (en) {
@@ -342,6 +394,48 @@ static void refresh_sol_estado_label(void)
     lv_obj_set_style_text_color(s_lbl_sol_estado, lv_color_hex(col), 0);
     if (s_dot_sol) lv_obj_set_style_bg_color(s_dot_sol, lv_color_hex(act ? col : 0x555555), 0);
 }
+/* ── Sincronizar los AJUSTES que se pintan aqui con el estado real ──────
+ * La pestana se construye ANTES de que frigo_init() cargue la NVS (en
+ * main.c, ui_init() va en la linea 589 y frigo_init() en la 725), asi que al
+ * dibujarse el estado aun tiene los valores de fabrica. Los umbrales, el suelo
+ * del ventilador y los dos SoC del modo solar se pintaban UNA vez y solo se
+ * refrescaban al tocar sus botones: si la NVS tenia otros valores, la pantalla
+ * ensenaba los de fabrica mientras el control usaba los guardados.
+ * Caso real (19-nov-2026): en el test de casa se bajo T_min a 30; en la
+ * autocaravana la pantalla decia 45/50 y el ventilador iba al 100 % con las
+ * aletas a 30 grados. Se arreglo tocando el rango (eso refresca), pero el fallo
+ * estaba aqui.
+ *
+ * Se llama en cada refresco del panel y solo repinta lo que ha cambiado: es
+ * barato y quita de en medio el desfase para SIEMPRE, no solo al arrancar
+ * (tambien cubre un cambio hecho desde el portal web). */
+static void sync_settings_labels(const frigo_state_t *state)
+{
+    static uint8_t ult_tmin  = 0xFF, ult_tmax  = 0xFF;
+    static uint8_t ult_fmin  = 0xFF;
+    static uint8_t ult_solon = 0xFF, ult_soloff = 0xFF;
+
+    if (state->T_min != ult_tmin || state->T_max != ult_tmax) {
+        ult_tmin = state->T_min;
+        ult_tmax = state->T_max;
+        refresh_threshold_labels();
+    }
+    if (state->fan_min_pct != ult_fmin) {
+        ult_fmin = state->fan_min_pct;
+        refresh_fanmin_label();
+    }
+    /* Estos dos NO viven en frigo_state_t: son estaticos de frigo.c y se leen
+     * por sus getters (con el cerrojo de dentro). */
+    uint8_t son   = frigo_solar_get_soc_on();
+    uint8_t soff  = frigo_solar_get_soc_off();
+    if (son != ult_solon || soff != ult_soloff) {
+        ult_solon  = son;
+        ult_soloff = soff;
+        refresh_solon_label();
+        refresh_soloff_label();
+    }
+}
+
 static void btn_solon_minus_cb(lv_event_t *e)
 {
     if (lv_event_get_code(e) != LV_EVENT_CLICKED) return;
@@ -381,7 +475,16 @@ static void build_sensor_options(char *buf, size_t len, const frigo_state_t *st)
         if (i > 0) strncat(buf, "\n", len - strlen(buf) - 1);
         strncat(buf, line, len - strlen(buf) - 1);
     }
-    if (st->n_sensors == 0) strncpy(buf, "Sin sensores", len);
+    /* Opcion final para el rol que NO tiene sonda. Sin ella el desplegable
+     * ensenaba "S0" y parecia que esa sonda estaba asignada al rol (el aviso
+     * "Se ha cambiado una sonda" mandaba a un desplegable que mentia).
+     * Auditoria del 19-nov-2026. */
+    if (st->n_sensors > 0) {
+        strncat(buf, "\n", len - strlen(buf) - 1);
+        strncat(buf, "-- sin sonda", len - strlen(buf) - 1);
+    } else {
+        strncpy(buf, "Sin sensores", len);
+    }
 }
 
 /* ── Buscar sondas y aviso de cambios ────────────────────────── */
@@ -1059,7 +1162,22 @@ void ui_frigo_panel_update(ui_state_t *ui, const frigo_state_t *state)
      * enumeracion 1-Wire, asi que arrancaron los dropdowns vacios), regenerar
      * la lista de opciones y restaurar la asignacion guardada en NVS. */
     static uint8_t s_last_n = 0xFF;
-    if (state->n_sensors != s_last_n) {
+    /* Y tambien si cambia CUALQUIERA de las direcciones: sustituir una sonda por
+     * otra deja el mismo numero de sondas y el desplegable seguiria enseñando la
+     * direccion de la que ya no esta (auditoria del 19-nov-2026: el aviso "Se ha
+     * cambiado una sonda" mandaba a una lista con la sonda vieja). */
+    static frigo_sensor_addr_t s_dir_vista[FRIGO_MAX_SENSORS];
+    bool cambio_sondas = (state->n_sensors != s_last_n);
+    if (!cambio_sondas) {
+        for (uint8_t i = 0; i < state->n_sensors; ++i) {
+            if (state->sensors[i].address != s_dir_vista[i].address ||
+                state->sensors[i].valid   != s_dir_vista[i].valid) {
+                cambio_sondas = true;
+                break;
+            }
+        }
+    }
+    if (cambio_sondas) {
         char opts[128];
         build_sensor_options(opts, sizeof(opts), state);
         struct { lv_obj_t *dd; uint8_t slot; } dds[3] = {
@@ -1084,9 +1202,10 @@ void ui_frigo_panel_update(ui_state_t *ui, const frigo_state_t *state)
             /* Sin el n_sensors>0, un rol ausente (FRIGO_SONDA_AUSENTE = 0xFF)
              * llegaba tal cual al dropdown cuando NO queda ninguna sonda. */
             uint8_t sel = state->assignment[dds[i].slot];
-            if (sel >= state->n_sensors) sel = 0;
+            if (sel >= state->n_sensors) sel = state->n_sensors;   /* "sin sonda" */
             lv_dropdown_set_selected(dds[i].dd, sel);
         }
+        memcpy(s_dir_vista, state->sensors, sizeof(s_dir_vista));
         s_last_n = state->n_sensors;
     }
 
@@ -1149,6 +1268,23 @@ void ui_frigo_panel_update(ui_state_t *ui, const frigo_state_t *state)
 
     /* Chivato del modo solar (se autocensura: solo repinta si cambio algo). */
     refresh_sol_estado_label();
+
+    /* Ajustes que vienen de la NVS: umbrales, suelo y SoC del modo solar. */
+    sync_settings_labels(state);
+
+    /* La asignacion de sondas tambien se puede cambiar desde el portal web:
+     * si no coincide con lo que ensenan los desplegables, se repintan. */
+    {
+        static uint8_t s_asig_vista[3] = {0xFF, 0xFF, 0xFF};
+        bool cambio = false;
+        for (int i = 0; i < 3; ++i) {
+            if (state->assignment[i] != s_asig_vista[i]) cambio = true;
+        }
+        if (cambio) {
+            for (int i = 0; i < 3; ++i) s_asig_vista[i] = state->assignment[i];
+            refresh_dd_selections();
+        }
+    }
 
     /* Ha cambiado el conjunto de sondas y el usuario aun no lo ha visto. La
      * bandera NO se limpia aqui sino en el boton del aviso: este update puede

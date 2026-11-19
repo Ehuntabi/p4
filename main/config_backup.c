@@ -1,6 +1,7 @@
 #include "config_backup.h"
 #include "config_storage.h"
 #include "alerts.h"
+#include "frigo.h"
 #include "cJSON.h"
 
 #include <stdio.h>
@@ -109,6 +110,22 @@ esp_err_t config_backup_export(const char *path)
         cJSON_AddBoolToObject(d, "enabled", devs[i].enabled);
         cJSON_AddItemToArray(vict, d);
     }
+
+    /* Frigo: SOLO los ajustes de mando (umbrales del ventilador, suelo y SoC
+     * del modo solar). NO se exportan la asignacion de sondas ni sus
+     * direcciones: van atadas al cableado fisico de esta furgo y restaurarlas
+     * en otra pantalla seria peor que no restaurar nada (19-nov-2026).
+     * Asi "restaurar la configuracion" de verdad deja el frigo como estaba y no
+     * de fabrica. */
+    frigo_state_t fr;
+    frigo_get_state_copy(&fr);
+    cJSON *frigo = cJSON_AddObjectToObject(root, "frigo");
+    cJSON_AddNumberToObject(frigo, "t_min", fr.T_min);
+    cJSON_AddNumberToObject(frigo, "t_max", fr.T_max);
+    cJSON_AddNumberToObject(frigo, "fan_min_pct", fr.fan_min_pct);
+    cJSON_AddBoolToObject(frigo, "sol_enabled", frigo_solar_get_enabled());
+    cJSON_AddNumberToObject(frigo, "sol_soc_on", frigo_solar_get_soc_on());
+    cJSON_AddNumberToObject(frigo, "sol_soc_off", frigo_solar_get_soc_off());
 
     /* Victron debug */
     bool vdbg = false;
@@ -221,7 +238,77 @@ esp_err_t config_backup_import(const char *path)
         }
     }
 
+    /* Frigo (19-nov-2026). Se aplica con los setters de siempre, que validan
+     * rango y orden; un valor absurdo en el fichero no se aplica y no rompe el
+     * resto de la importacion. Los backup antiguos no traen este bloque: se
+     * saltan sin mas. */
+    cJSON *fr = cJSON_GetObjectItem(root, "frigo");
+    if (cJSON_IsObject(fr)) {
+        /* Cada valor se aplica SOLO si esta y es del tipo correcto; los setters
+         * vuelven a validar el rango y el orden, asi que un fichero retocado a
+         * mano no puede dejar el frigo en un estado imposible. */
+        /* OJO: el cast a uint8_t va DESPUES de comprobar el rango del JSON. Si no,
+         * un 286 del fichero se convierte en 30 y se aplica en silencio: el
+         * estado queda valido pero no es el del fichero (auditoria 19-nov-2026).
+         * Rango util: 0..255, que es lo que cabe en el tipo. */
+        cJSON *v_tmin = cJSON_GetObjectItem(fr, "t_min");
+        cJSON *v_tmax = cJSON_GetObjectItem(fr, "t_max");
+/* Numero entero y en 0..255: ademas de no desbordar el cast, exige que el
+ * valor sea ENTERO (un 45.9 del fichero no se trunca a 45 en silencio). */
+#define VALOR_U8_OK(v) (cJSON_IsNumber(v) && (v)->valueint >= 0 && \
+                        (v)->valueint <= 255 && \
+                        (double)(v)->valueint == (v)->valuedouble)
+        if (VALOR_U8_OK(v_tmin) && VALOR_U8_OK(v_tmax)) {
+            esp_err_t e = frigo_set_thresholds((uint8_t)v_tmin->valueint,
+                                               (uint8_t)v_tmax->valueint);
+            if (e != ESP_OK) {
+                ESP_LOGW(TAG, "frigo: umbrales %d/%d rechazados (%s), se quedan como estan",
+                         v_tmin->valueint, v_tmax->valueint, esp_err_to_name(e));
+            }
+        }
+        cJSON *v_fmin = cJSON_GetObjectItem(fr, "fan_min_pct");
+        if (VALOR_U8_OK(v_fmin)) {
+            esp_err_t e = frigo_set_fan_min((uint8_t)v_fmin->valueint);
+            if (e != ESP_OK) {
+                ESP_LOGW(TAG, "frigo: suelo %d%% rechazado (%s)",
+                         v_fmin->valueint, esp_err_to_name(e));
+            }
+        }
+        /* El SoC de activacion primero: el de corte se valida contra el. */
+        cJSON *v_son  = cJSON_GetObjectItem(fr, "sol_soc_on");
+        cJSON *v_soff = cJSON_GetObjectItem(fr, "sol_soc_off");
+        if (VALOR_U8_OK(v_son)) {
+            esp_err_t e = frigo_solar_set_soc_on((uint8_t)v_son->valueint);
+            if (e != ESP_OK) {
+                ESP_LOGW(TAG, "frigo: SoC de activacion %d%% rechazado (%s)",
+                         v_son->valueint, esp_err_to_name(e));
+            }
+        }
+        if (VALOR_U8_OK(v_soff)) {
+            esp_err_t e = frigo_solar_set_soc_off((uint8_t)v_soff->valueint);
+            if (e != ESP_OK) {
+                ESP_LOGW(TAG, "frigo: SoC de corte %d%% rechazado (%s)",
+                         v_soff->valueint, esp_err_to_name(e));
+            }
+        }
+        cJSON *v_en = cJSON_GetObjectItem(fr, "sol_enabled");
+        if (cJSON_IsBool(v_en)) {
+            esp_err_t e = frigo_solar_set_enabled(cJSON_IsTrue(v_en));
+            if (e != ESP_OK) ESP_LOGW(TAG, "frigo: interruptor solar no aplicado (%s)",
+                                      esp_err_to_name(e));
+        }
+#undef VALOR_U8_OK
+
+        frigo_state_t fst;
+        frigo_get_state_copy(&fst);
+        ESP_LOGI(TAG, "frigo importado: umbrales %d/%d, suelo %d%%, sol %s %d/%d",
+                 (int)fst.T_min, (int)fst.T_max, (int)fst.fan_min_pct,
+                 frigo_solar_get_enabled() ? "on" : "off",
+                 (int)frigo_solar_get_soc_on(), (int)frigo_solar_get_soc_off());
+    }
+
     /* Victron devices: sustitución completa */
+
     cJSON *vict = cJSON_GetObjectItem(root, "victron_devices");
     if (cJSON_IsArray(vict)) {
         victron_device_config_t devs[VICTRON_MAX_DEVICES];
