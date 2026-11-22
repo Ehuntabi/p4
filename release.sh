@@ -195,7 +195,7 @@ fi
 # version) se genera al CONFIGURAR. Aqui se configuro despues de crear el tag, y
 # el build es desde cero, asi que tiene que decir el tag. Si dijera otra cosa, se
 # publicaria un .bin cuyo rotulo miente. Se corta ANTES de subir nada.
-if ! grep -qx "#define JB_VERSION_TAG  \"$TAG\"" build/version_build.h 2>/dev/null; then
+if ! grep -qxF -- "#define JB_VERSION_TAG  \"$TAG\"" build/version_build.h 2>/dev/null; then
   echo "ERROR: el sello (build/version_build.h) no es del tag $TAG:" >&2
   grep 'JB_VERSION_TAG' build/version_build.h 2>/dev/null || echo "       (no existe build/version_build.h)" >&2
   echo "       No se publica un .bin cuyo rotulo dice otra cosa. El tag $TAG" >&2
