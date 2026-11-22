@@ -35,6 +35,7 @@
 #include "nvs_flash.h"
 #include "esp_task_wdt.h"
 #include "esp_ota_ops.h"
+#include "version_build.h"   /* el sello: commit y fecha DEL COMMIT (22-nov-2026) */
 #include "watchdog.h"
 #include "config_storage.h"
 #include "log_capture/log_capture.h"
@@ -494,13 +495,18 @@ static bool init_boot_diagnostics(void)
      * 1=POWERON 2=EXT 3=SW 4=PANIC 5=INT_WDT 6=TASK_WDT 7=WDT 9=BROWNOUT 10=SDIO */
     ESP_LOGW(TAG, "### MOTIVO ULTIMO REINICIO: %d ###", (int)esp_reset_reason());
 
-    /* Que firmware corre: version (del tag) y fecha/hora de compilacion. Sin esto
-     * no habia forma de saber desde fuera que imagen esta instalada: en pantalla
-     * se ve en Ajustes -> Acerca de, pero para comprobar por log una OTA o un
-     * grabado por cable hacia falta aqui. */
+    /* Que firmware corre: version (del tag) y el SELLO del commit que lleva
+     * dentro. Sin esto no habia forma de saber desde fuera que imagen esta
+     * instalada: en pantalla se ve en Ajustes -> Acerca de, pero para comprobar
+     * por log una OTA o un grabado por cable hacia falta aqui.
+     *
+     * La fecha es la DEL COMMIT, no la de compilacion (app_desc->date): esa se
+     * congela al compilar el componente y el 22-nov la P4 decia "14 NOV" con
+     * codigo del 22 dentro (ver scripts/gen_version_header.cmake). */
     const esp_app_desc_t *app_desc = esp_app_get_description();
-    ESP_LOGW(TAG, "### FIRMWARE: %s compilado %s %s ###",
-             app_desc->version, app_desc->date, app_desc->time);
+    ESP_LOGW(TAG, "### FIRMWARE: %s commit %s (%s%s) ###",
+             app_desc->version, JB_COMMIT, JB_BUILD_STAMP,
+             JB_BUILD_DIRTY ? ", sin commitear" : "");
 
     /* --- Chip info --- */
     logSection("LVGL init start");

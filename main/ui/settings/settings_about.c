@@ -19,6 +19,7 @@
 #include "esp_system.h"
 #include "esp_chip_info.h"
 #include "esp_app_desc.h"
+#include "version_build.h"   /* el sello: tag/commit y fecha DEL COMMIT (22-nov-2026) */
 #include "esp_timer.h"
 #include "esp_heap_caps.h"
 #include "nvs.h"   /* nvs_get_stats: la NVS se puede llenar */
@@ -32,9 +33,14 @@
 #include "restart_flush.h"              /* ui_flush_all_before_restart() */
 
 /* La version mostrada en About sale de esp_app_get_description()->version, que
- * ESP-IDF rellena automaticamente con `git describe` (el tag mas reciente, p.ej.
- * "v1.0.0"; en builds fuera de un tag, "v1.0.0-3-gABCDEF"). Este texto es solo
- * un fallback por si la descripcion de la app no estuviera disponible. */
+ * CMake fija en PROJECT_VER (CMakeLists.txt): SIEMPRE un numero limpio "vX.Y",
+ * nunca "-dirty" ni "-N-g<hash>". Este texto es solo un fallback por si la
+ * descripcion de la app no estuviera disponible.
+ *
+ * El tag/commit/fecha de verdad van aparte, en version_build.h (el sello,
+ * 22-nov-2026): la fecha del descriptor de la app se queda congelada en el dia
+ * en que se compilo ese componente y la placa llego a decir "14 NOV" con codigo
+ * del 22 dentro. */
 static const char *APP_VERSION_FALLBACK = "v?";
 
 /* Linea de diagnostico del watchdog ("Ultimo reset: ... | Resets WDT/panic: N").
@@ -337,7 +343,7 @@ void create_about_settings_page(ui_state_t *ui, lv_obj_t *page)
     /* Titulo normal, sin control al lado: ver el boton Reiniciar al final. */
     ui_card_wrap_title(card3, card3_title, UI_COLOR_TEXT_DIM);
 
-    /* Version + fecha/hora de compilacion, todo en una linea. */
+    /* Version + SELLO del commit, todo en una linea. */
     const esp_app_desc_t *app_desc = esp_app_get_description();
     const char *raw_ver = app_desc ? app_desc->version : APP_VERSION_FALLBACK;
     /* La version se muestra TAL CUAL: es siempre un numero limpio "vX.Y".
@@ -348,14 +354,21 @@ void create_about_settings_page(ui_state_t *ui, lv_obj_t *page)
      * build marcado como sucio, y cada tanda de trabajo es la version
      * SIGUIENTE, +0.1 sobre el ultimo tag. Ese +0.1 lo calcula CMakeLists.txt
      * antes de compilar; aqui no se inventa ningun numero, y asi lo que dice
-     * esta pantalla es exactamente lo que dice el nombre del .bin. */
+     * esta pantalla es exactamente lo que dice el nombre del .bin.
+     *
+     * Y AL LADO, EL SELLO (22-nov-2026): el commit del que sale de verdad y la
+     * FECHA DE ESE COMMIT. Antes ponia "Compilado: app_desc->date time", que
+     * ESP-IDF rellena al compilar ese componente y no regenera: la placa decia
+     * "14 NOV" llevando codigo del 22 dentro, y el dueno lo leyo como "no esta
+     * en la ultima version". La fecha del commit no puede quedarse vieja: es la
+     * del codigo que hay dentro. Si el arbol tenia cambios sin commitear (un
+     * parche a mano), se dice aqui mismo. */
     lv_obj_t *lbl_ver_top = lv_label_create(card3);
     lv_obj_set_style_text_font(lbl_ver_top, &lv_font_montserrat_20_es, 0);
     lv_obj_set_style_text_color(lbl_ver_top, UI_COLOR_TEXT_DIM, 0);
-    lv_label_set_text_fmt(lbl_ver_top, "Versión: %s    Compilado: %s  %s",
-                          raw_ver,
-                          app_desc ? app_desc->date : __DATE__,
-                          app_desc ? app_desc->time : __TIME__);
+    lv_label_set_text_fmt(lbl_ver_top, "Versión: %s   commit %s (%s%s)",
+                          raw_ver, JB_COMMIT, JB_BUILD_STAMP,
+                          JB_BUILD_DIRTY ? ", sin commitear" : "");
 
     /* Chip + IDF */
     esp_chip_info_t chip = {0};

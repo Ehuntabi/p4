@@ -9,7 +9,9 @@ file(GLOB_RECURSE SOURCES "*.c")
 
 idf_component_register(
     SRCS       ${SOURCES}
-    INCLUDE_DIRS "."
+    # ${CMAKE_BINARY_DIR}: ahi deja el configure el version_build.h que genera
+    # scripts/gen_version_header.cmake (el sello de version del About y del log).
+    INCLUDE_DIRS "." "${CMAKE_BINARY_DIR}"
     PRIV_REQUIRES app_update
         # ── Heredadas del proyecto original ───────────────────────────────────
         config_storage

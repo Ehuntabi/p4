@@ -76,9 +76,40 @@ endif()
 # fichero tocado y SIN anadir al indice no dispara el reconfigure, asi que tras
 # aplicar un parche a mano la version embebida puede quedarse en la anterior
 # hasta el siguiente reconfigure (lo detecta y lo avisa bin_con_version.sh).
+# ── EL SELLO DE VERSION (22-nov-2026) ────────────────────────────────────────
+# Debajo del numero, la pantalla (y el portal, y el log de arranque) ensena lo
+# que DE VERDAD lleva dentro: tag y commit de git, y la fecha DEL COMMIT. Antes
+# solo ponia app->date/app->time (esp_app_get_description), que se rellena al
+# compilar ESE componente y no se regenera: el 22-nov la placa decia "14 NOV"
+# con codigo del 22 dentro. Un rotulo que miente es peor que no tenerlo.
+#
+# Se genera al CONFIGURAR, igual que PROJECT_VER, y por eso comparte sus mismos
+# CONFIGURE_DEPENDS: si cambia el git, se recalcula. release.sh borra build/ y
+# compila de cero con el arbol limpio, asi que lo publicado lleva el tag exacto.
+set(JB_SELLO_HEADER "${CMAKE_BINARY_DIR}/version_build.h")
+execute_process(
+    COMMAND ${CMAKE_COMMAND}
+            "-DREPO=${CMAKE_CURRENT_LIST_DIR}"
+            "-DOUT=${JB_SELLO_HEADER}"
+            "-DSTAMP_FILE=${CMAKE_CURRENT_LIST_DIR}/version_stamp.txt"
+            -P "${CMAKE_CURRENT_LIST_DIR}/scripts/gen_version_header.cmake"
+    RESULT_VARIABLE JB_SELLO_RC
+    OUTPUT_VARIABLE JB_SELLO_SALIDA
+    ERROR_VARIABLE JB_SELLO_ERROR)
+if(NOT JB_SELLO_RC EQUAL 0)
+    message(FATAL_ERROR "el sello de version no se pudo generar: ${JB_SELLO_ERROR}")
+endif()
+string(STRIP "${JB_SELLO_SALIDA}" JB_SELLO_SALIDA)
+message(STATUS "${JB_SELLO_SALIDA}")
+
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
              "${CMAKE_CURRENT_LIST_DIR}/.git/HEAD"
-             "${CMAKE_CURRENT_LIST_DIR}/.git/index")
+             "${CMAKE_CURRENT_LIST_DIR}/.git/index"
+             "${CMAKE_CURRENT_LIST_DIR}/scripts/gen_version_header.cmake")
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/version_stamp.txt")
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+                 "${CMAKE_CURRENT_LIST_DIR}/version_stamp.txt")
+endif()
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 

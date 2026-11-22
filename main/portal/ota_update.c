@@ -17,6 +17,7 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_app_desc.h"
+#include "version_build.h"   /* el sello: commit y fecha DEL COMMIT (22-nov-2026) */
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -603,7 +604,7 @@ esp_err_t ota_update_page(httpd_req_t *req)
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
         "<body style='font-family:sans-serif;padding:24px;max-width:560px'>"
         "<h2>Actualizar la pantalla</h2>"
-        "<p>Version instalada: <b>%s</b><br>Compilada el %s</p>"
+        "<p>Version instalada: <b>%s</b><br>commit %s del %s%s</p>"
         "%s"
         "<p><a href='/pantallas'>Actualizar la pantalla de cabina (5\")</a></p>"
         "<p><input type='file' id='f' accept='.bin'></p>"
@@ -640,7 +641,7 @@ esp_err_t ota_update_page(httpd_req_t *req)
         "</script>"
         "</body>",
         app ? app->version : "?",
-        app ? app->date : "?",
+        JB_COMMIT, JB_BUILD_STAMP, JB_BUILD_DIRTY ? " (sin commitear)" : "",
         destino ? "" :
             "<p style='color:#b00'><b>Esta pantalla todavia no admite "
             "actualizacion por Wi-Fi.</b> Hay que grabarla una vez por cable con "
