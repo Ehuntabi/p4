@@ -1015,6 +1015,9 @@ esp_err_t ota_pantalla_subir(httpd_req_t *req)
         return pantalla_error(req, "507 Insufficient Storage", msg, true);
     }
 
+    ESP_LOGI(TAG, "subiendo %s: %u bytes (%u MB) -> %s",
+             m->nombre, (unsigned)len, (unsigned)(len / (1024u * 1024u)), ruta_tmp);
+
     if (!camera_sd_bus_lock(3000))
         return pantalla_error(req, "507 Insufficient Storage",
                               "tarjeta ocupada, reintenta", true);

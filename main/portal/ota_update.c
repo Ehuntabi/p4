@@ -188,18 +188,6 @@ static void ota_pantalla_oscura(void)
     ESP_LOGW(TAG, "pantalla a oscuras (brillo guardado %d%%)", s_brillo_previo);
 }
 
-/* Vuelve a encender con el brillo que se guardo (sin olvidarlo: el apagado
- * definitivo y la restauracion final lo siguen necesitando). */
-static void ota_pantalla_encender(void)
-{
-    /* Atenuado a proposito: con la pantalla a plena luz el parpadeo de la subida
-     * (trafico de PSRAM, no se puede parar) se nota, y a ~20% apenas se ve
-     * mientras el aviso se sigue leyendo. El brillo bueno se devuelve al final. */
-    int b = s_brillo_previo >= 20 ? 20 : s_brillo_previo;
-    if (b >= 0) bsp_display_brightness_set(b);
-    s_pantalla_apagada = false;
-}
-
 static void ota_pantalla_restaurar(void)
 {
     if (s_brillo_previo < 0) return;
@@ -340,8 +328,24 @@ esp_err_t ota_update_receive(httpd_req_t *req)
     ESP_LOGW(TAG, "OTA: aviso congelado y pantalla a oscuras, %d bytes (log a SD: %s)",
              req->content_len, esp_err_to_name(err_log));
 
+    /* BORRADO BAJO DEMANDA, NO DE GOLPE (22-nov-2026). Aqui ponia
+     * `esp_ota_begin(destino, req->content_len, ...)`, y con un tamano explicito
+     * IDF hace `esp_partition_erase_range(partition, 0, partition->size)` ANTES
+     * de devolver el handle: borra la particion de 4 MB del tiron
+     * (esp_ota_ops.c: ~190-198). Eso son decenas de segundos con la cache de
+     * flash apagada, o sea el Wi-Fi PARADO y el movil sin recibir un solo ACK:
+     * el sintoma que trajo el usuario es exactamente ese, "Connection timed
+     * out" (errno 110) al subir el .bin. Y de paso, ese rato sin latido es el
+     * candidato a los reinicios que se ven justo despues (los dos intentos de
+     * los logs de 20 y 21-nov terminan en la linea anterior al begin).
+     *
+     * OTA_WITH_SEQUENTIAL_WRITES le dice a IDF que NO borre aqui
+     * (new_entry->need_erase = true) y que borre cada sector DENTRO de
+     * esp_ota_write, justo antes de escribirlo: el corte pasa de decenas de
+     * segundos a ~30-50 ms por sector, repartidos por toda la subida. El
+     * firmware que queda escrito es el mismo y esp_ota_end lo valida igual. */
     esp_ota_handle_t ota = 0;
-    esp_err_t err = esp_ota_begin(destino, req->content_len, &ota);
+    esp_err_t err = esp_ota_begin(destino, OTA_WITH_SEQUENTIAL_WRITES, &ota);
     if (err != ESP_OK) {
         ota_pantalla_restaurar();
         ota_ui_descongelar();
