@@ -154,6 +154,14 @@ jobs:
       - name: Comparar mini_proto.h con la 5"
         run: diff p4/main/net/mini_proto.h cabina5/main/net/mini_proto.h
 
+      # EL SELLO DE VERSION (22-nov-2026) vive en los dos repos: lo pintan el
+      # About, el portal y el log de la P4, y Ajustes en la cabina. Este test
+      # prueba el generador caso por caso, que las DOS copias son identicas y que
+      # nadie vuelve a pintar la fecha congelada de app_desc. Aqui estan los dos
+      # repos a mano; sin este paso, un push que solo toque la P4 no lo pasaria.
+      - name: El sello de version no puede mentir
+        run: bash cabina5/test/sello_version.sh
+
   # El limite de cuerpo del apunte tambien se mantiene sincronizado A MANO
   # (CUERPO_MAX en el satelite tiene que caber siempre en VIAJE_BODY_MAX de
   # la P4, con margen): si CUERPO_MAX llegara a igualar o superar el buffer

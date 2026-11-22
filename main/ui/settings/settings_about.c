@@ -362,7 +362,12 @@ void create_about_settings_page(ui_state_t *ui, lv_obj_t *page)
      * "14 NOV" llevando codigo del 22 dentro, y el dueno lo leyo como "no esta
      * en la ultima version". La fecha del commit no puede quedarse vieja: es la
      * del codigo que hay dentro. Si el arbol tenia cambios sin commitear (un
-     * parche a mano), se dice aqui mismo. */
+     * parche a mano), se dice aqui mismo.
+     *
+     * ESO NO ES LO QUE EL DUENO CORTO EL 13-SEP: alli se hablaba del NUMERO de
+     * version (nada de "v2.5-dirty" en el numero, que es el que va en el nombre
+     * del .bin). El numero sigue limpio; el aviso de "sin commitear" va en el
+     * sello, que es lo que dice lo que hay dentro de verdad. */
     lv_obj_t *lbl_ver_top = lv_label_create(card3);
     lv_obj_set_style_text_font(lbl_ver_top, &lv_font_montserrat_20_es, 0);
     lv_obj_set_style_text_color(lbl_ver_top, UI_COLOR_TEXT_DIM, 0);

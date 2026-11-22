@@ -102,9 +102,16 @@ endif()
 string(STRIP "${JB_SELLO_SALIDA}" JB_SELLO_SALIDA)
 message(STATUS "${JB_SELLO_SALIDA}")
 
+# Y que se VUELVA A CALCULAR cuando cambie el git: HEAD e index cambian al hacer
+# commit o cambiar de rama; las REFS estan por los TAGS -- un `git tag` no toca
+# HEAD ni el indice, y sin vigilarlas el sello se quedaba con el tag de antes
+# para siempre (auditoria del 22-nov-2026).
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
              "${CMAKE_CURRENT_LIST_DIR}/.git/HEAD"
              "${CMAKE_CURRENT_LIST_DIR}/.git/index"
+             "${CMAKE_CURRENT_LIST_DIR}/.git/refs/heads"
+             "${CMAKE_CURRENT_LIST_DIR}/.git/refs/tags"
+             "${CMAKE_CURRENT_LIST_DIR}/.git/packed-refs"
              "${CMAKE_CURRENT_LIST_DIR}/scripts/gen_version_header.cmake")
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/version_stamp.txt")
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS

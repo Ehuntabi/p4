@@ -148,9 +148,9 @@ Verás una barra de progreso (`Writing at 0x...`). Cuando aparezca **`Hash of da
 
 En la pantalla táctil de la placa: entra en **Ajustes → Acerca de**. Debe mostrar la versión que has instalado, por ejemplo:
 
-`Version: vX.Y    Compilado: Jul 9 2026  11:30:09`
+`Versión: vX.Y   commit 1a2b3c4 (22-nov-2026 20:15)`
 
-...con el mismo número de versión que el fichero que acabas de grabar.
+...con el mismo número de versión que el fichero que acabas de grabar. Al lado va el **commit** y la **fecha del commit** que lleva dentro (el *sello*): es la fecha del código, no la del día en que se compiló. Si pone `sin commitear`, esa imagen no es una versión publicada.
 
 ¡Listo! 🎉
 
