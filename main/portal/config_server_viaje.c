@@ -2122,6 +2122,9 @@ static esp_err_t op_inicio(httpd_req_t *req, const cJSON *j, uint32_t id)
      * evitar, solo que aplazado hasta el intento 20 en vez del primero.
      * Detectado auditando el 08-sep-2026. */
     bool hay = (mk == 0);
+    /* El errno del mkdir, guardado ANTES de soltar el cerrojo de la SD y de
+     * llamar a diario(): a partir de ahi errno ya no es el de esta llamada. */
+    int mk_errno = errno;
     bool inicio_ok = hay ? diario(carpeta, "inicio", destino) : false;
     /* Y EL BUFFER DE RUTA DEL VIAJE ANTERIOR SE TIRA AQUI, CON EL CERROJO TOMADO
      * (D10, 17-oct-2026). Esta llamada estaba DESPUES del camera_sd_bus_unlock()
@@ -2138,9 +2141,19 @@ static esp_err_t op_inicio(httpd_req_t *req, const cJSON *j, uint32_t id)
     camera_sd_bus_unlock();
 
     if (!hay) {
-        ESP_LOGE(TAG, "no puedo crear %s (ni con sufijo numerador, colisiones agotadas)", carpeta);
+        /* CON EL ERRNO (22-nov-2026): este 500 es el UNICO que puede salir del
+         * camino de arranque de un viaje, y hasta hoy el log y el cuerpo de la
+         * respuesta solo decian "no puedo crear la carpeta" -- ni una pista de
+         * si fue la tarjeta sin montar, llena, de solo lectura o un nombre
+         * imposible. Se guarda en mk_errno al pie del mkdir, antes de soltar el
+         * cerrojo: aqui ya podria ser el de otra llamada. */
+        ESP_LOGE(TAG, "no puedo crear %s (errno=%d %s; ni con sufijo numerador, "
+                      "colisiones agotadas)", carpeta, mk_errno, strerror(mk_errno));
         httpd_resp_set_status(req, "500 Internal Server Error");
-        responde_con_hueco_token(req, "no puedo crear la carpeta", token_resp);
+        char motivo[128];
+        snprintf(motivo, sizeof(motivo), "no puedo crear la carpeta (errno=%d %s)",
+                 mk_errno, strerror(mk_errno));
+        responde_con_hueco_token(req, motivo, token_resp);
         return ESP_OK;
     }
     if (!inicio_ok) {
@@ -3978,6 +3991,40 @@ static esp_err_t op_registro(httpd_req_t *req, const cJSON *j, uint32_t id)
     if (strcmp(tipo, jt->valuestring) != 0)
         ESP_LOGW(TAG, "tipo con caracteres raros: '%s' -> '%s'", jt->valuestring, tipo);
 
+    /* LA MISMA PARADA, DOS VECES SEGUIDAS (22-nov-2026).
+     *
+     * En el viaje del 20 al 22 de noviembre quedaron DOS filas identicas de
+     * parada (11-21 18:31:10 y 18:31:23, mismo "Visita; 11:50 a 18:31") en
+     * eventos.csv y paradas.csv, y dos chinchetas iguales en el gpx: el resumen
+     * contaba 4 paradas cuando eran 3. No es un reintento del mismo apunte (eso
+     * lo corta id_ya_aplicado, que mira el id): llegan con id distinto, asi que
+     * se corta por CONTENIDO y por tiempo -- si el mismo 'datos' de una parada
+     * entra dos veces en dos minutos, la segunda no se apunta y se dice.
+     *
+     * Dos minutos es de sobra: una parada que de verdad se repite (parar, salir
+     * y volver a parar) no puede traer el mismo motivo y las mismas horas. */
+    if (!strcmp(tipo, "parada")) {
+        static char   firma_vista[128];
+        static time_t firma_t;
+        char *firma = jd ? cJSON_PrintUnformatted(jd) : NULL;
+        time_t ahora = time(NULL);
+        bool repetida = firma && firma_vista[0] && !strcmp(firma, firma_vista) &&
+                        (ahora - firma_t) <= 120;
+        if (repetida) {
+            if (firma) cJSON_free(firma);
+            ESP_LOGW(TAG, "parada REPETIDA con el mismo contenido (%ld s despues): "
+                          "no la apunto otra vez (%s)",
+                     (long)(ahora - firma_t), firma_vista);
+            responde_con_hueco(req, "parada repetida: ya apuntada");
+            return ESP_OK;
+        }
+        if (firma) {
+            snprintf(firma_vista, sizeof(firma_vista), "%s", firma);
+            cJSON_free(firma);
+            firma_t = ahora;
+        }
+    }
+
     /* LAS CLAVES DE 'datos' TAMBIEN SE FILTRAN (D3, 17-oct-2026). Estas claves
      * acaban siendo la CABECERA del CSV de su tipo, asi que una clave con una
      * coma deja la cabecera con una columna de mas y la fila con una de menos: el
@@ -5384,6 +5431,13 @@ esp_err_t handle_api_viaje(httpd_req_t *req)
     }
 
     esp_err_t ret;
+    /* UNA LINEA POR PETICION (22-nov-2026). Con el ruido de victron_ble
+     * recortado, esto cabe en el log y es lo que faltaba para poder cuadrar un
+     * 500 desde la tarjeta: antes no quedaba ni constancia de que hubiera
+     * llegado un 'inicio'. Se anota antes de ejecutar para que la linea exista
+     * aunque el manejador se caiga a mitad. */
+    ESP_LOGI(TAG, "/api/viaje op=%s id=%lu %d bytes",
+             jop->valuestring, (unsigned long)id, (int)req->content_len);
     if      (!strcmp(jop->valuestring, "inicio")) ret = op_inicio(req, j, id);
     else if (!strcmp(jop->valuestring, "fin"))    ret = op_fin(req, j, id);
     else if (!strcmp(jop->valuestring, "destino")) ret = op_destino(req, j, id);

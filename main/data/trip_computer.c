@@ -194,6 +194,47 @@ static bool trip_guardar_ya(void)
     return sqrt(dlat * dlat + dlon * dlon);
 }
 
+/* ── DIAGNOSTICO DEL ODOMETRO (22-nov-2026) ───────────────────────────────
+ *
+ * El viaje del 20 al 22 de noviembre salio con 0.0 km de GPS y 416 km de
+ * cuadro, y no habia UNA SOLA linea en el log que dijera por que: el descarte
+ * por "casi no me he movido" (d < GPS_SALTO_MIN_M) es mudo a proposito, y desde
+ * fuera no se distingue de "no llega el GPS" ni de "la posicion se ha quedado
+ * congelada". Con estos contadores y las dos lineas de abajo, el proximo viaje
+ * se puede mirar en el sitio en vez de adivinarlo. */
+static uint32_t s_n_muestras, s_n_parado, s_n_salto, s_n_hueco, s_n_sin_fix;
+static double   s_ult_d;
+static time_t   s_diag_t;      /* ultima linea de resumen (1/min) */
+static time_t   s_aviso_t;     /* ultimo aviso de "km parado" (1/5 min) */
+static double   s_km_aviso;
+static int64_t  s_drv_aviso;
+
+/* Con el mutex TOMADO por quien llama (lee el estado y s.seconds_driving). */
+static void odometro_diag(time_t now)
+{
+    if (s_diag_t != 0 && (long)(now - s_diag_t) < 60) return;
+    s_diag_t = now;
+    ESP_LOGI(TAG, "odometro: km=%.3f ultima_d=%.1f m | muestras=%lu parado=%lu "
+                  "salto=%lu hueco=%lu sin_fix=%lu",
+             s.km, s_ult_d,
+             (unsigned long)s_n_muestras, (unsigned long)s_n_parado,
+             (unsigned long)s_n_salto, (unsigned long)s_n_hueco,
+             (unsigned long)s_n_sin_fix);
+    /* Y si lleva 5 minutos sumando conduccion sin sumar un metro, se dice bien
+     * claro: es el sintoma exacto que dejo el viaje sin traza. */
+    if (s_aviso_t == 0 || (long)(now - s_aviso_t) >= 300) {
+        if (s_aviso_t != 0 && s.seconds_driving > s_drv_aviso &&
+            (s.km - s_km_aviso) < 0.05) {
+            ESP_LOGW(TAG, "odometro PARADO: %lld s de conduccion y 0 m nuevos "
+                          "(km=%.3f, ultima d=%.1f m). O el GPS no da una "
+                          "posicion que cambie, o la trama de posicion se ha "
+                          "quedado congelada",
+                     (long long)(s.seconds_driving - s_drv_aviso), s.km, s_ult_d);
+        }
+        s_aviso_t = now; s_km_aviso = s.km; s_drv_aviso = s.seconds_driving;
+    }
+}
+
 void trip_computer_on_gps(bool fix, uint8_t satelites, double lat, double lon,
                           double vel_kmh)
 {
@@ -223,6 +264,7 @@ void trip_computer_on_gps(bool fix, uint8_t satelites, double lat, double lon,
          * como tiempo conduciendo TODO el hueco sin posicion (un tunel largo, o
          * el rato con la antena tapada), que es justo lo que no se sabe. */
         s_ultima_vel_t = 0;
+        s_n_sin_fix++;
         xSemaphoreGive(s_mtx);
         return;
     }
@@ -242,19 +284,32 @@ void trip_computer_on_gps(bool fix, uint8_t satelites, double lat, double lon,
     }
     s_ultima_vel_t = now;
 
-    if (s_gps_ancla && (now - s_gps_t) <= GPS_HUECO_MAX_S) {
-        double d = metros_entre(s_gps_lat, s_gps_lon, lat, lon);
-        if (d >= GPS_SALTO_MIN_M && d <= GPS_SALTO_MAX_M) {
-            s.km += d / 1000.0;
-        } else if (d > GPS_SALTO_MAX_M) {
-            ESP_LOGW(TAG, "salto de %.0f m descartado (no se cuenta la recta)", d);
+    if (s_gps_ancla) {
+        if ((now - s_gps_t) <= GPS_HUECO_MAX_S) {
+            s_n_muestras++;
+            double d = metros_entre(s_gps_lat, s_gps_lon, lat, lon);
+            s_ult_d = d;
+            if (d >= GPS_SALTO_MIN_M && d <= GPS_SALTO_MAX_M) {
+                s.km += d / 1000.0;
+            } else if (d > GPS_SALTO_MAX_M) {
+                s_n_salto++;
+                ESP_LOGW(TAG, "salto de %.0f m descartado (no se cuenta la recta)", d);
+            }
+            /* Por debajo del umbral no se suma NI se mueve el ancla: si no, estando
+             * parado el ruido iria arrastrando el punto de referencia y el viaje
+             * crecería metro a metro sin que el vehiculo se moviera. */
+            if (d < GPS_SALTO_MIN_M) {
+                s_n_parado++;
+                odometro_diag(now);
+                xSemaphoreGive(s_mtx);
+                return;
+            }
+        } else {
+            s_n_hueco++;
         }
-        /* Por debajo del umbral no se suma NI se mueve el ancla: si no, estando
-         * parado el ruido iria arrastrando el punto de referencia y el viaje
-         * crecería metro a metro sin que el vehiculo se moviera. */
-        if (d < GPS_SALTO_MIN_M) { xSemaphoreGive(s_mtx); return; }
     }
     s_gps_lat = lat; s_gps_lon = lon; s_gps_t = now; s_gps_ancla = true;
+    odometro_diag(now);
     xSemaphoreGive(s_mtx);
 }
 
@@ -402,6 +457,12 @@ __attribute__((unused)) void trip_computer_reset(void)
     s_last_sample = 0;
     s_last_solar_sample = 0;
     s_gps_ancla = false;   /* el primer punto del viaje nuevo no arrastra el anterior */
+    /* Y el diagnostico del odometro, a cero: si no, el primer aviso de "km
+     * parado" del viaje nuevo compararia contra los km del anterior (22-nov). */
+    s_n_muestras = s_n_parado = s_n_salto = s_n_hueco = s_n_sin_fix = 0;
+    s_ult_d = 0.0;
+    s_diag_t = 0;
+    s_aviso_t = 0;
     /* 'active' NO SE TOCA (16-oct-2026). Antes esto ponia active = true, y como
      * esta funcion la llama TAMBIEN el boton "Poner a cero" de Ajustes
      * (trip_manager.c), pulsarlo con la P4 sin viaje abierto dejaba un VIAJE
@@ -491,6 +552,11 @@ void trip_computer_end(void)
     s_last_sample = 0;
     s_last_solar_sample = 0;
     s_gps_ancla = false;
+    /* Diagnostico del odometro: mismo motivo que en reset() (22-nov). */
+    s_n_muestras = s_n_parado = s_n_salto = s_n_hueco = s_n_sin_fix = 0;
+    s_ult_d = 0.0;
+    s_diag_t = 0;
+    s_aviso_t = 0;
     trip_snap_t snap = trip_snapshot_locked();
     write_nvs(&snap);
     xSemaphoreGive(s_mtx);

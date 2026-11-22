@@ -26,6 +26,28 @@ static const char *TAG = "victron_ble";
 static bool victron_debug_enabled = false;
 #define VDBG(fmt, ...) do { if (victron_debug_enabled) ESP_LOGI(TAG, fmt, ##__VA_ARGS__); } while(0)
 
+/* EL DETALLE POR TRAMA, DETRAS DEL INTERRUPTOR (22-nov-2026).
+ *
+ * Cada notificacion BLE de los tres Victron escribia 2-3 lineas INFO con todos
+ * sus campos. Medido en la tarjeta del 22-nov: 496 de las 502 lineas del anillo
+ * de log eran victron_ble, a ~21 lineas/s, o sea que las 500 lineas del anillo
+ * guardaban 24 SEGUNDOS de historia. Por eso los logs que se guardan desde la
+ * pantalla no traen ni una linea del servidor de viaje, del GPS ni del
+ * odometro: se las come esto, y un 500 del inicio de viaje queda
+ * indiagnosticable.
+ *
+ * El detalle completo sigue estando detras de VDBG (victron_debug_enabled, y
+ * las tramas crudas detras del suyo de mas abajo). Para que el log tenga
+ * historia util queda UNA linea por aparato y minuto con lo que se mira. */
+static bool toca_resumen(TickType_t *ultimo_tick)
+{
+    TickType_t ahora = xTaskGetTickCount();
+    if (*ultimo_tick != 0 && (ahora - *ultimo_tick) < pdMS_TO_TICKS(60000)) return false;
+    *ultimo_tick = ahora;
+    return true;
+}
+static TickType_t s_log_solar_tick, s_log_bmv_tick, s_log_dcdc_tick;
+
 #define NA_U16_SIGNED   0x7FFF
 #define NA_U16_UNSIGNED 0xFFFF
 #define NA_U8           0xFF
@@ -477,13 +499,20 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
             uint16_t load_raw = (uint16_t)output[10] | ((uint16_t)(output[11] & 0x01) << 8);
             float load_current_A = (load_raw == 0x1FF) ? 0.0f : load_raw / 10.0f;
 
-            ESP_LOGI(TAG, "=== SmartSolar Charger ===");
-            ESP_LOGI(TAG, "Vbat=%.2fV Ibat=%.1fA PV=%uW Yield=%.2fkWh Load=%.1fA",
-                     r->battery_voltage_centi / 100.0f,
-                     r->battery_current_deci / 10.0f,
-                     r->pv_power_w,
-                     r->yield_today_centikwh / 100.0f,
-                     load_current_A);
+            VDBG("=== SmartSolar Charger ===");
+            VDBG("Vbat=%.2fV Ibat=%.1fA PV=%uW Yield=%.2fkWh Load=%.1fA",
+                 r->battery_voltage_centi / 100.0f,
+                 r->battery_current_deci / 10.0f,
+                 r->pv_power_w,
+                 r->yield_today_centikwh / 100.0f,
+                 load_current_A);
+            if (toca_resumen(&s_log_solar_tick)) {
+                ESP_LOGI(TAG, "solar: Vbat=%.2fV Ibat=%.1fA PV=%uW Yield=%.2fkWh",
+                         r->battery_voltage_centi / 100.0f,
+                         r->battery_current_deci / 10.0f,
+                         r->pv_power_w,
+                         r->yield_today_centikwh / 100.0f);
+            }
 
             if (data_cb) {
                 victron_data_t parsed = {
@@ -584,15 +613,23 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
                 break;
             }
 
-            ESP_LOGI(TAG, "=== Battery Monitor ===");
+            VDBG("=== Battery Monitor ===");
             if (soc_sin_dato)
-                ESP_LOGI(TAG, "Vbat=%.2fV Ibat=%.3fA SOC=-- (sin dato) TTG=%u min",
-                         voltage_raw / 100.0f, current_A, ttg_raw);
+                VDBG("Vbat=%.2fV Ibat=%.3fA SOC=-- (sin dato) TTG=%u min",
+                     voltage_raw / 100.0f, current_A, ttg_raw);
             else
-                ESP_LOGI(TAG, "Vbat=%.2fV Ibat=%.3fA SOC=%.1f%% TTG=%u min",
-                         voltage_raw / 100.0f, current_A, soc_bits / 10.0f, ttg_raw);
-            ESP_LOGI(TAG, "Aux=%u (%.2fV), Alarm=0x%04X",
-                     aux_input, aux_raw / 100.0f, alarm_raw);
+                VDBG("Vbat=%.2fV Ibat=%.3fA SOC=%.1f%% TTG=%u min",
+                     voltage_raw / 100.0f, current_A, soc_bits / 10.0f, ttg_raw);
+            VDBG("Aux=%u (%.2fV), Alarm=0x%04X",
+                 aux_input, aux_raw / 100.0f, alarm_raw);
+            if (toca_resumen(&s_log_bmv_tick)) {
+                if (soc_sin_dato)
+                    ESP_LOGI(TAG, "bmv: Vbat=%.2fV Ibat=%.3fA SOC=-- Alarm=0x%04X",
+                             voltage_raw / 100.0f, current_A, alarm_raw);
+                else
+                    ESP_LOGI(TAG, "bmv: Vbat=%.2fV Ibat=%.3fA SOC=%.1f%% Alarm=0x%04X",
+                             voltage_raw / 100.0f, current_A, soc_bits / 10.0f, alarm_raw);
+            }
 
             if (data_cb) {
                 victron_data_t parsed = {
@@ -681,13 +718,19 @@ static int ble_gap_event_handler(struct ble_gap_event *event, void *arg)
                                 | ((uint32_t)b[8] << 16)
                                 | ((uint32_t)b[9] << 24);
 
-            ESP_LOGI(TAG, "=== DC/DC Converter ===");
-            ESP_LOGI(TAG, "State=%u Error=0x%02X Vin=%.2fV Vout=%.2fV OffReason=0x%08lX",
-                     (unsigned)device_state,
-                     (unsigned)charger_error,
-                     input_voltage_centi / 100.0f,
-                     output_voltage_centi / 100.0f,
-                     (unsigned long)off_reason);
+            VDBG("=== DC/DC Converter ===");
+            VDBG("State=%u Error=0x%02X Vin=%.2fV Vout=%.2fV OffReason=0x%08lX",
+                 (unsigned)device_state,
+                 (unsigned)charger_error,
+                 input_voltage_centi / 100.0f,
+                 output_voltage_centi / 100.0f,
+                 (unsigned long)off_reason);
+            if (toca_resumen(&s_log_dcdc_tick)) {
+                ESP_LOGI(TAG, "dcdc: State=%u Error=0x%02X Vin=%.2fV Vout=%.2fV",
+                         (unsigned)device_state, (unsigned)charger_error,
+                         input_voltage_centi / 100.0f,
+                         output_voltage_centi / 100.0f);
+            }
 
             if (data_cb) {
                 victron_data_t parsed = {

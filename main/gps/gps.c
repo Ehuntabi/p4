@@ -48,6 +48,17 @@ static const char *TAG = "gps";
  * manda una vez por segundo, asi que 5 s es holgado. */
 #define SIN_DATO_S     5
 
+/* SIN TRAMA DE POSICION EN ESTE TIEMPO, EL FIX SE DA POR PERDIDO (22-nov-2026).
+ *
+ * `hay_fix` lo pone y lo quita la trama de posicion (GGA), pero si esa trama
+ * deja de llegar y las de velocidad (RMC) siguen, el fix se quedaba en true con
+ * la ULTIMA posicion indefinidamente: la pantalla decia que habia posicion y el
+ * odometro del viaje sumaba 0 m porque la posicion no cambiaba. Paso del 20 al
+ * 22 de noviembre: 416 km de cuadro y "Recorrido: 14.4 km" (solo el tramo
+ * posterior a un reinicio), con la traza del viaje vacia. Con esto, ademas de no
+ * mentir, queda un aviso en el log la primera vez. */
+#define SIN_POS_S      10
+
 /* Cada cuanto se vuelve a poner el reloj en hora. El GPS es mucho mas exacto
  * que el RTC, pero escribir en el RTC cada segundo no aporta nada y le da
  * trabajo al bus I2C que comparte con la pantalla tactil. */
@@ -58,6 +69,19 @@ static gps_data_t        s_d;
 static int64_t           s_ultimo_us;
 static uint32_t          s_sincs;
 static volatile bool     s_sim_mode;   /* ver gps_sim_inject() */
+
+/* Ultima trama que trajo POSICION de verdad (GGA con calidad > 0, o RMC 'A').
+ * Lo escribe y lo lee SOLO la tarea del GPS; no va bajo s_mtx. Ver SIN_POS_S. */
+static int64_t           s_ult_pos_us;
+static bool              s_fix_sin_pos_avisado;
+
+/* Marca que acaba de llegar una posicion buena. Fuera del cerrojo: solo lo
+ * tocan la tarea del GPS y (desde gps_sim_inject, en el banco) el simulador. */
+static void posicion_recien_llegada(void)
+{
+    s_ult_pos_us = esp_timer_get_time();
+    s_fix_sin_pos_avisado = false;
+}
 
 /* Anillo con las ultimas tramas, para la pantalla de diagnostico. */
 static char s_crudo[GPS_CRUDO_N][LINEA_MAX];
@@ -220,15 +244,20 @@ static void procesar(char *linea)
 
     if (!strcmp(tipo, "GGA") && n >= 10) {
         int calidad = atoi(c[6]);
+        /* Con calidad > 0 pero los campos de posicion vacios, a_grados() daria
+         * 0,0 y se publicaria una posicion en el Golfo de Guinea. No se toca la
+         * posicion en ese caso (y no cuenta como "posicion recien llegada"). */
+        bool con_pos = (calidad > 0 && c[2] && *c[2] && c[4] && *c[4]);
         xSemaphoreTake(s_mtx, portMAX_DELAY);
         s_d.hay_fix    = (calidad > 0);
         s_d.satelites  = (uint8_t)atoi(c[7]);
-        if (s_d.hay_fix) {
+        if (con_pos) {
             s_d.lat       = a_grados(c[2], c[3]);
             s_d.lon       = a_grados(c[4], c[5]);
             s_d.altitud_m = (float)atof(c[9]);
         }
         xSemaphoreGive(s_mtx);
+        if (con_pos) posicion_recien_llegada();
     } else if (!strcmp(tipo, "GSV") && n >= 4) {
         /* GSV: satelites a la vista, de cuatro en cuatro por trama. Cada bloque
          * son 4 campos (prn, elevacion, azimut, C/N0) y el C/N0 es el ultimo.
@@ -276,9 +305,20 @@ static void procesar(char *linea)
             v = atof(c[7]) * 1.852;
             if (v < 0.0 || v >= 400.0) v = 0.0;   /* cordura: 400 km/h no es esto */
         }
+        /* LA POSICION VIENE TAMBIEN AQUI (22-nov-2026). Es el mismo dato que el
+         * GGA, y tener dos fuentes es justo lo que evita el fallo que dejo el
+         * viaje sin km: si por lo que sea dejan de llegar GGA y siguen las RMC,
+         * la posicion sigue actualizandose y el odometro sigue contando. */
+        bool con_pos = (c[2] && *c[2] == 'A' && n >= 8 &&
+                        c[3] && *c[3] && c[5] && *c[5]);
         xSemaphoreTake(s_mtx, portMAX_DELAY);
         s_d.vel_kmh = (float)v;
+        if (con_pos) {
+            s_d.lat = a_grados(c[3], c[4]);
+            s_d.lon = a_grados(c[5], c[6]);
+        }
         xSemaphoreGive(s_mtx);
+        if (con_pos) posicion_recien_llegada();
     }
 }
 
@@ -346,6 +386,21 @@ static void gps_task(void *arg)
             s_d.hay_fix   = false;
             s_d.satelites = 0;
             s_d.snr_mejor = s_d.snr_medio = s_d.snr_cuantos = 0;
+        }
+        /* Y LA POSICION VIEJA TAMBIEN CADUCA (ver SIN_POS_S). Va aqui, dentro
+         * del mismo cerrojo, para que la UI y el odometro no vean un fix que ya
+         * no lo es. */
+        if (!s_sim_mode && s_d.hay_fix && s_ult_pos_us &&
+            (ahora_us - s_ult_pos_us) > (int64_t)SIN_POS_S * 1000000LL) {
+            s_d.hay_fix   = false;
+            s_d.satelites = 0;
+            if (!s_fix_sin_pos_avisado) {
+                s_fix_sin_pos_avisado = true;
+                ESP_LOGW(TAG, "habia fix pero llevo %d s sin trama de posicion: "
+                              "la doy por perdida (sin esto el odometro suma 0 m "
+                              "y la traza del viaje se queda vacia)",
+                         SIN_POS_S);
+            }
         }
         bool fix  = s_d.hay_fix;
         uint8_t sats = s_d.satelites;
