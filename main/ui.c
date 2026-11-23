@@ -195,6 +195,14 @@ static void volume_icon_timer_cb(lv_timer_t *t)
                            : cliente    ? 0x4FC3F7
                                         : 0x00C851;
             lv_obj_set_style_text_color(ui->lbl_wifi, lv_color_hex(color), 0);
+            /* Una linea por cambio: es la unica forma de comprobar desde el
+             * log que el icono va con la realidad (la pantalla esta detras). */
+            ESP_LOGI("ui", "wifi: %s (portal=%d, cliente=%d)",
+                     !cached_en ? "gris (apagado)"
+                   : !portal    ? "naranja (portal parado)"
+                   : cliente    ? "AZUL (alguien dentro)"
+                                : "verde (libre)",
+                     portal, cliente);
             last_en = cached_en;
             last_portal = portal;
             last_cliente = cliente;
