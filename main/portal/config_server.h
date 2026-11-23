@@ -25,6 +25,12 @@ void config_server_get_web_credentials(char *user, size_t ulen,
 // Sondear esto NO toca flash (solo comprueba un puntero), es seguro por tick.
 bool config_server_is_running(void);
 
+/* ¿Hay alguien mirando el portal AHORA? (23-nov-2026) Cuenta las peticiones con
+ * credenciales de los ultimos 20 s que no sean de las cabinas (apuntes, alarmas
+ * y firmware). Lo usa el icono de Wi-Fi de la barra: azul mientras hay alguien
+ * dentro, verde cuando el portal esta libre. */
+bool portal_hay_cliente(void);
+
 // Aplica en CALIENTE el on/off del Wi-Fi guardado en NVS ("wifi"/"enabled"),
 // sin reiniciar la placa. Solo ENCOLA el trabajo y vuelve al instante: lo
 // ejecuta la tarea de ciclo de vida del portal, porque levantar la radio es un

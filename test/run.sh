@@ -20,3 +20,5 @@ echo "=== test de ENTRADA HOSTIL (lo que se teclea no es lo que se espera) ==="
 bash test/entrada_hostil.sh
 echo "=== test de la validacion del firmware de las pantallas (OTA) ==="
 bash test/test_pantalla_fw.sh
+echo "=== test de la actividad del portal (quien cuenta como cliente) ==="
+bash test/portal_actividad.sh

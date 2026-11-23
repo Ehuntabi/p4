@@ -63,6 +63,15 @@ void cfg_dns_start(void);   /* idempotente: arranca el DNS del portal si no esta
  * comun invisible (no salia en ninguna lista). */
 #define VEHICULO_DIR "/sdcard/vehiculo"
 
+/* Ver config_server.c: cuentan las peticiones CON credenciales que no son de las
+ * cabinas, para pintar el icono de Wi-Fi de otra forma mientras hay alguien
+ * dentro del portal. Se llama desde los tres REQUIRE_AUTH*, que es por donde
+ * pasa todo. */
+struct httpd_req;
+void portal_actividad(struct httpd_req *req);
+bool portal_hay_cliente(void);
+bool portal_uri_es_de_maquina(const char *uri);
+
 #define PORTAL_HEAVY_PORT 8081
 #define PORTAL_HEAVY_BASE "http://192.168.4.1:8081"
 
@@ -72,12 +81,14 @@ void cfg_dns_start(void);   /* idempotente: arranca el DNS del portal si no esta
  * redirect (handle_captive_redirect): rompería la detección de portal. */
 #define REQUIRE_AUTH(req) do { \
     if (check_basic_auth(req) != ESP_OK) return ESP_OK; \
+    portal_actividad(req); \
 } while (0)
 
 /* Igual, pero exigiendo credenciales SIEMPRE. Solo para lo que puede dejar la
  * pantalla inservible o entregar las claves AES de los Victron. */
 #define REQUIRE_AUTH_STRICT(req) do { \
     if (check_basic_auth_strict(req) != ESP_OK) return ESP_OK; \
+    portal_actividad(req); \
 } while (0)
 
 /* NIVEL ABIERTO **O** ADMINISTRACION, para las descargas de DATOS: los
@@ -106,6 +117,7 @@ void cfg_dns_start(void);   /* idempotente: arranca el DNS del portal si no esta
  * apariciones de la cabecera. Si alguna vez pasa, volver logs.tar a STRICT. */
 #define REQUIRE_AUTH_PORTAL_O_ADMIN(req) do { \
     if (check_basic_auth_portal_o_admin(req) != ESP_OK) return ESP_OK; \
+    portal_actividad(req); \
 } while (0)
 
 /* El aviso propio del 401/403 lo piden los handlers que lo necesitan llamando

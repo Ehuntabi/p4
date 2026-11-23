@@ -63,6 +63,61 @@ static httpd_handle_t s_httpd_heavy = NULL;   /* .tar/OTA/vigilancia, ver PORTAL
 static int64_t s_ultimo_rearme_ms = 0;
 static dns_server_handle_t s_dns = NULL;
 
+/* ── ¿HAY ALGUIEN DENTRO DEL PORTAL? (23-nov-2026) ────────────────────────
+ *
+ * El icono de Wi-Fi de la barra ya decia "red encendida / portal arriba", pero
+ * no si hay alguien USANDOLO. Con esto el icono se pone azul mientras hay un
+ * cliente mirando el portal (la app del movil sondeando /api/state a 1 Hz, o
+ * una pestaña del navegador) y vuelve a verde 20 s despues de la ultima
+ * peticion. Sirve para lo de siempre: saber si el movil esta dentro sin
+ * sacarlo del bolsillo, y distinguir "la red va" de "alguien esta entrando".
+ *
+ * QUE NO CUENTA COMO CLIENTE: lo que mandan las cabinas solas (los apuntes del
+ * viaje, callar alarmas y la comprobacion de firmware de las pantallas). Si
+ * contaran, el icono estaria azul para siempre con el vehiculo parado: la
+ * cabina pregunta por la version nueva cada 60 s.
+ *
+ * DE DONDE SE MIRA: del propio auth, que es el unico sitio por el que pasa TODO
+ * lo que pide credenciales (los tres macros de config_server_internal.h). Asi
+ * no hay que acordarse de marcar nada en cada handler nuevo. */
+#define PORTAL_CLIENTE_VENTANA_US  (20LL * 1000 * 1000)
+static volatile int64_t s_portal_cliente_us;
+
+/* ── INICIO BLOQUE PRUEBA portal_uri_es_de_maquina ─────────────────────────
+ * Funcion PURA (sin ESP-IDF) a proposito: el test de host la compila tal cual
+ * (test/portal_actividad.sh) para que la lista de "lo que no es un cliente" no
+ * se rompa al anadir un canal nuevo. */
+bool portal_uri_es_de_maquina(const char *uri)
+{
+    if (uri == NULL || uri[0] == '\0') return true;
+    static const char *const prefijos[] = {
+        "/api/viaje",       /* los apuntes del cuaderno (cabina) */
+        "/api/alarma",      /* callar la alarma (cabina) */
+        "/api/pantalla/",   /* comprobacion y descarga de firmware (cabina) */
+        "/api/estado/",     /* estado que piden las cabinas */
+    };
+    for (size_t i = 0; i < sizeof(prefijos) / sizeof(prefijos[0]); i++) {
+        size_t n = strlen(prefijos[i]);
+        if (strncmp(uri, prefijos[i], n) == 0) return true;
+    }
+    return false;
+}
+/* ── FIN BLOQUE PRUEBA portal_uri_es_de_maquina ──────────────────────────── */
+
+void portal_actividad(httpd_req_t *req)
+{
+    if (req == NULL) return;
+    if (portal_uri_es_de_maquina(req->uri)) return;
+    s_portal_cliente_us = esp_timer_get_time();
+}
+
+bool portal_hay_cliente(void)
+{
+    int64_t t = s_portal_cliente_us;
+    if (t == 0) return false;
+    return (esp_timer_get_time() - t) < PORTAL_CLIENTE_VENTANA_US;
+}
+
 bool config_server_is_running(void)
 {
     /* "Estoy arriba" = los DOS (revision independiente del 02-nov-2026). Antes

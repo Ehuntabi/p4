@@ -159,6 +159,7 @@ static void volume_icon_timer_cb(lv_timer_t *t)
     if (ui->lbl_wifi) {
         static int last_en = -1;
         static int last_portal = -1;
+        static int last_cliente = -1;
         if (s_wifi_enabled_cache < 0) {
             nvs_handle_t h;
             uint8_t en = 1;
@@ -171,17 +172,32 @@ static void volume_icon_timer_cb(lv_timer_t *t)
         const int cached_en = s_wifi_enabled_cache;
         /* config_server_is_running() solo mira un puntero (no toca flash), asi que
          * es seguro sondearlo cada tick. El portal puede apagarse solo (auto-off),
-         * por eso el color se refresca segun su estado real, no solo al arrancar. */
+         * por eso el color se refresca segun su estado real, no solo al arrancar.
+         * portal_hay_cliente() tambien es una resta de dos enteros (23-nov-2026),
+         * nada que toque la flash. */
         int portal = cached_en ? (config_server_is_running() ? 1 : 0) : 0;
-        if (cached_en != last_en || portal != last_portal) {
-            /* Verde: portal web accesible. Azul: WiFi encendido pero portal
-             * apagado. Gris: WiFi deshabilitado. */
+        const int cliente = (portal && portal_hay_cliente()) ? 1 : 0;
+        if (cached_en != last_en || portal != last_portal || cliente != last_cliente) {
+            /* CUATRO ESTADOS (23-nov-2026, el dueno: "que se vea cuando alguien
+             * esta conectado al portal, azul por ejemplo"):
+             *
+             *   gris    - Wi-Fi apagado.
+             *   naranja - la red esta encendida pero el portal NO esta arriba.
+             *   AZUL    - hay alguien dentro del portal (la app o el navegador
+             *             han pedido algo en los ultimos 20 s).
+             *   verde   - el portal esta arriba y no hay nadie mirando.
+             *
+             * El azul era antes el de "portal parado"; ese estado pasa a naranja
+             * porque es un aviso (la red va pero no se puede entrar) y el azul
+             * es el que pedia el dueno para "hay alguien". */
             uint32_t color = !cached_en ? 0x666666
-                           : portal     ? 0x00C851
-                                        : 0x4FC3F7;
+                           : !portal    ? 0xFF9800
+                           : cliente    ? 0x4FC3F7
+                                        : 0x00C851;
             lv_obj_set_style_text_color(ui->lbl_wifi, lv_color_hex(color), 0);
             last_en = cached_en;
             last_portal = portal;
+            last_cliente = cliente;
         }
     }
 }
