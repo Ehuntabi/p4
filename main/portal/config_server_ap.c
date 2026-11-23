@@ -924,6 +924,35 @@ void config_server_ensure_ap_password(void)
         if (e == ESP_OK) ESP_LOGW(TAG, "clave del PORTAL (OTA y descargas) creada: verla en Ajustes -> Wi-Fi");
         else            ESP_LOGW(TAG, "no pude crear la clave del portal: %s", esp_err_to_name(e));
     }
+
+    /* EL USUARIO DE ADMINISTRACION ES SIEMPRE "portal" (23-nov-2026, banco).
+     *
+     * La app del movil manda ese usuario FIJO (no tiene campo: "siempre es
+     * portal"), y el cambio de clave de Ajustes tampoco lo pide. Pero este
+     * campo se puede escribir a mano en la NVS, y en la P4 del banco estaba en
+     * "adminprueba" (de una prueba vieja): la app subia el firmware con la
+     * clave BUENA y la P4 contestaba 403 "pide la clave de administracion",
+     * que manda a buscar el problema a la clave -- y era el usuario. Costo un
+     * rato encontrarlo leyendo la NVS con esptool.
+     *
+     * Si no es "portal", se normaliza aqui y se dice en el log. La clave NO se
+     * toca: la que el dueño ve en Ajustes sigue valiendo. */
+    {
+        char usr[33] = {0};
+        size_t ul = sizeof(usr);
+        if (nvs_get_str(h, "adm_user", usr, &ul) != ESP_OK ||
+            strcmp(usr, "portal") != 0) {
+            esp_err_t e = nvs_set_str(h, "adm_user", "portal");
+            if (e == ESP_OK) e = nvs_commit(h);
+            if (e == ESP_OK) {
+                ESP_LOGW(TAG, "el usuario de administracion era '%s': lo dejo en "
+                              "'portal' (la app manda ese fijo)", usr[0] ? usr : "");
+            } else {
+                ESP_LOGE(TAG, "no pude normalizar el usuario de administracion: %s",
+                         esp_err_to_name(e));
+            }
+        }
+    }
     nvs_close(h);
 }
 
