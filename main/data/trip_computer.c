@@ -256,6 +256,19 @@ void trip_computer_on_gps(bool fix, uint8_t satelites, double lat, double lon,
      * corte sale por donde entro. */
     xSemaphoreTake(s_mtx, portMAX_DELAY);
 
+    /* SIN VIAJE ABIERTO NO SE CUENTA NADA (23-nov-2026, lo cazo el arbitro de
+     * la simulacion del banco): esto seguia sumando km DESPUES de op_fin, o
+     * sea justo lo que promete no hacer el mensaje "contadores a cero (no
+     * siguen sumando)" de trip_computer_end(). on_battery() y on_solar() ya lo
+     * miraban; el GPS se quedo sin la guarda. Se dejan las anclas limpias para
+     * que el primer tramo del viaje siguiente no una los dos extremos. */
+    if (!s.active) {
+        s_gps_ancla = false;
+        s_ultima_vel_t = 0;
+        xSemaphoreGive(s_mtx);
+        return;
+    }
+
     /* Sin posicion de fiar no hay ancla: al recuperarla se empieza de nuevo en
      * vez de unir por la recta los dos extremos del tunel. */
     if (!fix || satelites < GPS_MIN_SATS) {

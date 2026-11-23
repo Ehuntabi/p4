@@ -2394,6 +2394,17 @@ static bool publicar_resumen(const char *ruta_tmp, const char *ruta)
 /* Devuelve si el resumen ha llegado a la tarjeta. Cerrar un viaje SIN resumen y
  * contestar que si es dejar al usuario con un viaje que cree cerrado y sin las
  * cuentas -- y sin enterarse hasta que lo descargue meses despues. */
+/* SELLO DEL CIERRE (23-nov-2026, lo cazo el arbitro de la simulacion del
+ * banco): el "Cerrado el ..." y la duracion salian de la hora de RECEPCION del
+ * 'fin', no de cuando se cerro de verdad. Con el apunte esperando en la cola de
+ * la cabina (sin red, con la P4 apagada) eso puede ser horas o dias despues: el
+ * resumen diria una fecha que no es. La cabina manda ahora "ts" en el 'fin'
+ * (con la misma convencion que los registros: epoch en hora local) y aqui se
+ * usa si viene; si no viene (firmware viejo, o cierre desde la web) se sigue
+ * usando la hora de recepcion, que es lo unico que hay. */
+static time_t s_cierre_ts;
+static bool   s_cierre_ts_local;
+
 static bool escribir_resumen(const char *carpeta)
 {
     double litros = 0, combus = 0, peaje = 0, bombona = 0, manten = 0, agua = 0;
@@ -2514,7 +2525,14 @@ static bool escribir_resumen(const char *carpeta)
 
     time_t now = time(NULL);
     struct tm tm_l;
-    localtime_r(&now, &tm_l);
+    if (s_cierre_ts) {
+        /* Del sello del 'fin' (hora local derivada, como los registros) o de la
+         * recepcion (epoch de verdad, hay que pasarlo a local). */
+        if (s_cierre_ts_local) gmtime_r(&s_cierre_ts, &tm_l);
+        else                   localtime_r(&s_cierre_ts, &tm_l);
+    } else {
+        localtime_r(&now, &tm_l);
+    }
     char cuando[20];
     strftime(cuando, sizeof(cuando), "%Y-%m-%d %H:%M", &tm_l);
 
@@ -2549,7 +2567,7 @@ static bool escribir_resumen(const char *carpeta)
         }
     }
     fprintf(f, "\nGASTOS (%s)\n", moneda);
-    fprintf(f, "  Combustible ... %8.2f   (%.1f litros)\n", combus, litros);
+    fprintf(f, "  Combustible ... %8.2f   (%.2f litros)\n", combus, litros);
     fprintf(f, "  Peajes ........ %8.2f\n", peaje);
     fprintf(f, "  Gas ........... %8.2f\n", bombona);
     fprintf(f, "  Mantenimiento . %8.2f\n", manten);
@@ -3782,9 +3800,24 @@ static double importe_de_apunte(const cJSON *datos, const char *tipo)
  * verdad: restarlos sin esto metia el desfase del huso (1-2 h) en la cuenta. */
 static long desfase_local_utc(time_t ahora)
 {
+    /* EL DEFECTO QUE TENIA (lo cazo el arbitro de la simulacion del 23-nov-2026):
+     * esto restaba mktime(local) - mktime(UTC), y mktime() interpreta SIEMPRE
+     * hora local. En horario de verano (TZ CET-1CEST) la hora UTC metida por
+     * ahi se leia como CEST, asi que devolvia 3600 s en vez de 7200: TODO
+     * apunte fresco salia con +1 h y punto_con_posicion() lo rechazaba por
+     * "tarde" -- el mapa del viaje se perdia de marzo a octubre, en silencio.
+     * Con timegm() la resta es la que se queria: local menos UTC de verdad. */
     struct tm tl, tu;
     if (!localtime_r(&ahora, &tl) || !gmtime_r(&ahora, &tu)) return 0;
-    return (long)(mktime(&tl) - mktime(&tu));
+    /* La diferencia de las dos horas del dia. Se normaliza a +/-14 h (ningun
+     * huso pasa de ahi), que es lo que resuelve el cambio de dia: a las 00:30
+     * de Madrid, la hora UTC es 23:30 del dia anterior y la resta directa daria
+     * -23 h. */
+    long d = (long)((tl.tm_hour * 3600 + tl.tm_min * 60 + tl.tm_sec)
+                  - (tu.tm_hour * 3600 + tu.tm_min * 60 + tu.tm_sec));
+    if (d >  14 * 3600) d -= 24 * 3600;
+    if (d < -14 * 3600) d += 24 * 3600;
+    return d;
 }
 
 /* ── DONDE SE HIZO CADA APUNTE (02-nov-2026) ───────────────────────────────
@@ -3811,8 +3844,13 @@ static bool punto_con_posicion(const char *carpeta, const char *cuando,
         const time_t ahora = time(NULL);
         const long tarde = (long)(t_apunte - (ahora + desfase_local_utc(ahora)));
         if (tarde < -PUNTO_FRESCO_S || tarde > PUNTO_FRESCO_S) {
-            ESP_LOGW(TAG, "el apunte '%s' llego %ld s tarde: no le pongo sitio "
-                          "(el GPS de ahora no es el de entonces)", tipo, tarde);
+            /* SIGNO CLARO (23-nov-2026, lo cazo el arbitro): antes decia
+             * "llego N s tarde" tambien cuando el apunte iba POR DELANTE (los
+             * del banco salian con +1196 s y se leian como retraso). */
+            ESP_LOGW(TAG, "el apunte '%s' esta %ld s %s del reloj de la P4: no le "
+                          "pongo sitio (el GPS de ahora no es el de entonces)",
+                     tipo, tarde < 0 ? -tarde : tarde,
+                     tarde < 0 ? "por detras" : "por delante");
             return true;
         }
     }
@@ -5439,7 +5477,23 @@ esp_err_t handle_api_viaje(httpd_req_t *req)
     ESP_LOGI(TAG, "/api/viaje op=%s id=%lu %d bytes",
              jop->valuestring, (unsigned long)id, (int)req->content_len);
     if      (!strcmp(jop->valuestring, "inicio")) ret = op_inicio(req, j, id);
-    else if (!strcmp(jop->valuestring, "fin"))    ret = op_fin(req, j, id);
+    else if (!strcmp(jop->valuestring, "fin")) {
+        /* SELLO DEL CIERRE, si el 'fin' lo trae (ver s_cierre_ts). Misma cota y
+         * misma convencion que los registros: fuera de [2001,2100) no es una
+         * hora y se ignora (se usara la de recepcion). */
+        s_cierre_ts = 0;
+        s_cierre_ts_local = false;
+        const cJSON *jts_f = cJSON_GetObjectItem(j, "ts");
+        const cJSON *jap_f = cJSON_GetObjectItem(j, "aprox");
+        const double ts_f = cJSON_IsNumber(jts_f) ? jts_f->valuedouble : 0.0;
+        if (!cJSON_IsTrue(jap_f) && ts_f >= 1000000000.0 && ts_f <= 4102444800.0) {
+            s_cierre_ts = (time_t)ts_f;
+            s_cierre_ts_local = true;   /* la cabina lo manda en hora local */
+        }
+        ret = op_fin(req, j, id);
+        s_cierre_ts = 0;                 /* no se queda pegado al siguiente */
+        s_cierre_ts_local = false;
+    }
     else if (!strcmp(jop->valuestring, "destino")) ret = op_destino(req, j, id);
     else if (!strcmp(jop->valuestring, "registro")) ret = op_registro(req, j, id);
     else if (!strcmp(jop->valuestring, "descartar")) ret = op_descartar(req, j, id);
