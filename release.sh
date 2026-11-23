@@ -54,7 +54,7 @@ if [ -z "$VER_IN" ]; then
     echo "     Sin X.Y se usa el ultimo tag +0.1, y ahora mismo no hay ningun tag v*."
     exit 1
   fi
-  VER_IN="$(printf '%s' "$ULTIMO_TAG" | awk -F. '{ printf "%s.%d", $1, $2 + 1 }')"
+  VER_IN="$(printf '%s' "$ULTIMO_TAG" | awk -F. '{ m = $1; sub(/^v/, "", m); n = $2 + 1; if (n > 99) { m++; n = 0 } printf "%s.%d", m, n }')"
   echo "[i] sin argumento: toca $VER_IN (ultimo tag $ULTIMO_TAG, +0.1)"
 fi
 VER="${VER_IN#v}"                                   # quita una 'v' inicial si la hay
