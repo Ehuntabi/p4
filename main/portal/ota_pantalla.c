@@ -403,6 +403,118 @@ static pantalla_cache_t s_cache[PANTALLA_NUM_MODELOS];
  * que otra tarea esta reescribiendo. Un portMUX basta: son cuatro asignaciones. */
 static portMUX_TYPE s_cache_mux = portMUX_INITIALIZER_UNLOCKED;
 
+/* ── EL .bin SE SIRVE DESDE RAM, NO DESDE LA TARJETA (24-nov-2026) ──────────
+ *
+ * POR QUE. El dueño: "se cortó la descarga" en la pantalla. Medido desde el PC
+ * contra esta P4, dos peticiones seguidas del mismo fichero:
+ *
+ *     descarga 1: 200, 0 B en 120 s   (colgada)
+ *     descarga 2: 200, 2.299.488 B en 7,4 s (311 KB/s)
+ *
+ * O sea: el que se atasca es el que SIRVE, no el que instala. La cabina corta a
+ * los 60 s y lo cuenta como "se cortó la descarga". Sirviendo desde la tarjeta,
+ * el envio depende del cerrojo del bus SD (que comparte con camara y
+ * datalogger) y de que el fichero no cambie a mitad. Con la copia en PSRAM el
+ * envio no toca la tarjeta, no tiene esperas de cerrojo y ademas es
+ * INMUNE a que se suba otro .bin mientras se sirve (el que se sirve es una
+ * copia, no el fichero vivo).
+ *
+ * COSTE: 2,3 MB de PSRAM por modelo (hay 32 MB). Si no hay memoria, se sigue
+ * sirviendo desde la tarjeta como antes: esto no puede empeorar nada.
+ *
+ * CERROJO: se toma mientras dura el ENVIO (no solo la carga) para que nadie
+ * libere el buffer que se esta mandando. Solo hay un cliente .bin a la vez. */
+typedef struct {
+    uint8_t *bytes;
+    size_t   n;
+    time_t   mtime;
+    off_t    size;
+} pantalla_ram_t;
+
+static pantalla_ram_t s_ram[PANTALLA_NUM_MODELOS];
+static SemaphoreHandle_t s_ram_mux = NULL;
+
+static SemaphoreHandle_t ram_mux(void)
+{
+    if (s_ram_mux) return s_ram_mux;
+    /* Carrera benigna: solo puede pasar en la primera peticion y como mucho
+     * sobra un mutex (no se pierde nada). */
+    SemaphoreHandle_t m = xSemaphoreCreateMutex();
+    if (m) s_ram_mux = m;
+    return s_ram_mux;
+}
+
+/* Devuelve el .bin en RAM con el cerrojo TOMADO (llamar a pantalla_ram_soltar
+ * al acabar de enviar). NULL si no hay memoria; entonces el cerrojo ya esta
+ * suelto y el que llama sigue por el camino de la tarjeta. */
+static const uint8_t *pantalla_ram_tomar(const pantalla_modelo_t *m, FILE *f,
+                                         const struct stat *st, size_t *n_out)
+{
+    const size_t idx = (size_t)(m - s_modelos);
+    if (idx >= PANTALLA_NUM_MODELOS || !st || st->st_size <= 0) return NULL;
+
+    SemaphoreHandle_t mux = ram_mux();
+    if (!mux) return NULL;
+    if (xSemaphoreTake(mux, pdMS_TO_TICKS(5000)) != pdTRUE) return NULL;
+
+    if (s_ram[idx].bytes && s_ram[idx].mtime == st->st_mtime &&
+        s_ram[idx].size == st->st_size && s_ram[idx].n > 0) {
+        *n_out = s_ram[idx].n;
+        return s_ram[idx].bytes;      /* cerrojo tomado */
+    }
+
+    /* No esta o ha cambiado: se carga entera. */
+    uint8_t *p = heap_caps_malloc((size_t)st->st_size, MALLOC_CAP_SPIRAM);
+    if (!p) p = malloc((size_t)st->st_size);
+    if (!p) {
+        ESP_LOGW(TAG, "bin %s: sin memoria para tenerlo en RAM (%lld B); "
+                      "lo sirvo desde la tarjeta", m->nombre, (long long)st->st_size);
+        xSemaphoreGive(mux);
+        return NULL;
+    }
+
+    bool ok = (fseek(f, 0, SEEK_SET) == 0);
+    size_t total = 0;
+    if (ok) {
+        sd_reader_abrir();
+        while (total < (size_t)st->st_size) {
+            bool error = false;
+            size_t n = 0;
+            if (!camera_sd_bus_lock(3000)) { ok = false; break; }
+            n = fread(p + total, 1, (size_t)st->st_size - total, f);
+            error = (ferror(f) != 0);
+            camera_sd_bus_unlock();
+            if (error) { ok = false; break; }
+            if (n == 0) break;
+            total += n;
+            if ((total % (256 * 1024)) < n) vTaskDelay(1);
+        }
+        sd_reader_cerrar();
+    }
+    if (!ok || total != (size_t)st->st_size) {
+        ESP_LOGW(TAG, "bin %s: leí %u de %lld B para la RAM; lo sirvo desde la tarjeta",
+                 m->nombre, (unsigned)total, (long long)st->st_size);
+        free(p);
+        xSemaphoreGive(mux);
+        return NULL;
+    }
+
+    free(s_ram[idx].bytes);           /* el anterior ya no lo usa nadie (cerrojo) */
+    s_ram[idx].bytes = p;
+    s_ram[idx].n     = total;
+    s_ram[idx].mtime = st->st_mtime;
+    s_ram[idx].size  = st->st_size;
+    *n_out = total;
+    ESP_LOGI(TAG, "bin %s: %u B en PSRAM (a partir de ahora se sirve de RAM)",
+             m->nombre, (unsigned)total);
+    return p;                         /* cerrojo tomado */
+}
+
+static void pantalla_ram_soltar(void)
+{
+    if (s_ram_mux) xSemaphoreGive(s_ram_mux);
+}
+
 /* Lee version, tamano y sha256 de un .bin. Devuelve false si no hay fichero, si
  * no es valido para ese modelo o si la tarjeta no deja leerlo.
  *
@@ -835,6 +947,51 @@ esp_err_t ota_pantalla_bin(httpd_req_t *req)
     if (!f)
         return pantalla_error(req, "404 Not Found",
                               "no hay firmware para ese modelo", false);
+
+    /* CAMINO RAPIDO: si el .bin esta (o se puede tener) en PSRAM, se manda de
+     * ahi y no se toca la tarjeta. Ver pantalla_ram_tomar(). */
+    {
+        size_t ram_n = 0;
+        const uint8_t *ram = pantalla_ram_tomar(m, f, &st, &ram_n);
+        if (ram) {
+            const int64_t t0 = esp_timer_get_time();
+            char cab[160];
+            const int hlen = snprintf(cab, sizeof cab,
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: application/octet-stream\r\n"
+                "Content-Length: %u\r\n"
+                "Cache-Control: no-store\r\n"
+                "\r\n", (unsigned)ram_n);
+            bool ok = (hlen > 0 && hlen < (int)sizeof cab) &&
+                      pantalla_enviar(req, cab, (size_t)hlen);
+            size_t enviado = 0, desde_yield = 0;
+            while (ok && enviado < ram_n) {
+                size_t n = ram_n - enviado;
+                if (n > PANTALLA_CHUNK) n = PANTALLA_CHUNK;
+                if (!pantalla_enviar(req, (const char *)ram + enviado, n)) {
+                    ok = false;
+                    break;
+                }
+                enviado += n;
+                desde_yield += n;
+                if (desde_yield >= 256 * 1024) { desde_yield = 0; vTaskDelay(1); }
+            }
+            pantalla_ram_soltar();
+
+            /* Y el FILE* que se abrio solo para comprobar que existe, cerrado. */
+            const bool got = camera_sd_bus_lock_wait(5000);
+            fclose(f);
+            if (got) camera_sd_bus_unlock();
+
+            const int64_t ms = (esp_timer_get_time() - t0) / 1000;
+            const unsigned kbs = (unsigned)(ms > 0
+                ? (((uint64_t)enviado * 1000) / 1024) / (uint64_t)ms : 0);
+            ESP_LOGI(TAG, "bin %s: %u B desde RAM en %d ms = %u KB/s%s",
+                     m->nombre, (unsigned)enviado, (int)ms, kbs,
+                     ok ? "" : " (el cliente corto)");
+            return ok ? ESP_OK : ESP_FAIL;
+        }
+    }
 
     uint8_t *buf = malloc(PANTALLA_CHUNK);
     if (!buf) {
