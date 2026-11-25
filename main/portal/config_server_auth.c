@@ -730,9 +730,19 @@ static esp_err_t auth_comprueba(httpd_req_t *req, const char *esperada_cab,
                 if (strcmp(sfs, "cross-site") == 0 || strcmp(sfs, "same-site") == 0) fuera = true;
             }
         }
-        /* Cabecera DEMASIADO LARGA: httpd devuelve ESP_ERR_HTTPD_INVALID_REQ y la
-         * damos por sospechosa (antes se trataba como ausente y pasaba). */
-        if (eo == ESP_ERR_HTTPD_INVALID_REQ || er == ESP_ERR_HTTPD_INVALID_REQ) fuera = true;
+        /* Cabecera DEMASIADO LARGA = SOSPECHOSA (antes se trataba como ausente y
+         * pasaba).
+         *
+         * OJO AL CODIGO: cuando el valor no cabe en el buffer, httpd devuelve
+         * ESP_ERR_HTTPD_RESULT_TRUNC, NO ESP_ERR_HTTPD_INVALID_REQ (comprobado en
+         * el IDF 5.5.5 instalado: esp_http_server/src/httpd_parse.c:1119-1124;
+         * httpd_req_get_hdr_value_str solo devuelve INVALID_REQ si el puntero de
+         * la peticion no vale). Mirando solo INVALID_REQ esta regla no se ejecutaba
+         * nunca: una cabecera larga se tomaba por ausente. Se aceptan los dos
+         * codigos (auditoria del 25-nov-2026, seccion 6). */
+        if (eo == ESP_ERR_HTTPD_RESULT_TRUNC || er == ESP_ERR_HTTPD_RESULT_TRUNC ||
+            eo == ESP_ERR_HTTPD_INVALID_REQ || er == ESP_ERR_HTTPD_INVALID_REQ)
+            fuera = true;
         if (fuera) {
             ESP_LOGW(TAG, "peticion con Origin/Referer de fuera (%s): la rechazo "
                           "(posible CSRF)", cual ? cual : "(sin cabeceras)");
