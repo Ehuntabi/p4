@@ -5,6 +5,7 @@
 #include "cJSON.h"
 
 #include <stdio.h>
+#include <unistd.h>   /* unlink(): borrar el respaldo a medias */
 #include <string.h>
 #include <strings.h>   /* strcasecmp: casar MACs al recuperar la clave AES de NVS */
 #include <stdlib.h>
@@ -147,11 +148,41 @@ esp_err_t config_backup_export(const char *path)
     if (!fp) { camera_sd_bus_unlock(); free(json); ESP_LOGE(TAG, "fopen %s", path); return ESP_FAIL; }
     size_t len = strlen(json);
     size_t wrote = fwrite(json, 1, len, fp);
-    fclose(fp);
+    /* EL fclose SE MIRA (auditoria del 25-nov-2026, H-25): con stdio el error real
+     * (tarjeta llena, extraida, E/S que no responde) sale al cerrar, no en el
+     * fwrite. Antes se decia "Exportado" en verde con el fichero a medias -- y
+     * como se abre con "w", el respaldo ANTERIOR ya estaba truncado. Mismo
+     * criterio que ya usa log_capture.c. */
+    const int cierre = fclose(fp);
+    if (cierre != 0 || wrote != len) {
+        ESP_LOGE(TAG, "NO se ha exportado: %s (%u de %u bytes, fclose=%d)",
+                 path, (unsigned)wrote, (unsigned)len, cierre);
+        if (camera_sd_bus_lock(2000)) {
+            unlink(path);          /* que no quede un respaldo a medias */
+            camera_sd_bus_unlock();
+        }
+        camera_sd_bus_unlock();
+        free(json);
+        return ESP_FAIL;
+    }
     camera_sd_bus_unlock();
     free(json);
     ESP_LOGI(TAG, "Exportado: %s (%u bytes)", path, (unsigned)wrote);
-    return wrote == len ? ESP_OK : ESP_FAIL;
+    return ESP_OK;
+}
+
+/* Valor entero de un campo, COMPROBANDO EL RANGO (auditoria del 25-nov-2026,
+ * H-16). Antes se hacia (uint8_t)v->valueint sin mirar: un 286 se convierte en 30
+ * y se aplica en silencio -- el mismo fallo que este fichero ya corrigio para el
+ * frigo. Si el valor no esta entre min y max, se deja el defecto. */
+static int campo_rango(const cJSON *obj, const char *clave, int min, int max, int def)
+{
+    const cJSON *v = obj ? cJSON_GetObjectItem(obj, clave) : NULL;
+    if (!v || !cJSON_IsNumber(v)) return def;
+    int n = v->valueint;
+    if (n < min) n = min;
+    if (n > max) n = max;
+    return n;
 }
 
 esp_err_t config_backup_import(const char *path)
@@ -169,9 +200,20 @@ esp_err_t config_backup_import(const char *path)
     if (sz <= 0 || sz > 32 * 1024) { fclose(fp); camera_sd_bus_unlock(); return ESP_FAIL; }
     char *buf = malloc((size_t)sz + 1);
     if (!buf) { fclose(fp); camera_sd_bus_unlock(); return ESP_ERR_NO_MEM; }
-    fread(buf, 1, (size_t)sz, fp);
-    buf[sz] = 0;
+    /* EL fread SE COMPRUEBA (auditoria del 25-nov-2026, H-16): si la lectura es
+     * corta, lo que queda hasta buf[sz] es heap sin inicializar y cJSON lo
+     * interpretaba como JSON. Se exige la lectura entera. */
+    const size_t leido = fread(buf, 1, (size_t)sz, fp);
+    const bool corto = (leido != (size_t)sz) || (ferror(fp) != 0);
     fclose(fp);
+    if (corto) {
+        camera_sd_bus_unlock();
+        free(buf);
+        ESP_LOGE(TAG, "no he podido leer %s entero (%u de %ld): no importo nada",
+                 path, (unsigned)leido, sz);
+        return ESP_FAIL;
+    }
+    buf[sz] = 0;
     camera_sd_bus_unlock();
 
     cJSON *root = cJSON_Parse(buf);
@@ -183,26 +225,26 @@ esp_err_t config_backup_import(const char *path)
     if (disp) {
         cJSON *v;
         if ((v = cJSON_GetObjectItem(disp, "brightness")) && cJSON_IsNumber(v))
-            save_brightness((uint8_t)v->valueint);
+            save_brightness((uint8_t)campo_rango(disp, "brightness", 5, 100, 80));
         if ((v = cJSON_GetObjectItem(disp, "view_mode")) && cJSON_IsNumber(v))
-            save_ui_view_mode((uint8_t)v->valueint);
+            save_ui_view_mode((uint8_t)campo_rango(disp, "view_mode", 0, 1, 0));
         if ((v = cJSON_GetObjectItem(disp, "timezone")) && cJSON_IsString(v))
             save_timezone(v->valuestring);
 
         cJSON *nm = cJSON_GetObjectItem(disp, "night_mode");
         if (nm) {
             bool en = cJSON_IsTrue(cJSON_GetObjectItem(nm, "enabled"));
-            int s = cJSON_GetObjectItem(nm, "start_h")  ? cJSON_GetObjectItem(nm, "start_h")->valueint : 22;
-            int e = cJSON_GetObjectItem(nm, "end_h")    ? cJSON_GetObjectItem(nm, "end_h")->valueint   : 7;
+            int s = campo_rango(nm, "start_h", 0, 23, 22);
+            int e = campo_rango(nm, "end_h",   0, 23, 7);
             save_night_mode(en, (uint8_t)s, (uint8_t)e);
         }
         cJSON *ss = cJSON_GetObjectItem(disp, "screensaver");
         if (ss) {
             bool en = cJSON_IsTrue(cJSON_GetObjectItem(ss, "enabled"));
-            int b  = cJSON_GetObjectItem(ss, "brightness")? cJSON_GetObjectItem(ss, "brightness")->valueint : 30;
-            int to = cJSON_GetObjectItem(ss, "timeout_s") ? cJSON_GetObjectItem(ss, "timeout_s")->valueint  : 60;
-            int md = cJSON_GetObjectItem(ss, "mode")      ? cJSON_GetObjectItem(ss, "mode")->valueint      : 0;
-            int pe = cJSON_GetObjectItem(ss, "rotate_period_min") ? cJSON_GetObjectItem(ss, "rotate_period_min")->valueint : 5;
+            int b  = campo_rango(ss, "brightness", 0, 100, 30);
+            int to = campo_rango(ss, "timeout_s", 5, 3600, 60);
+            int md = campo_rango(ss, "mode", 0, 5, 0);
+            int pe = campo_rango(ss, "rotate_period_min", 1, 240, 5);
             save_screensaver_settings(en, (uint8_t)b, (uint16_t)to);
             save_screensaver_mode((uint8_t)md, (uint8_t)pe);
         }

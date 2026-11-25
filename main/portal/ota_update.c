@@ -30,7 +30,8 @@
 #include "log_capture/log_capture.h"
 #include "display.h"   /* bsp_display_brightness_set/get */
 #include "config_server_internal.h"
-#include "config_server_viaje.h"   /* viaje_flush_antes_de_reiniciar() */
+#include "config_server_viaje.h"
+#include "data/trip_computer.h"   /* trip_computer_flush(): contadores del viaje */   /* viaje_flush_antes_de_reiniciar() */
 
 static const char *TAG = "ota";
 
@@ -102,7 +103,13 @@ static void ota_reboot_cb(void *arg)
     watchdog_marca_reinicio_pedido();
     /* Con un viaje abierto, hasta 5 min de ruta vivian en RAM y este reinicio
      * se los llevaba (auditoria del 13-oct-2026). */
-    viaje_flush_antes_de_reiniciar();
+    viaje_flush_antes_de_reiniciar();   /* la ruta, en la tarjeta */
+    /* Y LOS CONTADORES (auditoria del 25-nov-2026, H-21): viaje_flush... vuelca
+     * la ruta, pero km/horas/Wh van a NVS cada 5 min desde el hook del BMV; sin
+     * esto, una OTA a mitad de viaje se lleva hasta 5 min de contadores. Los otros
+     * reinicios (los del menu) usan ui_flush_all_before_restart(), que si lo
+     * hace: esto es el unico camino que se quedaba fuera. */
+    trip_computer_flush();
     esp_restart();
 }
 

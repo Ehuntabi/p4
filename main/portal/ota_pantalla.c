@@ -477,17 +477,25 @@ static const uint8_t *pantalla_ram_tomar(const pantalla_modelo_t *m, FILE *f,
     size_t total = 0;
     if (ok) {
         sd_reader_abrir();
+        /* TROCEADO DE VERDAD (auditoria del 25-nov-2026, H-3): la fread pedia
+         * st_size-total, o sea los 2,3 MB de una vez, con el cerrojo del bus SD
+         * tomado: segundos de tarjeta bloqueada en la primera descarga de cada
+         * fichero (la camara perdia su ventana y quien pedia 200-2000 ms se
+         * saltaba su E/S). Ahora se pide PANTALLA_CHUNK por vuelta y se suelta el
+         * cerrojo entre trozos. */
         while (total < (size_t)st->st_size) {
             bool error = false;
             size_t n = 0;
+            size_t pedir = (size_t)st->st_size - total;
+            if (pedir > PANTALLA_CHUNK) pedir = PANTALLA_CHUNK;
             if (!camera_sd_bus_lock(3000)) { ok = false; break; }
-            n = fread(p + total, 1, (size_t)st->st_size - total, f);
+            n = fread(p + total, 1, pedir, f);
             error = (ferror(f) != 0);
             camera_sd_bus_unlock();
             if (error) { ok = false; break; }
             if (n == 0) break;
             total += n;
-            if ((total % (256 * 1024)) < n) vTaskDelay(1);
+            vTaskDelay(1);   /* ceder CPU (y el bus) entre trozos */
         }
         sd_reader_cerrar();
     }
@@ -508,6 +516,23 @@ static const uint8_t *pantalla_ram_tomar(const pantalla_modelo_t *m, FILE *f,
     ESP_LOGI(TAG, "bin %s: %u B en PSRAM (a partir de ahora se sirve de RAM)",
              m->nombre, (unsigned)total);
     return p;                         /* cerrojo tomado */
+}
+
+/* Tira la copia en PSRAM de ese modelo. Se llama al PUBLICAR un .bin nuevo
+ * (auditoria del 25-nov-2026, H-15): sin esto se seguia sirviendo la copia vieja
+ * mientras pantalla_leer_info() hasheaba la nueva, y la cabina abortaba por
+ * "sha256 no cuadra" (mismo tamano y mismo mtime de FAT). */
+static void pantalla_ram_invalidar(const pantalla_modelo_t *m)
+{
+    const size_t idx = (size_t)(m - s_modelos);
+    if (idx >= PANTALLA_NUM_MODELOS || !s_ram_mux) return;
+    if (xSemaphoreTake(s_ram_mux, pdMS_TO_TICKS(5000)) != pdTRUE) return;
+    free(s_ram[idx].bytes);
+    s_ram[idx].bytes = NULL;
+    s_ram[idx].n = 0;
+    s_ram[idx].mtime = 0;
+    s_ram[idx].size = 0;
+    xSemaphoreGive(s_ram_mux);
 }
 
 static void pantalla_ram_soltar(void)
@@ -718,17 +743,18 @@ esp_err_t ota_pantalla_info(httpd_req_t *req)
                         continue;
                     }
                 } else {
+                    /* NO SE BORRA NADA (auditoria del 25-nov-2026, H-7). Antes,
+                     * preguntar la version con un ?ver= mas nuevo hacia que la P4
+                     * BORRARA su .bin: un GET de lectura con efecto destructivo, y
+                     * con el nivel de clave mas bajo (la del portal) que el que
+                     * hace falta para volver a subirlo (la de administracion). Se
+                     * deja de anunciar y se dice en el log; el fichero sigue ahi
+                     * para cuando la pantalla vuelva a una version anterior o para
+                     * repararla. */
                     ESP_LOGW(TAG, "%s: el .bin de la P4 (%s) es MAS VIEJO que el "
-                                  "instalado en la pantalla (%s): lo borro y no lo "
-                                  "anuncio", s_modelos[i].nombre, info.ver,
-                             ver_pantalla);
-                    pantalla_borrar(s_modelos[i].ruta);
-                    const size_t k = (size_t)(&s_modelos[i] - s_modelos);
-                    if (k < PANTALLA_NUM_MODELOS) {
-                        portENTER_CRITICAL(&s_cache_mux);
-                        s_cache[k].hay = false;
-                        portEXIT_CRITICAL(&s_cache_mux);
-                    }
+                                  "instalado en la pantalla (%s): no lo anuncio "
+                                  "(el fichero se queda: un GET no borra nada)",
+                             s_modelos[i].nombre, info.ver, ver_pantalla);
                     cJSON_AddNullToObject(raiz, s_modelos[i].nombre);
                     continue;
                 }
@@ -942,6 +968,10 @@ esp_err_t ota_pantalla_bin(httpd_req_t *req)
                               "tarjeta ocupada, reintenta", false);
     const bool existe = (stat(m->ruta, &st) == 0 && S_ISREG(st.st_mode) &&
                          st.st_size > 0);
+    /* EL LECTOR SE REGISTRA ANTES DE ABRIR (auditoria del 25-nov-2026, H-4): asi
+     * "Soltar tarjeta" sabe que hay un fichero abierto y no desmonta debajo (el
+     * fclose caeria sobre un VFS ya liberado y puede colgar la placa). */
+    if (existe) sd_reader_abrir();
     if (existe) f = fopen(m->ruta, "rb");
     camera_sd_bus_unlock();
     if (!f)
@@ -1031,8 +1061,16 @@ esp_err_t ota_pantalla_bin(httpd_req_t *req)
     while (ok && enviado < (uint64_t)st.st_size) {
         bool error = false;
         size_t n = 0;
-        if (!camera_sd_bus_lock(3000)) {
-            ESP_LOGW(TAG, "bin %s: tarjeta ocupada, corto el envio", m->nombre);
+        /* REINTENTAR, NO CORTAR A LA PRIMERA (auditoria del 25-nov-2026, H-2):
+         * la cabecera con Content-Length YA se ha enviado, asi que abandonar tras
+         * 3 s deja al cliente con menos bytes de los anunciados. Quien retiene el
+         * bus (un guardado de log lo tiene 1-3 s) truncaria el .bin. Se espera
+         * hasta 5 veces de 3 s antes de darse por vencido. */
+        bool cerrojo = false;
+        for (int intento = 0; intento < 5 && !cerrojo; intento++)
+            cerrojo = camera_sd_bus_lock(3000);
+        if (!cerrojo) {
+            ESP_LOGW(TAG, "bin %s: tarjeta ocupada 15 s, corto el envio", m->nombre);
             ok = false;
             break;
         }
@@ -1304,8 +1342,15 @@ esp_err_t ota_pantalla_subir(httpd_req_t *req)
      * un .bin viejo (el de una release anterior que quedaba en el movil) dejaba
      * a la P4 anunciando un retroceso. Se compara con lo que ya hay guardado y,
      * si el que sube dice la version que lleva puesta la pantalla (?ver=),
-     * tambien con esa. Un EMPATE si se acepta: regrabar la misma version es
-     * legitimo (reparar una subida a medias) y el sha256 nuevo sale solo. */
+     * tambien con esa.
+     *
+     * EL EMPATE YA NO SE ACEPTA (auditoria del 25-nov-2026, H-33). Se aceptaba
+     * "para reparar una subida a medias", pero la cabina exige ESTRICTAMENTE mas
+     * nueva (ota_rx_version_aceptable), asi que esa reparacion no llegaba nunca a
+     * la pantalla: la pagina decia "Subido vX. La pantalla lo instalara en el
+     * proximo minuto" y la pantalla no hacia nada, mientras el .bin bueno se
+     * sustituia por el nuevo. Las dos mitades tienen que contar lo mismo: para
+     * publicar hay que SUBIR LA VERSION (que es lo que hace release.sh). */
     {
         pantalla_fw_info_t prev;
         char ver_instalada[PANTALLA_VER_N] = {0};
@@ -1313,9 +1358,11 @@ esp_err_t ota_pantalla_subir(httpd_req_t *req)
         const bool sabe_instalada =
             pantalla_query_ver(req, ver_instalada, sizeof ver_instalada);
         const char *ref_vieja = NULL;
-        if (hay_prev && pantalla_ver_cmp(ver, prev.ver) < 0)
+        /* Empate con lo que ya hay = se rechaza (ver el comentario de arriba):
+         * la cabina no lo instalaria y el mensaje de la pagina mentiria. */
+        if (hay_prev && pantalla_ver_cmp(ver, prev.ver) <= 0)
             ref_vieja = prev.ver;
-        else if (sabe_instalada && pantalla_ver_cmp(ver, ver_instalada) < 0)
+        else if (sabe_instalada && pantalla_ver_cmp(ver, ver_instalada) <= 0)
             ref_vieja = ver_instalada;
         if (ref_vieja) {
             pantalla_borrar(ruta_tmp);
@@ -1365,6 +1412,7 @@ esp_err_t ota_pantalla_subir(httpd_req_t *req)
             portEXIT_CRITICAL(&s_cache_mux);
         }
     }
+    pantalla_ram_invalidar(m);   /* y la copia en PSRAM (H-15) */
     if (camera_sd_bus_lock(3000)) {
         struct stat st_viejo;
         const bool hay_viejo = (stat(ruta, &st_viejo) == 0);
@@ -1386,6 +1434,7 @@ esp_err_t ota_pantalla_subir(httpd_req_t *req)
                 s_cache[k].hay = false;
                 portEXIT_CRITICAL(&s_cache_mux);
             }
+            pantalla_ram_invalidar(m);   /* H-15, tambien despues del rename */
         }
     } else {
         ESP_LOGW(TAG, "subida %s: tarjeta ocupada al publicar", m->nombre);

@@ -1017,6 +1017,12 @@ void viaje_reparar_al_arrancar(void)
             camera_sd_bus_unlock();
         }
         marcar_huerfanas(NULL);      /* no hay viaje abierto: ninguna es "la de ahora" */
+        /* Y EL TRIP COMPUTER SE APAGA AQUI (auditoria del 25-nov-2026, H-8): si un
+         * corte de corriente cae entre el cierre en NVS (estado_set con viaje
+         * cerrado) y trip_computer_end(), la NVS queda sin viaje pero con active=1
+         * y none de las otras ramas lo apaga: la telemetria publicaba un viaje en
+         * curso con 0,0 km para siempre. */
+        trip_computer_olvidar();
         return;
     }
 
@@ -4053,6 +4059,22 @@ static esp_err_t op_registro(httpd_req_t *req, const cJSON *j, uint32_t id)
             ESP_LOGW(TAG, "parada REPETIDA con el mismo contenido (%ld s despues): "
                           "no la apunto otra vez (%s)",
                      (long)(ahora - firma_t), firma_vista);
+            /* PERO CUENTA COMO APLICADA (auditoria del 25-nov-2026, H-20). La
+             * cabina SI conto este evento al generarlo; si aqui se contesta 200
+             * sin tocar NVS_T_APLIC ni el anillo de ids, la cabina lo borra de su
+             * diario y al cerrar comprobar_completo() ve aplicados < esperados y
+             * marca el viaje INCOMPLETO culpando a la cola o a un reinicio. Era
+             * falso: la repetida la tiro la propia P4. */
+            const cJSON *jid_rep = jd ? cJSON_GetObjectItem(jd, "id") : NULL;
+            const uint32_t idrep = (jid_rep && cJSON_IsNumber(jid_rep) &&
+                                    jid_rep->valuedouble > 0)
+                                   ? (uint32_t)jid_rep->valuedouble : 0;
+            nvs_handle_t hrep;
+            if (nvs_open(NVS_NS, NVS_READWRITE, &hrep) == ESP_OK) {
+                if (idrep) (void)id_anota_en(hrep, idrep);
+                nvs_commit(hrep);
+                nvs_close(hrep);
+            }
             responde_con_hueco(req, "parada repetida: ya apuntada");
             return ESP_OK;
         }
@@ -4273,7 +4295,12 @@ static esp_err_t op_registro(httpd_req_t *req, const cJSON *j, uint32_t id)
          * se cuenta aparte, en el log, para poder cuadrarla al analizar. */
         bool d_ev   = marca_deshacer(ruta_ev, marca_ev);
         bool d_tipo = marca_deshacer(ruta_tipo, marca_tipo);
-        if (!d_ev || !d_tipo)
+        /* Y LA CHINCHETA (auditoria del 25-nov-2026, H-17): la fila de puntos.csv
+         * ya se habia escrito y no se deshacia, asi que al reintentar el mismo
+         * apunte salia DOS veces en puntos.csv y en el GPX (esas filas no llevan
+         * id: no hay forma de deduplicarlas despues). */
+        bool d_pun  = (marca_pun < 0) || marca_deshacer(ruta_pun, marca_pun);
+        if (!d_ev || !d_tipo || !d_pun)
             ESP_LOGW(TAG, "escritura a medias en '%s' que NO he podido deshacer "
                           "(%s=%d, %s=%d): puede quedar una fila a medias",
                      tipo, ruta_ev, (int)d_ev, ruta_tipo, (int)d_tipo);

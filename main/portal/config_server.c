@@ -81,7 +81,12 @@ static dns_server_handle_t s_dns = NULL;
  * lo que pide credenciales (los tres macros de config_server_internal.h). Asi
  * no hay que acordarse de marcar nada en cada handler nuevo. */
 #define PORTAL_CLIENTE_VENTANA_US  (20LL * 1000 * 1000)
-static volatile int64_t s_portal_cliente_us;
+/* NO volatile a secas: es un int64 que escriben las DOS tareas httpd y lee la
+ * de LVGL; en RV32 una lectura a medias da un valor arbitrario (auditoria del
+ * 25-nov-2026, H-49). Se protege con el spinlock de abajo, como ya se hizo en
+ * udp_latido.c. */
+static int64_t s_portal_cliente_us;
+static portMUX_TYPE s_mux_portal_us = portMUX_INITIALIZER_UNLOCKED;
 
 /* ── INICIO BLOQUE PRUEBA portal_uri_es_de_maquina ─────────────────────────
  * Funcion PURA (sin ESP-IDF) a proposito: el test de host la compila tal cual
@@ -108,12 +113,18 @@ void portal_actividad(httpd_req_t *req)
 {
     if (req == NULL) return;
     if (portal_uri_es_de_maquina(req->uri)) return;
+    /* CON CERROJO (H-49): lo escriben las dos tareas httpd y lo lee la de LVGL. */
+    portENTER_CRITICAL(&s_mux_portal_us);
     s_portal_cliente_us = esp_timer_get_time();
+    portEXIT_CRITICAL(&s_mux_portal_us);
 }
 
 bool portal_hay_cliente(void)
 {
-    int64_t t = s_portal_cliente_us;
+    int64_t t;
+    portENTER_CRITICAL(&s_mux_portal_us);
+    t = s_portal_cliente_us;
+    portEXIT_CRITICAL(&s_mux_portal_us);
     if (t == 0) return false;
     return (esp_timer_get_time() - t) < PORTAL_CLIENTE_VENTANA_US;
 }
@@ -498,12 +509,28 @@ static esp_err_t post_viaje_borrar(httpd_req_t *req)
         return ESP_FAIL;
     }
     char body[192];
-    int total = req->content_len < (int)sizeof(body) - 1
-              ? req->content_len : (int)sizeof(body) - 1;
+    const int total = req->content_len < (int)sizeof(body) - 1
+                    ? req->content_len : (int)sizeof(body) - 1;
+    /* PLAZO TOTAL Y TOPE DE ESPERAS (auditoria del 25-nov-2026, H-5). Este era
+     * el UNICO handler con cuerpo sin ellos (ver /save, /control y /api/alarma):
+     * solo cortaba con r <= 0, asi que un cliente autenticado que goteara 1 byte
+     * cada 25 s (por debajo del timeout de 30 s) tenia ocupada la UNICA tarea del
+     * httpd del puerto 80 hasta ~95 minutos, y con ella el portal entero
+     * (/api/state, /api/viaje, /api/alarma). Mismo remedio que en /save. */
+    const int64_t plazo_us = 60LL * 1000000LL;
+    const int64_t t0_us = esp_timer_get_time();
+    int esperas = 0;
     int got = 0;
     while (got < total) {
-        int r = httpd_req_recv(req, body + got, total - got);
+        if (esp_timer_get_time() - t0_us > plazo_us) {
+            ESP_LOGE(TAG, "viaje_borrar: plazo total agotado con %d/%d bytes", got, total);
+            httpd_resp_send_err(req, HTTPD_408_REQ_TIMEOUT, "cuerpo a medias");
+            return ESP_FAIL;
+        }
+        const int r = httpd_req_recv(req, body + got, total - got);
+        if (r == HTTPD_SOCK_ERR_TIMEOUT && ++esperas <= 4) continue;
         if (r <= 0) break;
+        esperas = 0;
         got += r;
     }
     body[got] = 0;

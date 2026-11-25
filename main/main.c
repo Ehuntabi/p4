@@ -134,8 +134,15 @@ static void rtc_backup_timer_cb(void *arg)
     if (now < 1000000000L) return;  /* hora aún no válida */
     nvs_handle_t nh;
     if (nvs_open("rtc_backup", NVS_READWRITE, &nh) == ESP_OK) {
-        nvs_set_i64(nh, "epoch", (int64_t)now);
-        esp_err_t err = nvs_commit(nh);
+        /* SE COMPRUEBA EL nvs_set_i64, NO EL nvs_commit (auditoria del
+         * 25-nov-2026, H-13): en IDF 5.5.5 nvs_commit() con un handle valido
+         * devuelve SIEMPRE ESP_OK (la escritura de verdad ocurre dentro de
+         * nvs_set_*), asi que este aviso no podia salir nunca y la hora se dejaba
+         * de respaldar en silencio (NVS llena). Despues, tras un corte con la pila
+         * del RTC muerta, se restauraba una hora de semanas antes y todos los CSV
+         * y apuntes del viaje nacian con fecha falsa. */
+        esp_err_t err = nvs_set_i64(nh, "epoch", (int64_t)now);
+        if (err == ESP_OK) err = nvs_commit(nh);
         if (err != ESP_OK) ESP_LOGW(TAG, "backup de hora no persistio: %s", esp_err_to_name(err));
         nvs_close(nh);
     }
@@ -586,7 +593,17 @@ static void init_display_ui(void)
      * camino es mas profundo. El sintoma de quedarse corto es un reinicio
      * ("Guru Meditation Error: Stack protection fault") al abrir un historico. */
     cfg.lvgl_port_cfg.task_stack = 20480;
-    bsp_display_start_with_config(&cfg);
+    /* Y EL RETORNO SE MIRA (auditoria del 25-nov-2026, H-47): si el display no
+     * arranca, s_disp queda NULL y todo lo que dependa de el se salta en silencio
+     * (incluido el bus I2C, que se crea dentro de bsp_touch_new()), llegandose al
+     * final del arranque para marcar la version como buena. Con esto, al menos,
+     * queda dicho en el log y la OTA que traiga una pantalla muerta no se valida. */
+    if (!bsp_display_start_with_config(&cfg)) {
+        ESP_LOGE(TAG, "NO arranca la pantalla: la imagen no se dara por buena y se "
+                      "reiniciara (si venia de una OTA, el bootloader revierte)");
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        esp_restart();
+    }
     bsp_display_brightness_set(80);
 
     /* --- UI --- */
@@ -654,9 +671,26 @@ static void init_sd_rtc_frigo(void)
      * datalogger_sd_montada(). */
     if (sd_err == ESP_OK) viaje_reparar_al_arrancar();
 
+    /* EL AUTO-SAVE DE LOGS SE CREA AQUI, CON EL RELOJ YA PUESTO (H-30 de la
+     * auditoria del 25-nov-2026). Antes se creaba antes de fijar la hora y su
+     * prioridad (3) adelanta a la tarea principal de IDF (1), asi que exportaba el
+     * coredump con time()==0: carpeta 19700101 y nombre crash_*_1970..., y el mtime
+     * de FatFs (1980) hacia que la rotacion FIFO lo borrara el primero. Justo el
+     * arranque en el que el coredump importa. */
+    if (xTaskCreate(log_autosave_task, "logsave", 12288, NULL, 3, NULL) != pdPASS)
+        ESP_LOGE(TAG, "no he podido crear la tarea de auto-save de logs");
+
     /* Auto-save de logs a SD 30 s tras boot (con rotacion FIFO 20 archivos).
-     * Stack 12 KB: fprintf bucle + opendir/readdir + bubble sort + unlink. */
-    xTaskCreate(log_autosave_task, "logsave", 12288, NULL, 3, NULL);
+     * Stack 12 KB: fprintf bucle + opendir/readdir + bubble sort + unlink.
+     *
+     * NO SE CREA AQUI (auditoria del 25-nov-2026, H-30): va con prioridad 3 y la
+     * tarea principal de IDF a prioridad 1, asi que adelanta al arranque y
+     * exportaba el coredump ANTES de que exista el reloj (settimeofday esta unas
+     * lineas mas abajo). El fichero salia como crash_*_19700101 y con mtime de
+     * 1980 (FatFs clampa), o sea el mas viejo: la rotacion FIFO lo borraba el
+     * primero. Se crea al final de init_sd_rtc_frigo(), con la hora ya puesta. */
+    /* (La tarea de auto-save de logs se crea al final de init_sd_rtc_frigo(),
+     * con el reloj ya puesto: ver H-30 de la auditoria del 25-nov-2026.) */
 
     /* Para capturar pantallas: carrusel a demanda (Settings) o los endpoints
      * HTTP /capturas y /captura?n=<i> sobre el AP del P4. El antiguo auto-tour
@@ -1034,7 +1068,16 @@ void app_main(void)
      * que el cerrojo existe para evitar. Es idempotente, asi que no cambia nada
      * mas. */
     camera_sd_bus_init();
-    if (!init_boot_diagnostics()) return;
+    /* NO SE VUELVE DE app_main CON EL SISTEMA A MEDIO MONTAR (auditoria del
+     * 25-nov-2026, H-11): volver de app_main mata la tarea principal y aqui se
+     * saldria ANTES de montar NVS, watchdog, UI y AP: placa encendida, muda y sin
+     * nadie que la reinicie (el Task WDT vigila las idle, que siguen corriendo).
+     * Si esto falla, se reinicia. */
+    if (!init_boot_diagnostics()) {
+        ESP_LOGE(TAG, "diagnostico de arranque fallido: reinicio en vez de quedarme mudo");
+        vTaskDelay(pdMS_TO_TICKS(500));
+        esp_restart();
+    }
     init_nvs_wifi_pass_watchdog();
     init_display_ui();
     init_sd_rtc_frigo();

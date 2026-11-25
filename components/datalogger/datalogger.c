@@ -557,17 +557,25 @@ static bool flush_pending_to_sd_impl(void)
         written++;
     }
 
-    /* Solo avanzamos el cursor si la escritura fue limpia. */
+    /* VACIAR EL BUFFER **ANTES** DE CONSUMIR EL ANILLO (auditoria del 25-nov-2026,
+     * H-14). Con stdio de 16 KB casi toda la escritura sale en el fflush/fclose,
+     * no en los fprintf: el codigo avanzaba el cursor y descontaba las muestras
+     * ANTES de mirar el fclose, asi que un fallo ahi (tarjeta llena, I/O) las
+     * perdia para siempre mientras el log prometia "reintento proximo flush".
+     * Y si el fallo era DENTRO del bucle, el reintento si ocurria pero el cursor
+     * tampoco habia avanzado: las filas ya escritas se DUPLICABAN. Con el fflush
+     * comprobado antes de consumir, ni se pierden ni se duplican. */
+    bool vaciado_ok = !io_error;
+    if (vaciado_ok && fflush(f) != 0) vaciado_ok = false;
+    if (!vaciado_ok) io_error = true;
+
+    /* Solo avanzamos el cursor si la escritura (y el vaciado) fueron limpios. */
     if (!io_error) {
         s_pending_first = (s_pending_first + written) % DATALOGGER_MAX_ENTRIES;
         s_pending_count -= written;
     }
     xSemaphoreGive(s_mutex);
-    /* El fclose TAMBIEN se mira: con el buffer de stdio de 16 KB
-     * (CONFIG_FATFS_VFS_FSTAT_BLKSIZE) buena parte de la escritura ocurre aqui,
-     * no en los fprintf. Antes el buffer era de 512 B y casi todo salia en el
-     * bucle, pero mirarlo cuesta cero y un fallo aqui es perdida silenciosa de
-     * muestras. 2-oct-2026. */
+    /* El fclose TAMBIEN se mira (2-oct-2026). */
     if (fclose(f) != 0) {
         io_error = true;
     }

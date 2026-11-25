@@ -309,13 +309,17 @@ static void tx_task(void *arg)
 
         int n = sendto(sock, &msg, sizeof(msg), 0,
                        (struct sockaddr *)&dest, sizeof(dest));
+        /* errno SE GUARDA AQUI, pegado a la llamada: cualquier cosa de por medio
+         * (un log que toque stdio, por ejemplo) puede cambiarlo y entonces la
+         * decision de recrear el socket mira el errno equivocado. */
+        const int err_sendto = (n == (int)sizeof(msg)) ? 0 : errno;
         if (n == (int)sizeof(msg)) {
             s_sent_ok++;
         } else {
             s_sent_err++;
             if ((s_sent_err % 10) == 1) {
                 ESP_LOGW(TAG, "sendto err errno=%d (ok=%lu err=%lu)",
-                         errno, (unsigned long)s_sent_ok, (unsigned long)s_sent_err);
+                         err_sendto, (unsigned long)s_sent_ok, (unsigned long)s_sent_err);
             }
             /* SIN SALIDA: el envio falla con el socket vivo. Visto el
              * 7-oct-2026 en el banco: 20 minutos con "errno=118 (ok=0 err=1)" y
@@ -331,11 +335,11 @@ static void tx_task(void *arg)
              * estan": EHOSTUNREACH (118), ENETUNREACH (113), ENETDOWN (114) y
              * ENOTCONN (128). Los que no son de ruta (EAGAIN de un socket sin
              * memoria) no entran aqui: cerrar y abrir no arreglaria nada. */
-            bool sin_ruta = (errno == EHOSTUNREACH || errno == ENETUNREACH ||
-                             errno == ENETDOWN     || errno == ENOTCONN);
+            bool sin_ruta = (err_sendto == EHOSTUNREACH || err_sendto == ENETUNREACH ||
+                             err_sendto == ENETDOWN     || err_sendto == ENOTCONN);
             if (sin_ruta && ++fallos_seguidos >= 3) {
                 fallos_seguidos = 0;
-                ESP_LOGW(TAG, "socket sin salida (errno=%d): lo recreo", errno);
+                ESP_LOGW(TAG, "socket sin salida (errno=%d): lo recreo", err_sendto);
                 close(sock);
                 /* A -1: sin esto el while de abajo no se ejecuta NUNCA (sock
                  * sigue valiendo el fd ya cerrado), no se llama a socket(), el
@@ -379,5 +383,13 @@ static void tx_task(void *arg)
 
 void udp_tx_start(void)
 {
-    xTaskCreate(tx_task, "udp_tx", 4096, NULL, 4, NULL);
+    /* SE MIRA EL RETORNO (auditoria del 25-nov-2026, H-48): su hermano pequeño
+     * (udp_latido_start) ya lo comprobaba y lo gritaba; este no. Si la tarea no
+     * se crea, no hay telemetria en absoluto y no queda ni una linea que lo diga:
+     * la cabina se queda muda sin pista. */
+    if (xTaskCreate(tx_task, "udp_tx", 4096, NULL, 4, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "no he podido crear la tarea de telemetria: la cabina se "
+                      "queda SIN DATOS (heap interno libre %u B)",
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+    }
 }

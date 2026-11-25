@@ -323,7 +323,20 @@ void trip_computer_on_gps(bool fix, uint8_t satelites, double lat, double lon,
     }
     s_gps_lat = lat; s_gps_lon = lon; s_gps_t = now; s_gps_ancla = true;
     odometro_diag(now);
+
+    /* GUARDADO POR TIEMPO TAMBIEN POR AQUI (auditoria del 25-nov-2026, H-12). El
+     * unico guardado periodico estaba dentro de on_battery (cada 5 min), asi que
+     * SIN SHUNT los km y las horas de conduccion que acumula el GPS vivian solo en
+     * RAM: un corte se los llevaba enteros (el resumen los lee de RAM). Se guarda
+     * con el mismo ritmo de 5 min, salga la muestra de donde salga. */
+    static time_t s_last_save_gps = 0;
+    bool guardar = false;
+    if (now - s_last_save_gps >= 300) {
+        guardar = true;
+        s_last_save_gps = now;
+    }
     xSemaphoreGive(s_mtx);
+    if (guardar) trip_guardar_ya();
 }
 
 void trip_computer_init(void)
@@ -335,8 +348,16 @@ void trip_computer_init(void)
         time_t now = time(NULL);
         if (now >= 1000000000L) {
             s.reset_epoch = now;
+            /* CON LOS DOS CERROJOS (auditoria del 25-nov-2026, H-50): write_nvs va
+             * por trip_guardar_ya(), que toma s_mtx y s_nvs_mtx justo para que dos
+             * escrituras no se pisen; aqui se llamaba a pelo, y con reset_epoch==0
+             * (NVS recien borrada) puede coincidir con una muestra del BMV. */
+            if (s_mtx) xSemaphoreTake(s_mtx, portMAX_DELAY);
+            if (s_nvs_mtx) xSemaphoreTake(s_nvs_mtx, portMAX_DELAY);
             trip_snap_t snap = trip_snapshot_locked();
             write_nvs(&snap);
+            if (s_nvs_mtx) xSemaphoreGive(s_nvs_mtx);
+            if (s_mtx) xSemaphoreGive(s_mtx);
         }
     }
     ESP_LOGI(TAG, "Trip: reset=%lld, Wh +%.1f -%.1f, Ah +%.2f -%.2f, secs=%lld, "

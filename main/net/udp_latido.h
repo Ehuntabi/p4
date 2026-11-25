@@ -38,6 +38,11 @@ int udp_latido_fuentes_vivas(int vivo_s);
  * mano, y el log decia que todo iba bien. */
 bool udp_latido_alguna_callada(int callada_s);
 
+/* Version de telemetria distinta de la nuestra, declarada por alguna cabina viva
+ * (0 = ninguna la declara). Ver H-6: sirve para no confundir "firmware distinto"
+ * con "la bajada esta rota". */
+int udp_latido_version_distinta(uint8_t *vista);
+
 /* true si ALGUNA cabina que sigue latiendo dice llevar >= 15 s sin recibir
  * telemetria (y cuantos segundos, si 'seg_out' no es NULL). Es la pregunta que
  * tiene que hacer el vigilante del AP: con dos pantallas, mirar solo el ultimo

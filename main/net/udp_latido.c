@@ -54,6 +54,10 @@ typedef struct {
     int64_t  ultimo_us;
     int      seg_sin_datos;
     bool     ip_fija;
+    /* VERSION DE TELEMETRIA QUE HABLA ESA CABINA (auditoria del 25-nov-2026,
+     * H-6). Va en el primer byte del relleno del latido (mini_latido._pad_lat),
+     * sin cambiar el tamano de 12. 0 = no lo dice (firmware viejo). */
+    uint8_t  ver_telemetria;
 } latido_fuente_t;
 
 static latido_fuente_t s_fuentes[LATIDO_MAX_FUENTES];
@@ -78,6 +82,7 @@ static portMUX_TYPE s_mux_fuentes = portMUX_INITIALIZER_UNLOCKED;
 static latido_fuente_t *fuente_de(uint32_t ip, int64_t ahora_us, uint32_t *reciclada)
 {
     latido_fuente_t *libre = NULL;
+    latido_fuente_t *caducado = NULL;
     for (int i = 0; i < LATIDO_MAX_FUENTES; i++) {
         if (s_fuentes[i].ip == ip) return &s_fuentes[i];
         /* CADUCA: una cabina que cambia de IP (el DHCP le da otra tras
@@ -88,13 +93,21 @@ static latido_fuente_t *fuente_de(uint32_t ip, int64_t ahora_us, uint32_t *recic
          * 13-oct-2026. */
         bool caducada = (s_fuentes[i].ip != 0) &&
                         ((ahora_us - s_fuentes[i].ultimo_us) > 60LL * 1000000LL);
-        if ((s_fuentes[i].ip == 0 || caducada) && !libre) libre = &s_fuentes[i];
+        /* UN HUECO CADUCADO VALE MAS QUE UNO LIBRE (auditoria del 25-nov-2026,
+         * H-28). Antes se cogia "el primero libre O caducado", recorriendo por
+         * indice: si el hueco libre estaba antes que el caducado, el caducado no
+         * se purgaba NUNCA y su cabina seguia contando como "callada" para
+         * siempre. Eso hacia inalcanzable la rama sana de config_server_ap y
+         * gastaba el reinicio de AP (de un solo uso por encendido) en falso. */
+        if (caducada && !caducado) caducado = &s_fuentes[i];
+        if (s_fuentes[i].ip == 0 && !libre) libre = &s_fuentes[i];
     }
-    if (libre && libre->ip != 0) {
-        if (reciclada) *reciclada = libre->ip;
-        libre->ip = 0;
+    latido_fuente_t *elegido = caducado ? caducado : libre;
+    if (elegido && elegido->ip != 0) {
+        if (reciclada) *reciclada = elegido->ip;
+        elegido->ip = 0;
     }
-    return libre;
+    return elegido;
 }
 
 /* La ultima fuente que hablo, que es lo que enseñan la pantalla y los logs. */
@@ -138,6 +151,29 @@ int udp_latido_fuentes_vivas(int vivo_s)
     return n;
 }
 
+/* ¿Alguna cabina viva dice hablar una version de telemetria DISTINTA de la
+ * nuestra? (auditoria del 25-nov-2026, H-6). Devuelve la version vista o 0 si
+ * ninguna la dice. Sirve para NO interpretar "no me llega telemetria" como
+ * "la bajada esta rota" cuando en realidad son dos firmwares distintos. */
+int udp_latido_version_distinta(uint8_t *vista)
+{
+    int hallada = 0;
+    int64_t ahora = esp_timer_get_time();
+    portENTER_CRITICAL(&s_mux_fuentes);
+    for (int i = 0; i < LATIDO_MAX_FUENTES; i++) {
+        if (s_fuentes[i].ip == 0) continue;
+        if ((ahora - s_fuentes[i].ultimo_us) > 60LL * 1000000LL) continue;
+        if (s_fuentes[i].ver_telemetria != 0 &&
+            s_fuentes[i].ver_telemetria != MINI_PROTO_VERSION) {
+            hallada = s_fuentes[i].ver_telemetria;
+            break;
+        }
+    }
+    portEXIT_CRITICAL(&s_mux_fuentes);
+    if (vista) *vista = (uint8_t)(hallada > 0 ? hallada : 0);
+    return hallada;
+}
+
 bool udp_latido_alguna_callada(int callada_s)
 {
     int64_t ahora = esp_timer_get_time();
@@ -145,6 +181,10 @@ bool udp_latido_alguna_callada(int callada_s)
     portENTER_CRITICAL(&s_mux_fuentes);
     for (int i = 0; i < LATIDO_MAX_FUENTES; i++) {
         if (s_fuentes[i].ip == 0) continue;
+        /* La tabla "dura 60 s" (lo dice udp_latido.h): pasado ese rato, esa
+         * cabina no esta "callada", esta APAGADA o se ha ido, y contarla como
+         * callada desactiva la rama sana para siempre (H-28). */
+        if ((ahora - s_fuentes[i].ultimo_us) > 60LL * 1000000LL) continue;
         if ((ahora - s_fuentes[i].ultimo_us) / 1000000 > callada_s) { callada = true; break; }
     }
     portEXIT_CRITICAL(&s_mux_fuentes);
@@ -239,6 +279,7 @@ static void latido_task(void *arg)
             continue;
         }
         const mini_latido_t *l = (const mini_latido_t *)buf;
+        const uint8_t ver_tele = l->_pad_lat[0];   /* H-6: version de telemetria */
         if (l->magic != MINI_LATIDO_MAGIC) continue;
         /* SU PROPIA VERSION (auditoria del 27-oct-2026, B1): antes se comparaba
          * con MINI_PROTO_VERSION, la del struct grande de telemetria. Un bump de
@@ -309,6 +350,8 @@ static void latido_task(void *arg)
         /* El campo es int16 en el protocolo: saturado a lo que quepa. */
         f->seg_sin_datos = (l->seg_sin_datos > 32000) ? 32000 : (int)l->seg_sin_datos;
         f->ip_fija = (l->ip_fija != 0);
+        /* H-6: la version de telemetria que dice esa cabina (0 = no lo dice). */
+        if (ver_tele != 0) f->ver_telemetria = ver_tele;
         portEXIT_CRITICAL(&s_mux_fuentes);
         if (reciclada) {
             ESP_LOGI(TAG, "hueco de latido reciclado (la cabina %08lx llevaba >60 s callada)",

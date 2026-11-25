@@ -25,7 +25,8 @@
 #include "esp_private/wifi.h"
 #include "esp_random.h"
 #include "esp_timer.h"
-#include "net/udp_latido.h"   /* el latido de la cabina: ver el vigilante */
+#include "net/udp_latido.h"
+#include "net/mini_proto.h"   /* MINI_PROTO_VERSION: H-6 */   /* el latido de la cabina: ver el vigilante */
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -609,6 +610,25 @@ static void dhcp_vigila_job(void)
     bool mini_mudo   = (asoc >= 1) && udp_latido_alguno_mudo(&mudo_seg);
 
     if (mini_mudo) {
+        /* ANTES DE TOCAR EL AP: ¿son dos firmwares distintos? (auditoria del
+         * 25-nov-2026, H-6). Una cabina grabada con otra version del protocolo
+         * tira el 100 % de la telemetria y su latido sigue entrando, asi que
+         * "llevo N s sin datos" parece una bajada rota. Reiniciar el AP no
+         * arregla una version distinta: la arregla regrabar. Se avisa y no se
+         * toca nada (y no se gasta el reinicio de AP, que es de un solo uso). */
+        uint8_t ver_cabina = 0;
+        if (udp_latido_version_distinta(&ver_cabina) > 0) {
+            static uint8_t ultima_avisada;
+            if (ver_cabina != ultima_avisada) {
+                ultima_avisada = ver_cabina;
+                ESP_LOGE(TAG, "AP: una cabina habla la version %u del protocolo y "
+                              "esta P4 la %d: NO reinicio el AP, hay que regrabar "
+                              "la que este atras", (unsigned)ver_cabina,
+                         (int)MINI_PROTO_VERSION);
+            }
+            s_mini_mudo = 0;
+            return;
+        }
         /* Camino RAPIDO: la cabina nos esta diciendo, con su latido llegando,
          * que no le llega la telemetria. Eso es la bajada rota y lo que la cura
          * es rehacer el AP; el DHCP no pinta nada aqui. Dos vueltas (20 s) para
