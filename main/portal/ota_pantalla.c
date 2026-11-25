@@ -1367,10 +1367,15 @@ esp_err_t ota_pantalla_subir(httpd_req_t *req)
         if (ref_vieja) {
             pantalla_borrar(ruta_tmp);
             char msg[192];
+            /* "NO ES MAS NUEVA" Y NO "MAS VIEJA": desde H-33 tambien se rechaza el
+             * EMPATE, y el mensaje decia "mas vieja" para una version igual (la
+             * cabina exige estrictamente mas nueva, asi que igual no se instala).
+             * Se dice lo que hay que hacer: subir el numero. */
             snprintf(msg, sizeof(msg),
-                     "esa version (%s) es MAS VIEJA que la que ya hay (%s): no la pongo",
+                     "esa version (%s) no es MAS NUEVA que la que ya hay (%s): no la "
+                     "pongo; para publicar hay que subir la version",
                      ver, ref_vieja);
-            ESP_LOGW(TAG, "subida %s rechazada: %s < %s", m->nombre, ver, ref_vieja);
+            ESP_LOGW(TAG, "subida %s rechazada: %s <= %s", m->nombre, ver, ref_vieja);
             return pantalla_error(req, "409 Conflict", msg, false);
         }
     }
