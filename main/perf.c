@@ -79,7 +79,9 @@ static void perf_muestra(void)
         s_uso[i].cpu_pct = pct;
         s_uso[i].pila_libre = (uint32_t)st[i].usStackHighWaterMark * sizeof(StackType_t);
         {
-            BaseType_t af = xTaskGetAffinity(st[i].xHandle);
+            /* xTaskGetAffinity() es solo un alias deprecado de xTaskGetCoreID()
+             * y desaparece en IDF 6.0: misma devolución (núcleo o tSKNO_AFFINITY). */
+            BaseType_t af = xTaskGetCoreID(st[i].xHandle);
             s_uso[i].nucleo = (af == tskNO_AFFINITY) ? -1 : (int)af;
         }
     }
