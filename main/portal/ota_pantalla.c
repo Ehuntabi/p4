@@ -20,6 +20,7 @@
 #include "ota_pantalla.h"
 #include "config_server_internal.h"   /* REQUIRE_AUTH y html_escape */
 #include "camera.h"                   /* camera_sd_bus_lock y sd_reader_* */
+#include "victron_ble.h"               /* victron_ble_escanear() durante el envio */
 #include "datalogger.h"               /* datalogger_sd_montada */
 #include "sd_safe.h"                  /* sd_mkdir con el cerrojo de la SD dentro */
 #include "cJSON.h"
@@ -984,6 +985,9 @@ esp_err_t ota_pantalla_bin(httpd_req_t *req)
         size_t ram_n = 0;
         const uint8_t *ram = pantalla_ram_tomar(m, f, &st, &ram_n);
         if (ram) {
+            /* EL BLE SE PARA MIENTRAS SE SIRVE (27-nov-2026): el C6 lleva Wi-Fi y
+             * BLE a la vez y el escaneo de Victron tumbaba el TCP de la OTA. */
+            victron_ble_escanear(false);
             const int64_t t0 = esp_timer_get_time();
             char cab[160];
             const int hlen = snprintf(cab, sizeof cab,
@@ -1007,6 +1011,7 @@ esp_err_t ota_pantalla_bin(httpd_req_t *req)
                 if (desde_yield >= 256 * 1024) { desde_yield = 0; vTaskDelay(1); }
             }
             pantalla_ram_soltar();
+            victron_ble_escanear(true);   /* y se vuelve a encender */
 
             /* Y el FILE* que se abrio solo para comprobar que existe, cerrado. */
             const bool got = camera_sd_bus_lock_wait(5000);

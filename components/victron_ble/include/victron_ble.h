@@ -39,6 +39,12 @@ void victron_ble_register_callback(victron_data_cb_t cb);
 // Reload device configuration from storage (call after updating device settings)
 void victron_ble_reload_device_config(void);
 
+// Enciende o PARA el escaneo BLE. Se para mientras la P4 sirve un firmware a la
+// cabina: el C6 lleva a la vez el Wi-Fi y el BLE, y escaneando sin parar el TCP
+// de la OTA se cae a unos cientos de bytes por segundo (27-nov-2026). Es
+// asincrono: se pide y lo aplica la tarea de NimBLE.
+void victron_ble_escanear(bool activar);
+
 #ifdef __cplusplus
 }
 #endif

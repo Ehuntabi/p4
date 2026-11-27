@@ -247,19 +247,76 @@ static void ble_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
+/* ── Escaneo: encendido, y PARADO mientras hay una OTA en curso ───────────
+ *
+ * POR QUE (27-nov-2026): la OTA de la cabina se moria con "Se corto la
+ * descarga". En el log de la P4 se veia "0 B desde RAM en 162879 ms": el fichero
+ * estaba en PSRAM y no salia ni un byte. La radio del C6 lleva a la vez el
+ * Wi-Fi (por donde va la OTA) y el BLE del escaneo de Victron, que con el banco
+ * vacio escanea sin parar. Ahora, mientras se sirve un .bin, el escaneo se para
+ * y al terminar se vuelve a encender.
+ *
+ * El cambio se hace EN LA TAREA DE NIMBLE: ble_gap_disc() no es seguro desde
+ * otra tarea, asi que se pide con un evento en su cola. */
+static bool             s_scan_activo;
+static bool             s_scan_querido = true;
+static bool             s_scan_evento_en_cola;
+static struct ble_npl_event s_ev_scan;
+
+static void scan_aplicar(struct ble_npl_event *ev);
+
+static void scan_pedir(void)
+{
+    if (s_scan_evento_en_cola) return;
+    /* Antes de que NimBLE haga 'sync' no hay cola: solo se guarda el deseo, y
+     * ble_app_on_sync() lo aplica. */
+    if (nimble_port_get_dflt_eventq() == NULL) return;
+    s_scan_evento_en_cola = true;
+    ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &s_ev_scan);
+}
+
+static void scan_aplicar(struct ble_npl_event *ev)
+{
+    s_scan_evento_en_cola = false;
+    if (s_scan_querido && !s_scan_activo) {
+        struct ble_gap_disc_params disc_params = {
+            .itvl = 0x0060, .window = 0x0030,
+            .passive = 1, .filter_policy = 0, .limited = 0
+        };
+        int rc = ble_gap_disc(BLE_OWN_ADDR_PUBLIC, BLE_HS_FOREVER,
+                              &disc_params, ble_gap_event_handler, NULL);
+        if (rc) {
+            ESP_LOGE(TAG, "Error starting discovery; rc=%d", rc);
+        } else {
+            s_scan_activo = true;
+            ESP_LOGI(TAG, "Started Victron BLE scan");
+        }
+    } else if (!s_scan_querido && s_scan_activo) {
+        ble_gap_disc_cancel();
+        s_scan_activo = false;
+        ESP_LOGW(TAG, "escaneo BLE PARADO (OTA de una pantalla en curso)");
+    }
+}
+
+void victron_ble_escanear(bool activar)
+{
+    if (s_scan_querido == activar && !s_scan_evento_en_cola) return;
+    s_scan_querido = activar;
+    if (activar) {
+        ESP_LOGI(TAG, "escaneo BLE: se vuelve a encender");
+    }
+    scan_pedir();
+}
+
 static void ble_app_on_sync(void)
 {
-    struct ble_gap_disc_params disc_params = {
-        .itvl = 0x0060, .window = 0x0030,
-        .passive = 1, .filter_policy = 0, .limited = 0
-    };
-    int rc = ble_gap_disc(BLE_OWN_ADDR_PUBLIC, BLE_HS_FOREVER,
-                          &disc_params, ble_gap_event_handler, NULL);
-    if (rc) {
-        ESP_LOGE(TAG, "Error starting discovery; rc=%d", rc);
-    } else {
-        ESP_LOGI(TAG, "Started Victron BLE scan");
-    }
+    /* El escaneo lo enciende scan_aplicar(), por el mismo camino que la pausa:
+     * asi hay un solo sitio que manda sobre ble_gap_disc(). */
+    ble_npl_event_init(&s_ev_scan, scan_aplicar, NULL);
+    s_scan_querido = true;
+    s_scan_activo  = false;
+    s_scan_evento_en_cola = false;
+    scan_pedir();
 }
 
 /* -------------------------------------------------------------------------- */
